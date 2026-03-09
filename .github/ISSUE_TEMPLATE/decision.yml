@@ -1,0 +1,58 @@
+name: "Decision (ADR candidate)"
+description: "設計判断が必要（比較→決定を残す）"
+title: "[Decision] "
+labels: ["type:decision"]
+body:
+  - type: textarea
+    id: context
+    attributes:
+      label: Context（前提・課題）
+    validations:
+      required: true
+
+  - type: textarea
+    id: options
+    attributes:
+      label: Options（選択肢）
+      placeholder: |
+        - A:
+        - B:
+        - C:
+    validations:
+      required: true
+
+  - type: textarea
+    id: evaluation
+    attributes:
+      label: Evaluation（評価軸と比較）
+      placeholder: |
+        評価軸（例）：可読性 / 変更容易性 / テスト容易性 / 実装コスト / 運用コスト
+        - A: 
+        - B:
+    validations:
+      required: true
+
+  - type: textarea
+    id: decision
+    attributes:
+      label: Decision（決定）
+      placeholder: |
+        - 採用：
+        - 理由：
+    validations:
+      required: false
+
+  - type: textarea
+    id: consequences
+    attributes:
+      label: Consequences（影響・トレードオフ）
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: adr
+    attributes:
+      label: docs/decisions への昇格
+      options:
+        - label: 決定内容を docs/decisions に転記する（必要な場合）
+          required: false
