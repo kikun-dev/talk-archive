@@ -1,0 +1,17 @@
+node_modules
+.pnpm-store
+
+.next
+out
+
+.env
+.env.local
+.env.*.local
+
+coverage
+
+.DS_Store
+Thumbs.db
+
+.vscode
+.idea
