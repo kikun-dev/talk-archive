@@ -1,7 +1,8 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const getUserMock = vi.fn();
 const createSupabaseServerClientMock = vi.fn();
+
 class RedirectError extends Error {
   constructor(public url: string) {
     super(`NEXT_REDIRECT: ${url}`);
@@ -36,9 +37,11 @@ function mockSupabaseClient(user: { id: string } | null) {
 
 function createFormData(data: Record<string, string>): FormData {
   const formData = new FormData();
+
   for (const [key, value] of Object.entries(data)) {
     formData.set(key, value);
   }
+
   return formData;
 }
 
@@ -46,6 +49,7 @@ const validFormData = {
   title: "テスト会話",
   idolGroup: "nogizaka",
   activePeriods: JSON.stringify([{ startDate: "2026-01-01", endDate: null }]),
+  participants: JSON.stringify([{ name: "メンバーA" }]),
 };
 
 describe("createConversationAction", () => {
@@ -77,6 +81,19 @@ describe("createConversationAction", () => {
     expect(result).toEqual({ error: "会話期間のデータが不正です" });
   });
 
+  it("returns error when activePeriods JSON shape is invalid", async () => {
+    mockSupabaseClient({ id: "user-1" });
+
+    const { createConversationAction } = await import("./actions");
+    const formData = createFormData({
+      ...validFormData,
+      activePeriods: JSON.stringify({ startDate: "2026-01-01" }),
+    });
+    const result = await createConversationAction(undefined, formData);
+
+    expect(result).toEqual({ error: "会話期間のデータが不正です" });
+  });
+
   it("returns error when validation fails", async () => {
     mockSupabaseClient({ id: "user-1" });
     validateCreateConversationInputMock.mockReturnValue(
@@ -88,6 +105,32 @@ describe("createConversationAction", () => {
     const result = await createConversationAction(undefined, formData);
 
     expect(result).toEqual({ error: "タイトルを入力してください" });
+  });
+
+  it("returns error when participants JSON is invalid", async () => {
+    mockSupabaseClient({ id: "user-1" });
+
+    const { createConversationAction } = await import("./actions");
+    const formData = createFormData({
+      ...validFormData,
+      participants: "invalid-json",
+    });
+    const result = await createConversationAction(undefined, formData);
+
+    expect(result).toEqual({ error: "参加者のデータが不正です" });
+  });
+
+  it("returns error when participants JSON shape is invalid", async () => {
+    mockSupabaseClient({ id: "user-1" });
+
+    const { createConversationAction } = await import("./actions");
+    const formData = createFormData({
+      ...validFormData,
+      participants: JSON.stringify({ name: "メンバーA" }),
+    });
+    const result = await createConversationAction(undefined, formData);
+
+    expect(result).toEqual({ error: "参加者のデータが不正です" });
   });
 
   it("creates conversation and redirects on success", async () => {
@@ -107,6 +150,7 @@ describe("createConversationAction", () => {
         title: "テスト会話",
         idolGroup: "nogizaka",
         activePeriods: [{ startDate: "2026-01-01", endDate: null }],
+        participants: [{ name: "メンバーA" }],
       }),
     );
     expect(redirectMock).toHaveBeenCalledWith("/conversations/conv-new");

@@ -4,6 +4,7 @@ import type {
   Source,
   Conversation,
   ConversationActivePeriod,
+  ConversationParticipant,
   IdolGroup,
   Record,
   Attachment,
@@ -12,6 +13,7 @@ import type {
 
 type Tables = Database["public"]["Tables"];
 type ConversationActivePeriodRow = Tables["conversation_active_periods"]["Row"];
+type ConversationParticipantRow = Tables["conversation_participants"]["Row"];
 type SourceRow = Tables["sources"]["Row"];
 type ConversationRow = Tables["conversations"]["Row"];
 type RecordRow = Tables["records"]["Row"];
@@ -90,6 +92,30 @@ describe("database types", () => {
       >();
       expectTypeOf<ConversationActivePeriodRow["end_date"]>().toEqualTypeOf<
         ConversationActivePeriod["endDate"]
+      >();
+    });
+  });
+
+  describe("ConversationParticipant", () => {
+    it("Row has the expected columns", () => {
+      expectTypeOf<ConversationParticipantRow>().toHaveProperty("id");
+      expectTypeOf<ConversationParticipantRow>().toHaveProperty(
+        "conversation_id",
+      );
+      expectTypeOf<ConversationParticipantRow>().toHaveProperty("name");
+      expectTypeOf<ConversationParticipantRow>().toHaveProperty("sort_order");
+      expectTypeOf<ConversationParticipantRow>().toHaveProperty("created_at");
+    });
+
+    it("Row column types match domain types", () => {
+      expectTypeOf<ConversationParticipantRow["conversation_id"]>().toEqualTypeOf<
+        ConversationParticipant["conversationId"]
+      >();
+      expectTypeOf<ConversationParticipantRow["name"]>().toEqualTypeOf<
+        ConversationParticipant["name"]
+      >();
+      expectTypeOf<ConversationParticipantRow["sort_order"]>().toEqualTypeOf<
+        ConversationParticipant["sortOrder"]
       >();
     });
   });
@@ -173,6 +199,12 @@ describe("database types", () => {
         .toEqualTypeOf<Json>();
       expectTypeOf<CreateConversationWithMetadataArgs["p_idol_group"]>()
         .toEqualTypeOf<Conversation["idolGroup"]>();
+      expectTypeOf<CreateConversationWithMetadataArgs["p_participants"]>()
+        .toEqualTypeOf<Json>();
+      expectTypeOf<UpdateConversationWithMetadataArgs["p_has_active_periods"]>()
+        .toEqualTypeOf<boolean>();
+      expectTypeOf<UpdateConversationWithMetadataArgs["p_has_participants"]>()
+        .toEqualTypeOf<boolean>();
       expectTypeOf<UpdateConversationWithMetadataArgs["p_has_title"]>()
         .toEqualTypeOf<boolean>();
       expectTypeOf<UpdateConversationWithMetadataArgs["p_title"]>()

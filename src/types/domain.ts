@@ -54,6 +54,15 @@ export type ConversationActivePeriod = {
   createdAt: string;
 };
 
+/** 会話参加者 */
+export type ConversationParticipant = {
+  id: string;
+  conversationId: string;
+  name: string;
+  sortOrder: number;
+  createdAt: string;
+};
+
 /** トークレコード */
 export type Record = {
   id: string;

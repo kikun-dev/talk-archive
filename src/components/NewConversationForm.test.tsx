@@ -1,5 +1,5 @@
-import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
 import { NewConversationForm } from "./NewConversationForm";
 
 vi.mock("@/app/(app)/conversations/new/actions", () => ({
@@ -13,6 +13,7 @@ describe("NewConversationForm", () => {
     expect(screen.getByLabelText("タイトル")).toBeInTheDocument();
     expect(screen.getByLabelText("グループ")).toBeInTheDocument();
     expect(screen.getByText("会話期間")).toBeInTheDocument();
+    expect(screen.getByText("参加者")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "作成" })).toBeInTheDocument();
   });
 
@@ -31,8 +32,13 @@ describe("NewConversationForm", () => {
     render(<NewConversationForm />);
 
     const dateInputs = screen.getAllByDisplayValue("");
-    // At least 2 date inputs (start + end) from the initial period
     expect(dateInputs.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("renders initial participant fields", () => {
+    render(<NewConversationForm />);
+
+    expect(screen.getByPlaceholderText("参加者名")).toBeInTheDocument();
   });
 
   it("has title input as required", () => {

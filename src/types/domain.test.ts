@@ -4,6 +4,7 @@ import type {
   Attachment,
   Conversation,
   ConversationActivePeriod,
+  ConversationParticipant,
   Record,
   Source,
 } from "./domain";
@@ -55,6 +56,18 @@ describe("domain types", () => {
       createdAt: "2026-01-01T00:00:00Z",
     };
     expect(period.endDate).toBeNull();
+  });
+
+  it("allows valid ConversationParticipant", () => {
+    const participant: ConversationParticipant = {
+      id: "participant-1",
+      conversationId: "conv-1",
+      name: "メンバーA",
+      sortOrder: 0,
+      createdAt: "2026-01-01T00:00:00Z",
+    };
+    expect(participant.name).toBe("メンバーA");
+    expect(participant.sortOrder).toBe(0);
   });
 
   it("allows valid Record with text type", () => {

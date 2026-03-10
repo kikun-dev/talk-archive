@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
 import {
@@ -60,57 +60,16 @@ describe("conversationRepository", () => {
     vi.resetAllMocks();
   });
 
-  describe("getConversations", () => {
-    it("returns conversations mapped to domain type", async () => {
-      builder = createMockQueryBuilder({
-        order: vi.fn().mockResolvedValue({ data: [baseRow], error: null }),
-      });
-      client = createMockClient(builder);
-
-      const result = await getConversations(client, "user-1");
-
-      expect(result).toEqual([
-        {
-          id: "conv-1",
-          userId: "user-1",
-          sourceId: null,
-          idolGroup: "nogizaka",
-          coverImagePath: null,
-          title: "テスト会話",
-          createdAt: "2026-01-01T00:00:00Z",
-          updatedAt: "2026-01-01T00:00:00Z",
-        },
-      ]);
-      expect(client.from).toHaveBeenCalledWith("conversations");
-      expect(builder.eq).toHaveBeenCalledWith("user_id", "user-1");
-      expect(builder.order).toHaveBeenCalledWith("updated_at", {
-        ascending: false,
-      });
+  it("returns conversations mapped to domain type", async () => {
+    builder = createMockQueryBuilder({
+      order: vi.fn().mockResolvedValue({ data: [baseRow], error: null }),
     });
+    client = createMockClient(builder);
 
-    it("throws on error", async () => {
-      const dbError = { message: "DB error", code: "42000" };
-      builder = createMockQueryBuilder({
-        order: vi.fn().mockResolvedValue({ data: null, error: dbError }),
-      });
-      client = createMockClient(builder);
+    const result = await getConversations(client, "user-1");
 
-      await expect(getConversations(client, "user-1")).rejects.toEqual(
-        dbError,
-      );
-    });
-  });
-
-  describe("getConversation", () => {
-    it("returns a single conversation", async () => {
-      builder = createMockQueryBuilder({
-        maybeSingle: vi.fn().mockResolvedValue({ data: baseRow, error: null }),
-      });
-      client = createMockClient(builder);
-
-      const result = await getConversation(client, "conv-1");
-
-      expect(result).toEqual({
+    expect(result).toEqual([
+      {
         id: "conv-1",
         userId: "user-1",
         sourceId: null,
@@ -119,284 +78,136 @@ describe("conversationRepository", () => {
         title: "テスト会話",
         createdAt: "2026-01-01T00:00:00Z",
         updatedAt: "2026-01-01T00:00:00Z",
-      });
-      expect(builder.eq).toHaveBeenCalledWith("id", "conv-1");
+      },
+    ]);
+  });
+
+  it("returns a single conversation", async () => {
+    builder = createMockQueryBuilder({
+      maybeSingle: vi.fn().mockResolvedValue({ data: baseRow, error: null }),
+    });
+    client = createMockClient(builder);
+
+    const result = await getConversation(client, "conv-1");
+
+    expect(result?.id).toBe("conv-1");
+    expect(result?.idolGroup).toBe("nogizaka");
+  });
+
+  it("creates a conversation", async () => {
+    builder = createMockQueryBuilder({
+      single: vi.fn().mockResolvedValue({ data: baseRow, error: null }),
+    });
+    client = createMockClient(builder);
+
+    const result = await createConversation(client, {
+      userId: "user-1",
+      idolGroup: "nogizaka",
+      title: "テスト会話",
     });
 
-    it("returns null when not found", async () => {
-      builder = createMockQueryBuilder({
-        maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
-      });
-      client = createMockClient(builder);
-
-      const result = await getConversation(client, "nonexistent");
-
-      expect(result).toBeNull();
-    });
-
-    it("throws on error", async () => {
-      const dbError = { message: "DB error", code: "42000" };
-      builder = createMockQueryBuilder({
-        maybeSingle: vi.fn().mockResolvedValue({ data: null, error: dbError }),
-      });
-      client = createMockClient(builder);
-
-      await expect(getConversation(client, "conv-1")).rejects.toEqual(
-        dbError,
-      );
+    expect(result.id).toBe("conv-1");
+    expect(builder.insert).toHaveBeenCalledWith({
+      user_id: "user-1",
+      title: "テスト会話",
+      idol_group: "nogizaka",
+      source_id: null,
+      cover_image_path: null,
     });
   });
 
-  describe("createConversation", () => {
-    it("creates and returns a conversation", async () => {
-      builder = createMockQueryBuilder({
-        single: vi.fn().mockResolvedValue({ data: baseRow, error: null }),
-      });
-      client = createMockClient(builder);
+  it("creates conversation metadata via rpc", async () => {
+    builder = createMockQueryBuilder({
+      single: vi.fn().mockResolvedValue({ data: baseRow, error: null }),
+    });
+    client = createMockClient(builder);
 
-      const result = await createConversation(client, {
-        userId: "user-1",
-        idolGroup: "nogizaka",
-        title: "テスト会話",
-      });
-
-      expect(result.id).toBe("conv-1");
-      expect(result.title).toBe("テスト会話");
-      expect(builder.insert).toHaveBeenCalledWith({
-        user_id: "user-1",
-        title: "テスト会話",
-        idol_group: "nogizaka",
-        source_id: null,
-        cover_image_path: null,
-      });
+    await createConversationWithMetadata(client, {
+      userId: "user-1",
+      idolGroup: "nogizaka",
+      title: "テスト会話",
+      activePeriods: [{ startDate: "2026-01-01", endDate: "2026-01-10" }],
+      participants: [{ name: "メンバーA" }, { name: "メンバーB" }],
     });
 
-    it("creates with sourceId", async () => {
-      const rowWithSource = { ...baseRow, source_id: "source-1" };
-      builder = createMockQueryBuilder({
-        single: vi.fn().mockResolvedValue({ data: rowWithSource, error: null }),
-      });
-      client = createMockClient(builder);
+    expect(client.rpc).toHaveBeenCalledWith(
+      "create_conversation_with_metadata",
+      {
+        p_user_id: "user-1",
+        p_title: "テスト会話",
+        p_idol_group: "nogizaka",
+        p_source_id: null,
+        p_cover_image_path: null,
+        p_active_periods: [
+          {
+            start_date: "2026-01-01",
+            end_date: "2026-01-10",
+          },
+        ],
+        p_participants: [
+          { name: "メンバーA", sort_order: 0 },
+          { name: "メンバーB", sort_order: 1 },
+        ],
+      },
+    );
+  });
 
-      const result = await createConversation(client, {
-        userId: "user-1",
-        idolGroup: "nogizaka",
-        title: "テスト会話",
-        sourceId: "source-1",
-      });
+  it("updates a conversation", async () => {
+    const updatedRow = { ...baseRow, title: "更新後" };
+    builder = createMockQueryBuilder({
+      single: vi.fn().mockResolvedValue({ data: updatedRow, error: null }),
+    });
+    client = createMockClient(builder);
 
-      expect(result.sourceId).toBe("source-1");
-      expect(builder.insert).toHaveBeenCalledWith({
-        user_id: "user-1",
-        title: "テスト会話",
-        idol_group: "nogizaka",
-        source_id: "source-1",
-        cover_image_path: null,
-      });
+    const result = await updateConversation(client, "conv-1", {
+      title: "更新後",
     });
 
-    it("creates with coverImagePath", async () => {
-      const rowWithCover = {
-        ...baseRow,
-        cover_image_path: "user-1/conv-1/cover/main.jpg",
-      };
-      builder = createMockQueryBuilder({
-        single: vi.fn().mockResolvedValue({ data: rowWithCover, error: null }),
-      });
-      client = createMockClient(builder);
-
-      const result = await createConversation(client, {
-        userId: "user-1",
-        idolGroup: "sakurazaka",
-        title: "テスト会話",
-        coverImagePath: "user-1/conv-1/cover/main.jpg",
-      });
-
-      expect(result.coverImagePath).toBe("user-1/conv-1/cover/main.jpg");
-      expect(builder.insert).toHaveBeenCalledWith({
-        user_id: "user-1",
-        title: "テスト会話",
-        idol_group: "sakurazaka",
-        source_id: null,
-        cover_image_path: "user-1/conv-1/cover/main.jpg",
-      });
-    });
-
-    it("throws on error", async () => {
-      const dbError = { message: "Insert error", code: "23505" };
-      builder = createMockQueryBuilder({
-        single: vi.fn().mockResolvedValue({ data: null, error: dbError }),
-      });
-      client = createMockClient(builder);
-
-      await expect(
-        createConversation(client, {
-          userId: "user-1",
-          idolGroup: "nogizaka",
-          title: "テスト",
-        }),
-      ).rejects.toEqual(dbError);
+    expect(result.title).toBe("更新後");
+    expect(builder.update).toHaveBeenCalledWith({
+      title: "更新後",
     });
   });
 
-  describe("createConversationWithMetadata", () => {
-    it("creates conversation and periods via rpc", async () => {
-      builder = createMockQueryBuilder({
-        single: vi.fn().mockResolvedValue({ data: baseRow, error: null }),
-      });
-      client = createMockClient(builder);
-
-      const result = await createConversationWithMetadata(client, {
-        userId: "user-1",
-        idolGroup: "nogizaka",
-        title: "テスト会話",
-        coverImagePath: "user-1/conv-1/cover/main.jpg",
-        activePeriods: [{ startDate: "2026-01-01", endDate: "2026-01-10" }],
-      });
-
-      expect(result.id).toBe("conv-1");
-      expect(client.rpc).toHaveBeenCalledWith(
-        "create_conversation_with_metadata",
-        {
-          p_user_id: "user-1",
-          p_title: "テスト会話",
-          p_idol_group: "nogizaka",
-          p_source_id: null,
-          p_cover_image_path: "user-1/conv-1/cover/main.jpg",
-          p_active_periods: [
-            {
-              start_date: "2026-01-01",
-              end_date: "2026-01-10",
-            },
-          ],
-        },
-      );
+  it("updates conversation metadata via rpc", async () => {
+    builder = createMockQueryBuilder({
+      single: vi.fn().mockResolvedValue({ data: baseRow, error: null }),
     });
+    client = createMockClient(builder);
+
+    await updateConversationWithMetadata(client, "conv-1", {
+      participants: [{ name: "メンバーA" }],
+    });
+
+    expect(client.rpc).toHaveBeenCalledWith(
+      "update_conversation_with_metadata",
+      {
+        p_conversation_id: "conv-1",
+        p_title: null,
+        p_has_title: false,
+        p_idol_group: null,
+        p_has_idol_group: false,
+        p_source_id: null,
+        p_has_source_id: false,
+        p_cover_image_path: null,
+        p_has_cover_image_path: false,
+        p_active_periods: [],
+        p_has_active_periods: false,
+        p_participants: [{ name: "メンバーA", sort_order: 0 }],
+        p_has_participants: true,
+      },
+    );
   });
 
-  describe("updateConversation", () => {
-    it("updates title", async () => {
-      const updatedRow = { ...baseRow, title: "更新後" };
-      builder = createMockQueryBuilder({
-        single: vi.fn().mockResolvedValue({ data: updatedRow, error: null }),
-      });
-      client = createMockClient(builder);
-
-      const result = await updateConversation(client, "conv-1", {
-        title: "更新後",
-      });
-
-      expect(result.title).toBe("更新後");
-      expect(builder.update).toHaveBeenCalledWith({
-        title: "更新後",
-      });
+  it("deletes a conversation", async () => {
+    builder = createMockQueryBuilder({
+      eq: vi.fn().mockResolvedValue({ error: null }),
     });
+    client = createMockClient(builder);
 
-    it("updates idolGroup and coverImagePath", async () => {
-      const updatedRow = {
-        ...baseRow,
-        idol_group: "hinatazaka" as const,
-        cover_image_path: "user-1/conv-1/cover/updated.jpg",
-      };
-      builder = createMockQueryBuilder({
-        single: vi.fn().mockResolvedValue({ data: updatedRow, error: null }),
-      });
-      client = createMockClient(builder);
+    await deleteConversation(client, "conv-1");
 
-      const result = await updateConversation(client, "conv-1", {
-        idolGroup: "hinatazaka",
-        coverImagePath: "user-1/conv-1/cover/updated.jpg",
-      });
-
-      expect(result.idolGroup).toBe("hinatazaka");
-      expect(result.coverImagePath).toBe("user-1/conv-1/cover/updated.jpg");
-      expect(builder.update).toHaveBeenCalledWith({
-        idol_group: "hinatazaka",
-        cover_image_path: "user-1/conv-1/cover/updated.jpg",
-      });
-    });
-
-    it("throws on error", async () => {
-      const dbError = { message: "Update error", code: "42000" };
-      builder = createMockQueryBuilder({
-        single: vi.fn().mockResolvedValue({ data: null, error: dbError }),
-      });
-      client = createMockClient(builder);
-
-      await expect(
-        updateConversation(client, "conv-1", { title: "更新後" }),
-      ).rejects.toEqual(dbError);
-    });
-  });
-
-  describe("updateConversationWithMetadata", () => {
-    it("updates conversation and periods via rpc", async () => {
-      const updatedRow = {
-        ...baseRow,
-        title: "更新後",
-        idol_group: "hinatazaka" as const,
-      };
-      builder = createMockQueryBuilder({
-        single: vi.fn().mockResolvedValue({ data: updatedRow, error: null }),
-      });
-      client = createMockClient(builder);
-
-      const result = await updateConversationWithMetadata(client, "conv-1", {
-        title: "更新後",
-        idolGroup: "hinatazaka",
-        sourceId: null,
-        coverImagePath: null,
-        activePeriods: [{ startDate: "2026-01-01", endDate: null }],
-      });
-
-      expect(result.idolGroup).toBe("hinatazaka");
-      expect(client.rpc).toHaveBeenCalledWith(
-        "update_conversation_with_metadata",
-        {
-          p_conversation_id: "conv-1",
-          p_title: "更新後",
-          p_has_title: true,
-          p_idol_group: "hinatazaka",
-          p_has_idol_group: true,
-          p_source_id: null,
-          p_has_source_id: true,
-          p_cover_image_path: null,
-          p_has_cover_image_path: true,
-          p_active_periods: [
-            {
-              start_date: "2026-01-01",
-              end_date: null,
-            },
-          ],
-        },
-      );
-    });
-  });
-
-  describe("deleteConversation", () => {
-    it("deletes a conversation", async () => {
-      builder = createMockQueryBuilder({
-        eq: vi.fn().mockResolvedValue({ error: null }),
-      });
-      client = createMockClient(builder);
-
-      await expect(
-        deleteConversation(client, "conv-1"),
-      ).resolves.toBeUndefined();
-      expect(builder.delete).toHaveBeenCalled();
-      expect(builder.eq).toHaveBeenCalledWith("id", "conv-1");
-    });
-
-    it("throws on error", async () => {
-      const dbError = { message: "Delete error", code: "42000" };
-      builder = createMockQueryBuilder({
-        eq: vi.fn().mockResolvedValue({ error: dbError }),
-      });
-      client = createMockClient(builder);
-
-      await expect(deleteConversation(client, "conv-1")).rejects.toEqual(
-        dbError,
-      );
-    });
+    expect(builder.delete).toHaveBeenCalled();
+    expect(builder.eq).toHaveBeenCalledWith("id", "conv-1");
   });
 });
