@@ -27,7 +27,6 @@ export async function createConversationAction(
 
   const title = formData.get("title") as string;
   const idolGroup = formData.get("idolGroup") as string;
-  const sourceId = (formData.get("sourceId") as string) || null;
   const activePeriodsJson = formData.get("activePeriods") as string;
 
   let activePeriods: Array<{ startDate: string; endDate?: string | null }>;
@@ -41,7 +40,6 @@ export async function createConversationAction(
     userId: user.id,
     title,
     idolGroup: idolGroup as IdolGroup,
-    sourceId,
     activePeriods,
   };
 

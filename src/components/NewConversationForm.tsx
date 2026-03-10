@@ -7,13 +7,8 @@ import {
 } from "@/app/(app)/conversations/new/actions";
 import { ActivePeriodFields } from "@/components/ActivePeriodFields";
 import type { ConversationActivePeriodInput } from "@/usecases/conversationUseCases";
-import type { Source } from "@/types/domain";
 
-type NewConversationFormProps = {
-  sources: Source[];
-};
-
-export function NewConversationForm({ sources }: NewConversationFormProps) {
+export function NewConversationForm() {
   const [activePeriods, setActivePeriods] = useState<
     ConversationActivePeriodInput[]
   >([{ startDate: "", endDate: null }]);
@@ -55,24 +50,6 @@ export function NewConversationForm({ sources }: NewConversationFormProps) {
           <option value="nogizaka">乃木坂46</option>
           <option value="sakurazaka">櫻坂46</option>
           <option value="hinatazaka">日向坂46</option>
-        </select>
-      </div>
-
-      <div>
-        <label htmlFor="sourceId" className="block text-sm font-medium">
-          トークの出所
-        </label>
-        <select
-          id="sourceId"
-          name="sourceId"
-          className="mt-1 block w-full rounded border border-gray-300 px-3 py-2 text-sm"
-        >
-          <option value="">なし</option>
-          {sources.map((source) => (
-            <option key={source.id} value={source.id}>
-              {source.name}
-            </option>
-          ))}
         </select>
       </div>
 

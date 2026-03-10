@@ -45,7 +45,6 @@ function createFormData(data: Record<string, string>): FormData {
 const validFormData = {
   title: "テスト会話",
   idolGroup: "nogizaka",
-  sourceId: "",
   activePeriods: JSON.stringify([{ startDate: "2026-01-01", endDate: null }]),
 };
 
@@ -107,32 +106,9 @@ describe("createConversationAction", () => {
         userId: "user-1",
         title: "テスト会話",
         idolGroup: "nogizaka",
-        sourceId: null,
         activePeriods: [{ startDate: "2026-01-01", endDate: null }],
       }),
     );
     expect(redirectMock).toHaveBeenCalledWith("/conversations/conv-new");
-  });
-
-  it("passes sourceId when provided", async () => {
-    mockSupabaseClient({ id: "user-1" });
-    validateCreateConversationInputMock.mockReturnValue(null);
-    createNewConversationMock.mockResolvedValue({ id: "conv-new" });
-
-    const { createConversationAction } = await import("./actions");
-    const formData = createFormData({
-      ...validFormData,
-      sourceId: "source-1",
-    });
-    await expect(
-      createConversationAction(undefined, formData),
-    ).rejects.toThrow("NEXT_REDIRECT");
-
-    expect(createNewConversationMock).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({
-        sourceId: "source-1",
-      }),
-    );
   });
 });
