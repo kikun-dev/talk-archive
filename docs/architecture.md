@@ -30,7 +30,11 @@ Node.js 24 LTS
 
 パッケージ管理
 
-pnpm workspace
+pnpm
+
+アプリ構成
+
+単一の Next.js アプリをリポジトリ直下で管理する
 
 ---
 
