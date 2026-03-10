@@ -24,7 +24,7 @@
 | # | タスク | 依存 | 状態 |
 |---|--------|------|------|
 | #1 | `rules/architecture.md` を作成 | なし | ✅ PR #37 |
-| #2 | `docs/decisions/` に ADR テンプレートと初回 ADR を作成 | なし | ⬜ |
+| #2 | `docs/decisions/` に ADR テンプレートと初回 ADR を作成 | なし | ✅ PR #40 |
 | #3 | コメントアウトされたテストを修正し CI を通す | なし | ✅ PR #37 |
 | #4 | `@supabase/ssr` を導入しサーバークライアントを作成 | なし | ⬜ |
 | #5 | Supabase Auth + Middleware による認証を設定 | #4 | ⬜ |
