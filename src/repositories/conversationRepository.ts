@@ -80,6 +80,41 @@ export async function createConversation(
   return toConversation(data);
 }
 
+export async function createConversationWithMetadata(
+  client: SupabaseClient<Database>,
+  params: {
+    userId: string;
+    title: string;
+    idolGroup: IdolGroup;
+    sourceId?: string | null;
+    coverImagePath?: string | null;
+    activePeriods: Array<{
+      startDate: string;
+      endDate?: string | null;
+    }>;
+  },
+): Promise<Conversation> {
+  const { data, error } = await client
+    .rpc("create_conversation_with_metadata", {
+      p_user_id: params.userId,
+      p_title: params.title,
+      p_idol_group: params.idolGroup,
+      p_source_id: params.sourceId ?? null,
+      p_cover_image_path: params.coverImagePath ?? null,
+      p_active_periods: params.activePeriods.map((period) => ({
+        start_date: period.startDate,
+        end_date: period.endDate ?? null,
+      })),
+    })
+    .single();
+
+  if (error) {
+    throw error;
+  }
+
+  return toConversation(data);
+}
+
 export async function updateConversation(
   client: SupabaseClient<Database>,
   id: string,
@@ -110,6 +145,45 @@ export async function updateConversation(
     .update(updateData)
     .eq("id", id)
     .select()
+    .single();
+
+  if (error) {
+    throw error;
+  }
+
+  return toConversation(data);
+}
+
+export async function updateConversationWithMetadata(
+  client: SupabaseClient<Database>,
+  id: string,
+  params: {
+    title?: string;
+    idolGroup?: IdolGroup;
+    sourceId?: string | null;
+    coverImagePath?: string | null;
+    activePeriods: Array<{
+      startDate: string;
+      endDate?: string | null;
+    }>;
+  },
+): Promise<Conversation> {
+  const { data, error } = await client
+    .rpc("update_conversation_with_metadata", {
+      p_conversation_id: id,
+      p_title: params.title ?? null,
+      p_has_title: params.title !== undefined,
+      p_idol_group: params.idolGroup ?? null,
+      p_has_idol_group: params.idolGroup !== undefined,
+      p_source_id: params.sourceId ?? null,
+      p_has_source_id: params.sourceId !== undefined,
+      p_cover_image_path: params.coverImagePath ?? null,
+      p_has_cover_image_path: params.coverImagePath !== undefined,
+      p_active_periods: params.activePeriods.map((period) => ({
+        start_date: period.startDate,
+        end_date: period.endDate ?? null,
+      })),
+    })
     .single();
 
   if (error) {

@@ -7,17 +7,14 @@ import type {
   Record,
 } from "@/types/domain";
 import {
-  getConversations,
-  getConversation,
-  createConversation,
-  updateConversation,
+  createConversationWithMetadata,
   deleteConversation,
+  getConversation,
+  getConversations,
+  updateConversation,
+  updateConversationWithMetadata,
 } from "@/repositories/conversationRepository";
-import {
-  createConversationActivePeriods,
-  getConversationActivePeriods,
-  replaceConversationActivePeriods,
-} from "@/repositories/conversationActivePeriodRepository";
+import { getConversationActivePeriods } from "@/repositories/conversationActivePeriodRepository";
 import { getRecordsByConversation } from "@/repositories/recordRepository";
 
 export type ConversationWithMetadata = Conversation & {
@@ -76,10 +73,13 @@ function validateIdolGroup(value: string | undefined): boolean {
 
 export function validateConversationActivePeriods(
   periods: ConversationActivePeriodInput[],
+  today: Date = new Date(),
 ): string | null {
   if (periods.length === 0) {
     return "会話期間を1件以上入力してください";
   }
+
+  const todayDayNumber = toDayNumber(getTodayDateString(today));
 
   for (const period of periods) {
     if (!isValidDateString(period.startDate)) {
@@ -93,6 +93,8 @@ export function validateConversationActivePeriods(
       if (toDayNumber(period.endDate) < toDayNumber(period.startDate)) {
         return "会話期間の終了日は開始日以降にしてください";
       }
+    } else if (toDayNumber(period.startDate) > todayDayNumber) {
+      return "継続中の会話期間の開始日は今日以前にしてください";
     }
   }
 
@@ -116,7 +118,12 @@ export function calculateConversationActiveDays(
           ? toDayNumber(period.endDate)
           : todayDayNumber,
     }))
+    .filter((range) => range.end >= range.start)
     .sort((left, right) => left.start - right.start);
+
+  if (normalizedRanges.length === 0) {
+    return 0;
+  }
 
   let activeDays = 0;
   let currentStart = normalizedRanges[0].start;
@@ -189,17 +196,6 @@ export function validateCreateConversationInput(
   return validateConversationActivePeriods(input.activePeriods);
 }
 
-function toActivePeriodInsertParams(
-  conversationId: string,
-  periods: ConversationActivePeriodInput[],
-) {
-  return periods.map((period) => ({
-    conversationId,
-    startDate: period.startDate,
-    endDate: period.endDate ?? null,
-  }));
-}
-
 export async function createNewConversation(
   client: SupabaseClient<Database>,
   input: CreateConversationInput,
@@ -209,17 +205,15 @@ export async function createNewConversation(
     throw new Error(validationError);
   }
 
-  const conversation = await createConversation(client, {
+  const conversation = await createConversationWithMetadata(client, {
     userId: input.userId,
     title: input.title.trim(),
     idolGroup: input.idolGroup,
     sourceId: input.sourceId,
     coverImagePath: input.coverImagePath,
+    activePeriods: input.activePeriods,
   });
-  const activePeriods = await createConversationActivePeriods(
-    client,
-    toActivePeriodInsertParams(conversation.id, input.activePeriods),
-  );
+  const activePeriods = await getConversationActivePeriods(client, conversation.id);
 
   return {
     ...conversation,
@@ -280,16 +274,22 @@ export async function updateExistingConversation(
     throw new Error(validationError);
   }
 
-  const conversation = await updateConversation(client, id, {
-    title: input.title?.trim(),
-    idolGroup: input.idolGroup,
-    sourceId: input.sourceId,
-    coverImagePath: input.coverImagePath,
-  });
-  const activePeriods =
+  const conversation =
     input.activePeriods !== undefined
-      ? await replaceConversationActivePeriods(client, id, input.activePeriods)
-      : await getConversationActivePeriods(client, id);
+      ? await updateConversationWithMetadata(client, id, {
+          title: input.title?.trim(),
+          idolGroup: input.idolGroup,
+          sourceId: input.sourceId,
+          coverImagePath: input.coverImagePath,
+          activePeriods: input.activePeriods,
+        })
+      : await updateConversation(client, id, {
+          title: input.title?.trim(),
+          idolGroup: input.idolGroup,
+          sourceId: input.sourceId,
+          coverImagePath: input.coverImagePath,
+        });
+  const activePeriods = await getConversationActivePeriods(client, id);
 
   return {
     ...conversation,

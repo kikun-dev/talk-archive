@@ -24,31 +24,29 @@ vi.mock("@/repositories/recordRepository");
 
 import {
   createConversation,
+  createConversationWithMetadata,
   deleteConversation,
   getConversation,
   getConversations,
   updateConversation,
+  updateConversationWithMetadata,
 } from "@/repositories/conversationRepository";
-import {
-  createConversationActivePeriods,
-  getConversationActivePeriods,
-  replaceConversationActivePeriods,
-} from "@/repositories/conversationActivePeriodRepository";
+import { getConversationActivePeriods } from "@/repositories/conversationActivePeriodRepository";
 import { getRecordsByConversation } from "@/repositories/recordRepository";
 
 const mockGetConversations = vi.mocked(getConversations);
 const mockGetConversation = vi.mocked(getConversation);
 const mockCreateConversation = vi.mocked(createConversation);
-const mockUpdateConversation = vi.mocked(updateConversation);
-const mockDeleteConversation = vi.mocked(deleteConversation);
-const mockCreateConversationActivePeriods = vi.mocked(
-  createConversationActivePeriods,
+const mockCreateConversationWithMetadata = vi.mocked(
+  createConversationWithMetadata,
 );
+const mockUpdateConversation = vi.mocked(updateConversation);
+const mockUpdateConversationWithMetadata = vi.mocked(
+  updateConversationWithMetadata,
+);
+const mockDeleteConversation = vi.mocked(deleteConversation);
 const mockGetConversationActivePeriods = vi.mocked(
   getConversationActivePeriods,
-);
-const mockReplaceConversationActivePeriods = vi.mocked(
-  replaceConversationActivePeriods,
 );
 const mockGetRecordsByConversation = vi.mocked(getRecordsByConversation);
 
@@ -128,6 +126,15 @@ describe("conversationUseCases", () => {
         ]),
       ).toBe(5);
     });
+
+    it("returns 0 when an ongoing period starts in the future", () => {
+      expect(
+        calculateConversationActiveDays(
+          [{ startDate: "2026-01-11", endDate: null }],
+          new Date("2026-01-10T12:00:00+09:00"),
+        ),
+      ).toBe(0);
+    });
   });
 
   describe("validateConversationActivePeriods", () => {
@@ -160,6 +167,15 @@ describe("conversationUseCases", () => {
           { startDate: "2026-01-10", endDate: "2026-01-01" },
         ]),
       ).toBe("会話期間の終了日は開始日以降にしてください");
+    });
+
+    it("rejects future start date for ongoing periods", () => {
+      expect(
+        validateConversationActivePeriods(
+          [{ startDate: "2026-01-11", endDate: null }],
+          new Date("2026-01-10T12:00:00+09:00"),
+        ),
+      ).toBe("継続中の会話期間の開始日は今日以前にしてください");
     });
   });
 
@@ -258,8 +274,8 @@ describe("conversationUseCases", () => {
 
   describe("createNewConversation", () => {
     it("creates conversation with metadata", async () => {
-      mockCreateConversation.mockResolvedValue(baseConversation);
-      mockCreateConversationActivePeriods.mockResolvedValue(activePeriods);
+      mockCreateConversationWithMetadata.mockResolvedValue(baseConversation);
+      mockGetConversationActivePeriods.mockResolvedValue(activePeriods);
 
       const result = await createNewConversation(client, {
         userId: "user-1",
@@ -270,20 +286,19 @@ describe("conversationUseCases", () => {
       });
 
       expect(result.activeDays).toBe(10);
-      expect(mockCreateConversation).toHaveBeenCalledWith(client, {
+      expect(mockCreateConversationWithMetadata).toHaveBeenCalledWith(client, {
         userId: "user-1",
         title: "テスト会話",
         idolGroup: "nogizaka",
         sourceId: undefined,
         coverImagePath: "user-1/conv-1/cover/main.jpg",
+        activePeriods: [{ startDate: "2026-01-01", endDate: "2026-01-10" }],
       });
-      expect(mockCreateConversationActivePeriods).toHaveBeenCalledWith(client, [
-        {
-          conversationId: "conv-1",
-          startDate: "2026-01-01",
-          endDate: "2026-01-10",
-        },
-      ]);
+      expect(mockGetConversationActivePeriods).toHaveBeenCalledWith(
+        client,
+        "conv-1",
+      );
+      expect(mockCreateConversation).not.toHaveBeenCalled();
     });
 
     it("throws on invalid input", async () => {
@@ -296,8 +311,7 @@ describe("conversationUseCases", () => {
         }),
       ).rejects.toThrow("タイトルを入力してください");
 
-      expect(mockCreateConversation).not.toHaveBeenCalled();
-      expect(mockCreateConversationActivePeriods).not.toHaveBeenCalled();
+      expect(mockCreateConversationWithMetadata).not.toHaveBeenCalled();
     });
   });
 
@@ -324,13 +338,13 @@ describe("conversationUseCases", () => {
   });
 
   describe("updateExistingConversation", () => {
-    it("updates conversation metadata and periods", async () => {
-      mockUpdateConversation.mockResolvedValue({
+    it("updates conversation metadata and periods atomically", async () => {
+      mockUpdateConversationWithMetadata.mockResolvedValue({
         ...baseConversation,
         title: "更新後",
         idolGroup: "hinatazaka",
       });
-      mockReplaceConversationActivePeriods.mockResolvedValue([
+      mockGetConversationActivePeriods.mockResolvedValue([
         {
           ...activePeriods[0],
           endDate: null,
@@ -344,20 +358,25 @@ describe("conversationUseCases", () => {
       });
 
       expect(result.idolGroup).toBe("hinatazaka");
-      expect(mockUpdateConversation).toHaveBeenCalledWith(client, "conv-1", {
-        title: "更新後",
-        idolGroup: "hinatazaka",
-        sourceId: undefined,
-        coverImagePath: undefined,
-      });
-      expect(mockReplaceConversationActivePeriods).toHaveBeenCalledWith(
+      expect(mockUpdateConversationWithMetadata).toHaveBeenCalledWith(
         client,
         "conv-1",
-        [{ startDate: "2026-01-01", endDate: null }],
+        {
+          title: "更新後",
+          idolGroup: "hinatazaka",
+          sourceId: undefined,
+          coverImagePath: undefined,
+          activePeriods: [{ startDate: "2026-01-01", endDate: null }],
+        },
       );
+      expect(mockGetConversationActivePeriods).toHaveBeenCalledWith(
+        client,
+        "conv-1",
+      );
+      expect(mockUpdateConversation).not.toHaveBeenCalled();
     });
 
-    it("loads existing periods when periods are not updated", async () => {
+    it("uses plain conversation update when periods are unchanged", async () => {
       mockUpdateConversation.mockResolvedValue(baseConversation);
       mockGetConversationActivePeriods.mockResolvedValue(activePeriods);
 
@@ -366,11 +385,17 @@ describe("conversationUseCases", () => {
       });
 
       expect(result.activeDays).toBe(10);
+      expect(mockUpdateConversation).toHaveBeenCalledWith(client, "conv-1", {
+        title: undefined,
+        idolGroup: undefined,
+        sourceId: undefined,
+        coverImagePath: null,
+      });
+      expect(mockUpdateConversationWithMetadata).not.toHaveBeenCalled();
       expect(mockGetConversationActivePeriods).toHaveBeenCalledWith(
         client,
         "conv-1",
       );
-      expect(mockReplaceConversationActivePeriods).not.toHaveBeenCalled();
     });
 
     it("throws when no update fields are provided", async () => {
@@ -379,6 +404,7 @@ describe("conversationUseCases", () => {
       ).rejects.toThrow("更新項目を指定してください");
 
       expect(mockUpdateConversation).not.toHaveBeenCalled();
+      expect(mockUpdateConversationWithMetadata).not.toHaveBeenCalled();
     });
   });
 

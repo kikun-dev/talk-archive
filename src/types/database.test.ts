@@ -1,5 +1,5 @@
 import { describe, it, expectTypeOf } from "vitest";
-import type { Database } from "./database";
+import type { Database, Json } from "./database";
 import type {
   Source,
   Conversation,
@@ -159,6 +159,24 @@ describe("database types", () => {
   describe("idol_group enum", () => {
     it("matches IdolGroup domain type", () => {
       expectTypeOf<DbIdolGroup>().toEqualTypeOf<IdolGroup>();
+    });
+  });
+
+  describe("conversation metadata rpc functions", () => {
+    it("has the expected argument types", () => {
+      type CreateConversationWithMetadataArgs =
+        Database["public"]["Functions"]["create_conversation_with_metadata"]["Args"];
+      type UpdateConversationWithMetadataArgs =
+        Database["public"]["Functions"]["update_conversation_with_metadata"]["Args"];
+
+      expectTypeOf<CreateConversationWithMetadataArgs["p_active_periods"]>()
+        .toEqualTypeOf<Json>();
+      expectTypeOf<CreateConversationWithMetadataArgs["p_idol_group"]>()
+        .toEqualTypeOf<Conversation["idolGroup"]>();
+      expectTypeOf<UpdateConversationWithMetadataArgs["p_has_title"]>()
+        .toEqualTypeOf<boolean>();
+      expectTypeOf<UpdateConversationWithMetadataArgs["p_title"]>()
+        .toEqualTypeOf<string | null>();
     });
   });
 });
