@@ -10,6 +10,7 @@ users
 sources  
 conversations  
 conversation_active_periods  
+conversation_participants  
 records  
 attachments
 
@@ -33,6 +34,18 @@ attachments
 - `end_date` が `null` の場合は現在進行中
 - 会話期間日数は複数区間の和集合を日単位で数える
 - ギャップ期間は日数に含めない
+
+---
+
+## conversation_participants
+
+会話ごとの相手側参加者を保持するテーブル。
+
+- 1会話に対して 1 人以上の参加者を持てる
+- 自分自身は保持しない
+- `name` と `sort_order` を持つ
+- 1 人トークか複数人トークかは参加者数で判断する
+- 将来的には各レコードの発言者選択に利用する
 
 ---
 
