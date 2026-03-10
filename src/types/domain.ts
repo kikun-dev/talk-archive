@@ -8,6 +8,15 @@ export const RecordType = {
 
 export type RecordType = (typeof RecordType)[keyof typeof RecordType];
 
+/** 坂道グループ */
+export const IdolGroup = {
+  NOGIZAKA: "nogizaka",
+  SAKURAZAKA: "sakurazaka",
+  HINATAZAKA: "hinatazaka",
+} as const;
+
+export type IdolGroup = (typeof IdolGroup)[keyof typeof IdolGroup];
+
 /** ユーザー */
 export type User = {
   id: string;
@@ -29,9 +38,20 @@ export type Conversation = {
   id: string;
   userId: string;
   sourceId: string | null;
+  idolGroup: IdolGroup;
+  coverImagePath: string | null;
   title: string;
   createdAt: string;
   updatedAt: string;
+};
+
+/** 会話期間 */
+export type ConversationActivePeriod = {
+  id: string;
+  conversationId: string;
+  startDate: string;
+  endDate: string | null;
+  createdAt: string;
 };
 
 /** トークレコード */

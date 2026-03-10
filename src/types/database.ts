@@ -69,26 +69,64 @@ export type Database = {
           },
         ]
       }
+      conversation_active_periods: {
+        Row: {
+          conversation_id: string
+          created_at: string
+          end_date: string | null
+          id: string
+          start_date: string
+        }
+        Insert: {
+          conversation_id: string
+          created_at?: string
+          end_date?: string | null
+          id?: string
+          start_date: string
+        }
+        Update: {
+          conversation_id?: string
+          created_at?: string
+          end_date?: string | null
+          id?: string
+          start_date?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "conversation_active_periods_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       conversations: {
         Row: {
+          cover_image_path: string | null
           created_at: string
           id: string
+          idol_group: Database["public"]["Enums"]["idol_group"]
           source_id: string | null
           title: string
           updated_at: string
           user_id: string
         }
         Insert: {
+          cover_image_path?: string | null
           created_at?: string
           id?: string
+          idol_group?: Database["public"]["Enums"]["idol_group"]
           source_id?: string | null
           title: string
           updated_at?: string
           user_id: string
         }
         Update: {
+          cover_image_path?: string | null
           created_at?: string
           id?: string
+          idol_group?: Database["public"]["Enums"]["idol_group"]
           source_id?: string | null
           title?: string
           updated_at?: string
@@ -195,10 +233,55 @@ export type Database = {
           updated_at: string
         }[]
       }
+      create_conversation_with_metadata: {
+        Args: {
+          p_active_periods: Json
+          p_cover_image_path: string | null
+          p_idol_group: Database["public"]["Enums"]["idol_group"]
+          p_source_id: string | null
+          p_title: string
+          p_user_id: string
+        }
+        Returns: {
+          cover_image_path: string | null
+          created_at: string
+          id: string
+          idol_group: Database["public"]["Enums"]["idol_group"]
+          source_id: string | null
+          title: string
+          updated_at: string
+          user_id: string
+        }[]
+      }
       show_limit: { Args: never; Returns: number }
       show_trgm: { Args: { "": string }; Returns: string[] }
+      update_conversation_with_metadata: {
+        Args: {
+          p_active_periods: Json
+          p_conversation_id: string
+          p_cover_image_path: string | null
+          p_has_cover_image_path: boolean
+          p_has_idol_group: boolean
+          p_has_source_id: boolean
+          p_has_title: boolean
+          p_idol_group: Database["public"]["Enums"]["idol_group"] | null
+          p_source_id: string | null
+          p_title: string | null
+        }
+        Returns: {
+          cover_image_path: string | null
+          created_at: string
+          id: string
+          idol_group: Database["public"]["Enums"]["idol_group"]
+          source_id: string | null
+          title: string
+          updated_at: string
+          user_id: string
+        }[]
+      }
     }
     Enums: {
+      idol_group: "nogizaka" | "sakurazaka" | "hinatazaka"
       record_type: "text" | "image" | "video" | "audio"
     }
     CompositeTypes: {
@@ -330,6 +413,7 @@ export const Constants = {
   },
   public: {
     Enums: {
+      idol_group: ["nogizaka", "sakurazaka", "hinatazaka"],
       record_type: ["text", "image", "video", "audio"],
     },
   },
