@@ -1,0 +1,368 @@
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Database } from "@/types/database";
+import {
+  getRecordsByConversation,
+  getRecord,
+  createRecord,
+  updateRecord,
+  deleteRecord,
+  searchRecords,
+} from "./recordRepository";
+
+type RecordRow = Database["public"]["Tables"]["records"]["Row"];
+
+const baseRow: RecordRow = {
+  id: "rec-1",
+  conversation_id: "conv-1",
+  record_type: "text",
+  title: "テストタイトル",
+  content: "テスト内容",
+  has_audio: false,
+  position: 0,
+  created_at: "2026-01-01T00:00:00Z",
+  updated_at: "2026-01-01T00:00:00Z",
+};
+
+function createMockQueryBuilder(overrides: Record<string, unknown> = {}) {
+  const builder: Record<string, ReturnType<typeof vi.fn>> = {};
+  const methods = [
+    "select",
+    "insert",
+    "update",
+    "delete",
+    "eq",
+    "ilike",
+    "order",
+    "single",
+    "maybeSingle",
+  ];
+  for (const method of methods) {
+    builder[method] = vi.fn().mockReturnValue(builder);
+  }
+  Object.assign(builder, overrides);
+  return builder;
+}
+
+function createMockClient(
+  builder: Record<string, ReturnType<typeof vi.fn>>,
+): SupabaseClient<Database> {
+  return {
+    from: vi.fn().mockReturnValue(builder),
+  } as unknown as SupabaseClient<Database>;
+}
+
+describe("recordRepository", () => {
+  let builder: Record<string, ReturnType<typeof vi.fn>>;
+  let client: SupabaseClient<Database>;
+
+  beforeEach(() => {
+    vi.resetAllMocks();
+  });
+
+  describe("getRecordsByConversation", () => {
+    it("returns records ordered by position", async () => {
+      const rows = [
+        baseRow,
+        { ...baseRow, id: "rec-2", position: 1, title: "2番目" },
+      ];
+      builder = createMockQueryBuilder({
+        order: vi.fn().mockResolvedValue({ data: rows, error: null }),
+      });
+      client = createMockClient(builder);
+
+      const result = await getRecordsByConversation(client, "conv-1");
+
+      expect(result).toHaveLength(2);
+      expect(result[0].id).toBe("rec-1");
+      expect(result[0].conversationId).toBe("conv-1");
+      expect(result[0].recordType).toBe("text");
+      expect(result[1].position).toBe(1);
+      expect(builder.eq).toHaveBeenCalledWith("conversation_id", "conv-1");
+      expect(builder.order).toHaveBeenCalledWith("position", {
+        ascending: true,
+      });
+    });
+
+    it("throws on error", async () => {
+      const dbError = { message: "DB error", code: "42000" };
+      builder = createMockQueryBuilder({
+        order: vi.fn().mockResolvedValue({ data: null, error: dbError }),
+      });
+      client = createMockClient(builder);
+
+      await expect(
+        getRecordsByConversation(client, "conv-1"),
+      ).rejects.toEqual(dbError);
+    });
+  });
+
+  describe("getRecord", () => {
+    it("returns a single record", async () => {
+      builder = createMockQueryBuilder({
+        maybeSingle: vi
+          .fn()
+          .mockResolvedValue({ data: baseRow, error: null }),
+      });
+      client = createMockClient(builder);
+
+      const result = await getRecord(client, "rec-1");
+
+      expect(result).toEqual({
+        id: "rec-1",
+        conversationId: "conv-1",
+        recordType: "text",
+        title: "テストタイトル",
+        content: "テスト内容",
+        hasAudio: false,
+        position: 0,
+        createdAt: "2026-01-01T00:00:00Z",
+        updatedAt: "2026-01-01T00:00:00Z",
+      });
+    });
+
+    it("returns null when not found", async () => {
+      builder = createMockQueryBuilder({
+        maybeSingle: vi
+          .fn()
+          .mockResolvedValue({ data: null, error: null }),
+      });
+      client = createMockClient(builder);
+
+      const result = await getRecord(client, "nonexistent");
+
+      expect(result).toBeNull();
+    });
+
+    it("throws on error", async () => {
+      const dbError = { message: "DB error", code: "42000" };
+      builder = createMockQueryBuilder({
+        maybeSingle: vi
+          .fn()
+          .mockResolvedValue({ data: null, error: dbError }),
+      });
+      client = createMockClient(builder);
+
+      await expect(getRecord(client, "rec-1")).rejects.toEqual(dbError);
+    });
+  });
+
+  describe("createRecord", () => {
+    it("creates a text record", async () => {
+      builder = createMockQueryBuilder({
+        single: vi.fn().mockResolvedValue({ data: baseRow, error: null }),
+      });
+      client = createMockClient(builder);
+
+      const result = await createRecord(client, {
+        conversationId: "conv-1",
+        recordType: "text",
+        content: "テスト内容",
+      });
+
+      expect(result.id).toBe("rec-1");
+      expect(result.recordType).toBe("text");
+      expect(builder.insert).toHaveBeenCalledWith({
+        conversation_id: "conv-1",
+        record_type: "text",
+        title: null,
+        content: "テスト内容",
+        has_audio: false,
+        position: 0,
+      });
+    });
+
+    it("creates a record with all optional fields", async () => {
+      const imageRow: RecordRow = {
+        ...baseRow,
+        record_type: "image",
+        has_audio: true,
+        position: 3,
+      };
+      builder = createMockQueryBuilder({
+        single: vi
+          .fn()
+          .mockResolvedValue({ data: imageRow, error: null }),
+      });
+      client = createMockClient(builder);
+
+      const result = await createRecord(client, {
+        conversationId: "conv-1",
+        recordType: "image",
+        title: "テストタイトル",
+        content: "テスト内容",
+        hasAudio: true,
+        position: 3,
+      });
+
+      expect(result.recordType).toBe("image");
+      expect(result.hasAudio).toBe(true);
+      expect(result.position).toBe(3);
+      expect(builder.insert).toHaveBeenCalledWith({
+        conversation_id: "conv-1",
+        record_type: "image",
+        title: "テストタイトル",
+        content: "テスト内容",
+        has_audio: true,
+        position: 3,
+      });
+    });
+
+    it("throws on error", async () => {
+      const dbError = { message: "Insert error", code: "23505" };
+      builder = createMockQueryBuilder({
+        single: vi
+          .fn()
+          .mockResolvedValue({ data: null, error: dbError }),
+      });
+      client = createMockClient(builder);
+
+      await expect(
+        createRecord(client, {
+          conversationId: "conv-1",
+          recordType: "text",
+          content: "テスト",
+        }),
+      ).rejects.toEqual(dbError);
+    });
+  });
+
+  describe("updateRecord", () => {
+    it("updates content", async () => {
+      const updatedRow = { ...baseRow, content: "更新後の内容" };
+      builder = createMockQueryBuilder({
+        single: vi
+          .fn()
+          .mockResolvedValue({ data: updatedRow, error: null }),
+      });
+      client = createMockClient(builder);
+
+      const result = await updateRecord(client, "rec-1", {
+        content: "更新後の内容",
+      });
+
+      expect(result.content).toBe("更新後の内容");
+      expect(builder.update).toHaveBeenCalledWith({
+        content: "更新後の内容",
+      });
+      expect(builder.eq).toHaveBeenCalledWith("id", "rec-1");
+    });
+
+    it("updates multiple fields", async () => {
+      const updatedRow = {
+        ...baseRow,
+        title: "新タイトル",
+        has_audio: true,
+        position: 5,
+      };
+      builder = createMockQueryBuilder({
+        single: vi
+          .fn()
+          .mockResolvedValue({ data: updatedRow, error: null }),
+      });
+      client = createMockClient(builder);
+
+      const result = await updateRecord(client, "rec-1", {
+        title: "新タイトル",
+        hasAudio: true,
+        position: 5,
+      });
+
+      expect(result.title).toBe("新タイトル");
+      expect(result.hasAudio).toBe(true);
+      expect(result.position).toBe(5);
+      expect(builder.update).toHaveBeenCalledWith({
+        title: "新タイトル",
+        has_audio: true,
+        position: 5,
+      });
+    });
+
+    it("throws on error", async () => {
+      const dbError = { message: "Update error", code: "42000" };
+      builder = createMockQueryBuilder({
+        single: vi
+          .fn()
+          .mockResolvedValue({ data: null, error: dbError }),
+      });
+      client = createMockClient(builder);
+
+      await expect(
+        updateRecord(client, "rec-1", { content: "test" }),
+      ).rejects.toEqual(dbError);
+    });
+  });
+
+  describe("deleteRecord", () => {
+    it("deletes a record", async () => {
+      builder = createMockQueryBuilder({
+        eq: vi.fn().mockResolvedValue({ error: null }),
+      });
+      client = createMockClient(builder);
+
+      await expect(
+        deleteRecord(client, "rec-1"),
+      ).resolves.toBeUndefined();
+      expect(builder.delete).toHaveBeenCalled();
+      expect(builder.eq).toHaveBeenCalledWith("id", "rec-1");
+    });
+
+    it("throws on error", async () => {
+      const dbError = { message: "Delete error", code: "42000" };
+      builder = createMockQueryBuilder({
+        eq: vi.fn().mockResolvedValue({ error: dbError }),
+      });
+      client = createMockClient(builder);
+
+      await expect(deleteRecord(client, "rec-1")).rejects.toEqual(dbError);
+    });
+  });
+
+  describe("searchRecords", () => {
+    it("searches records by content with ILIKE", async () => {
+      builder = createMockQueryBuilder({
+        order: vi.fn().mockResolvedValue({ data: [baseRow], error: null }),
+      });
+      client = createMockClient(builder);
+
+      const result = await searchRecords(client, "user-1", "テスト");
+
+      expect(result).toHaveLength(1);
+      expect(result[0].content).toBe("テスト内容");
+      expect(builder.select).toHaveBeenCalledWith(
+        "*, conversations!inner(user_id)",
+      );
+      expect(builder.eq).toHaveBeenCalledWith(
+        "conversations.user_id",
+        "user-1",
+      );
+      expect(builder.ilike).toHaveBeenCalledWith("content", "%テスト%");
+      expect(builder.order).toHaveBeenCalledWith("created_at", {
+        ascending: false,
+      });
+    });
+
+    it("returns empty array when no matches", async () => {
+      builder = createMockQueryBuilder({
+        order: vi.fn().mockResolvedValue({ data: [], error: null }),
+      });
+      client = createMockClient(builder);
+
+      const result = await searchRecords(client, "user-1", "存在しない");
+
+      expect(result).toEqual([]);
+    });
+
+    it("throws on error", async () => {
+      const dbError = { message: "Search error", code: "42000" };
+      builder = createMockQueryBuilder({
+        order: vi.fn().mockResolvedValue({ data: null, error: dbError }),
+      });
+      client = createMockClient(builder);
+
+      await expect(
+        searchRecords(client, "user-1", "テスト"),
+      ).rejects.toEqual(dbError);
+    });
+  });
+});
