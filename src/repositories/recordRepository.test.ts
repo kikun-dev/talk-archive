@@ -5,6 +5,7 @@ import {
   getRecordsByConversation,
   getRecord,
   createRecord,
+  createTextRecordAtNextPosition,
   updateRecord,
   deleteRecord,
   searchRecords,
@@ -31,6 +32,7 @@ function createMockQueryBuilder(overrides: Record<string, unknown> = {}) {
     "insert",
     "update",
     "delete",
+    "rpc",
     "eq",
     "ilike",
     "order",
@@ -49,6 +51,7 @@ function createMockClient(
 ): SupabaseClient<Database> {
   return {
     from: vi.fn().mockReturnValue(builder),
+    rpc: vi.fn().mockReturnValue(builder),
   } as unknown as SupabaseClient<Database>;
 }
 
@@ -289,6 +292,45 @@ describe("recordRepository", () => {
 
       await expect(
         updateRecord(client, "rec-1", { content: "test" }),
+      ).rejects.toEqual(dbError);
+    });
+  });
+
+  describe("createTextRecordAtNextPosition", () => {
+    it("creates a text record via rpc", async () => {
+      builder = createMockQueryBuilder({
+        single: vi.fn().mockResolvedValue({ data: baseRow, error: null }),
+      });
+      client = createMockClient(builder);
+
+      const result = await createTextRecordAtNextPosition(client, {
+        conversationId: "conv-1",
+        title: "テストタイトル",
+        content: "テスト内容",
+      });
+
+      expect(result.id).toBe("rec-1");
+      expect(result.position).toBe(0);
+      expect(client.rpc).toHaveBeenCalledWith("append_text_record", {
+        p_conversation_id: "conv-1",
+        p_title: "テストタイトル",
+        p_content: "テスト内容",
+      });
+    });
+
+    it("throws on rpc error", async () => {
+      const dbError = { message: "RPC error", code: "23505" };
+      builder = createMockQueryBuilder({
+        single: vi.fn().mockResolvedValue({ data: null, error: dbError }),
+      });
+      client = createMockClient(builder);
+
+      await expect(
+        createTextRecordAtNextPosition(client, {
+          conversationId: "conv-1",
+          title: null,
+          content: "テスト内容",
+        }),
       ).rejects.toEqual(dbError);
     });
   });

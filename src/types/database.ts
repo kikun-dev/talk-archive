@@ -177,6 +177,24 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      append_text_record: {
+        Args: {
+          p_content: string
+          p_conversation_id: string
+          p_title: string | null
+        }
+        Returns: {
+          content: string | null
+          conversation_id: string
+          created_at: string
+          has_audio: boolean
+          id: string
+          position: number
+          record_type: Database["public"]["Enums"]["record_type"]
+          title: string | null
+          updated_at: string
+        }[]
+      }
       show_limit: { Args: never; Returns: number }
       show_trgm: { Args: { "": string }; Returns: string[] }
     }
@@ -316,4 +334,3 @@ export const Constants = {
     },
   },
 } as const
-

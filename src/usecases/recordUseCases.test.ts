@@ -13,16 +13,16 @@ import {
 vi.mock("@/repositories/recordRepository");
 
 import {
-  createRecord,
+  createTextRecordAtNextPosition,
   updateRecord,
   deleteRecord,
-  getRecordsByConversation,
 } from "@/repositories/recordRepository";
 
-const mockCreateRecord = vi.mocked(createRecord);
+const mockCreateTextRecordAtNextPosition = vi.mocked(
+  createTextRecordAtNextPosition,
+);
 const mockUpdateRecord = vi.mocked(updateRecord);
 const mockDeleteRecord = vi.mocked(deleteRecord);
-const mockGetRecordsByConversation = vi.mocked(getRecordsByConversation);
 
 const client = {} as SupabaseClient<Database>;
 
@@ -103,12 +103,8 @@ describe("recordUseCases", () => {
   });
 
   describe("addTextRecord", () => {
-    it("creates text record with next position", async () => {
-      mockGetRecordsByConversation.mockResolvedValue([
-        { ...baseRecord, position: 0 },
-        { ...baseRecord, id: "rec-2", position: 1 },
-      ]);
-      mockCreateRecord.mockResolvedValue({
+    it("creates text record via repository append helper", async () => {
+      mockCreateTextRecordAtNextPosition.mockResolvedValue({
         ...baseRecord,
         id: "rec-3",
         position: 2,
@@ -120,36 +116,15 @@ describe("recordUseCases", () => {
       });
 
       expect(result.position).toBe(2);
-      expect(mockCreateRecord).toHaveBeenCalledWith(client, {
+      expect(mockCreateTextRecordAtNextPosition).toHaveBeenCalledWith(client, {
         conversationId: "conv-1",
-        recordType: "text",
         title: null,
         content: "新しいテキスト",
-        position: 2,
       });
     });
 
-    it("creates first record at position 0", async () => {
-      mockGetRecordsByConversation.mockResolvedValue([]);
-      mockCreateRecord.mockResolvedValue(baseRecord);
-
-      await addTextRecord(client, {
-        conversationId: "conv-1",
-        content: "最初のテキスト",
-      });
-
-      expect(mockCreateRecord).toHaveBeenCalledWith(client, {
-        conversationId: "conv-1",
-        recordType: "text",
-        title: null,
-        content: "最初のテキスト",
-        position: 0,
-      });
-    });
-
-    it("trims content and title", async () => {
-      mockGetRecordsByConversation.mockResolvedValue([]);
-      mockCreateRecord.mockResolvedValue(baseRecord);
+    it("trims content and title before append", async () => {
+      mockCreateTextRecordAtNextPosition.mockResolvedValue(baseRecord);
 
       await addTextRecord(client, {
         conversationId: "conv-1",
@@ -157,12 +132,10 @@ describe("recordUseCases", () => {
         title: "  タイトル  ",
       });
 
-      expect(mockCreateRecord).toHaveBeenCalledWith(client, {
+      expect(mockCreateTextRecordAtNextPosition).toHaveBeenCalledWith(client, {
         conversationId: "conv-1",
-        recordType: "text",
         title: "タイトル",
         content: "テスト内容",
-        position: 0,
       });
     });
 
@@ -174,7 +147,7 @@ describe("recordUseCases", () => {
         }),
       ).rejects.toThrow("テキストを入力してください");
 
-      expect(mockCreateRecord).not.toHaveBeenCalled();
+      expect(mockCreateTextRecordAtNextPosition).not.toHaveBeenCalled();
     });
   });
 
@@ -212,6 +185,12 @@ describe("recordUseCases", () => {
 
     it("rejects whitespace-only content", () => {
       expect(validateUpdateRecordInput({ content: "   " })).toBe(
+        "テキストを入力してください",
+      );
+    });
+
+    it("rejects null content", () => {
+      expect(validateUpdateRecordInput({ content: null })).toBe(
         "テキストを入力してください",
       );
     });
@@ -257,6 +236,14 @@ describe("recordUseCases", () => {
     it("throws on invalid input", async () => {
       await expect(
         updateExistingRecord(client, "rec-1", { content: "" }),
+      ).rejects.toThrow("テキストを入力してください");
+
+      expect(mockUpdateRecord).not.toHaveBeenCalled();
+    });
+
+    it("throws on null content", async () => {
+      await expect(
+        updateExistingRecord(client, "rec-1", { content: null }),
       ).rejects.toThrow("テキストを入力してください");
 
       expect(mockUpdateRecord).not.toHaveBeenCalled();

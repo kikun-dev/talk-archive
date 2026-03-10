@@ -2,10 +2,9 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
 import type { Record } from "@/types/domain";
 import {
-  createRecord,
+  createTextRecordAtNextPosition,
   updateRecord,
   deleteRecord,
-  getRecordsByConversation,
 } from "@/repositories/recordRepository";
 
 export type AddTextRecordInput = {
@@ -41,21 +40,10 @@ export async function addTextRecord(
     throw new Error(validationError);
   }
 
-  const records = await getRecordsByConversation(
-    client,
-    input.conversationId,
-  );
-  const nextPosition =
-    records.length > 0
-      ? Math.max(...records.map((r) => r.position)) + 1
-      : 0;
-
-  return createRecord(client, {
+  return createTextRecordAtNextPosition(client, {
     conversationId: input.conversationId,
-    recordType: "text",
     title: input.title?.trim() ?? null,
     content: input.content.trim(),
-    position: nextPosition,
   });
 }
 
@@ -83,6 +71,9 @@ export function validateUpdateRecordInput(
     if (trimmedContent.length === 0) {
       return "テキストを入力してください";
     }
+  }
+  if (input.content === null) {
+    return "テキストを入力してください";
   }
 
   return null;

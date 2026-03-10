@@ -83,6 +83,29 @@ export async function createRecord(
   return toRecord(data);
 }
 
+export async function createTextRecordAtNextPosition(
+  client: SupabaseClient<Database>,
+  params: {
+    conversationId: string;
+    title: string | null;
+    content: string;
+  },
+): Promise<Record> {
+  const { data, error } = await client
+    .rpc("append_text_record", {
+      p_conversation_id: params.conversationId,
+      p_title: params.title,
+      p_content: params.content,
+    })
+    .single();
+
+  if (error) {
+    throw error;
+  }
+
+  return toRecord(data);
+}
+
 export async function updateRecord(
   client: SupabaseClient<Database>,
   id: string,
