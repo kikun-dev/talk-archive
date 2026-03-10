@@ -56,3 +56,8 @@ export type Attachment = {
   fileSize: number;
   createdAt: string;
 };
+
+/** メディア一覧表示用の添付ファイル */
+export type MediaAttachment = Attachment & {
+  conversationId: string;
+};

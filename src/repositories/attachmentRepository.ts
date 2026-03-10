@@ -1,8 +1,15 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
-import type { Attachment, RecordType } from "@/types/domain";
+import type { Attachment, MediaAttachment, RecordType } from "@/types/domain";
 
 type AttachmentRow = Database["public"]["Tables"]["attachments"]["Row"];
+type RecordRow = Database["public"]["Tables"]["records"]["Row"];
+type ConversationRow = Database["public"]["Tables"]["conversations"]["Row"];
+type AttachmentWithRecordRow = AttachmentRow & {
+  records: Pick<RecordRow, "conversation_id" | "record_type"> & {
+    conversations: Pick<ConversationRow, "user_id">;
+  };
+};
 
 function toAttachment(row: AttachmentRow): Attachment {
   return {
@@ -12,6 +19,13 @@ function toAttachment(row: AttachmentRow): Attachment {
     mimeType: row.mime_type,
     fileSize: row.file_size,
     createdAt: row.created_at,
+  };
+}
+
+function toMediaAttachment(row: AttachmentWithRecordRow): MediaAttachment {
+  return {
+    ...toAttachment(row),
+    conversationId: row.records.conversation_id,
   };
 }
 
@@ -37,11 +51,11 @@ export async function getAttachmentsByType(
   userId: string,
   recordType: RecordType,
   options?: { limit?: number; offset?: number },
-): Promise<Attachment[]> {
+): Promise<MediaAttachment[]> {
   let query = client
     .from("attachments")
     .select(
-      "*, records!inner(record_type, conversations!inner(user_id))",
+      "*, records!inner(conversation_id, record_type, conversations!inner(user_id))",
     )
     .eq("records.conversations.user_id", userId)
     .eq("records.record_type", recordType)
@@ -63,7 +77,7 @@ export async function getAttachmentsByType(
     throw error;
   }
 
-  return data.map((row) => toAttachment(row as unknown as AttachmentRow));
+  return data.map((row) => toMediaAttachment(row as AttachmentWithRecordRow));
 }
 
 export async function createAttachment(

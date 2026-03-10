@@ -9,6 +9,15 @@ import {
 } from "./attachmentRepository";
 
 type AttachmentRow = Database["public"]["Tables"]["attachments"]["Row"];
+type AttachmentWithRecordRow = AttachmentRow & {
+  records: {
+    conversation_id: string;
+    record_type: "text" | "image" | "video" | "audio";
+    conversations: {
+      user_id: string;
+    };
+  };
+};
 
 const baseRow: AttachmentRow = {
   id: "att-1",
@@ -98,10 +107,20 @@ describe("attachmentRepository", () => {
 
   describe("getAttachmentsByType", () => {
     it("returns attachments filtered by record type and user", async () => {
+      const mediaRow: AttachmentWithRecordRow = {
+        ...baseRow,
+        records: {
+          conversation_id: "conv-1",
+          record_type: "image",
+          conversations: {
+            user_id: "user-1",
+          },
+        },
+      };
       builder = createMockQueryBuilder({
         order: vi
           .fn()
-          .mockResolvedValue({ data: [baseRow], error: null }),
+          .mockResolvedValue({ data: [mediaRow], error: null }),
       });
       client = createMockClient(builder);
 
@@ -109,8 +128,9 @@ describe("attachmentRepository", () => {
 
       expect(result).toHaveLength(1);
       expect(result[0].id).toBe("att-1");
+      expect(result[0].conversationId).toBe("conv-1");
       expect(builder.select).toHaveBeenCalledWith(
-        "*, records!inner(record_type, conversations!inner(user_id))",
+        "*, records!inner(conversation_id, record_type, conversations!inner(user_id))",
       );
       expect(builder.eq).toHaveBeenCalledWith(
         "records.conversations.user_id",
