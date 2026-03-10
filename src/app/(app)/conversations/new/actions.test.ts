@@ -78,6 +78,19 @@ describe("createConversationAction", () => {
     expect(result).toEqual({ error: "会話期間のデータが不正です" });
   });
 
+  it("returns error when activePeriods JSON shape is invalid", async () => {
+    mockSupabaseClient({ id: "user-1" });
+
+    const { createConversationAction } = await import("./actions");
+    const formData = createFormData({
+      ...validFormData,
+      activePeriods: JSON.stringify({ startDate: "2026-01-01" }),
+    });
+    const result = await createConversationAction(undefined, formData);
+
+    expect(result).toEqual({ error: "会話期間のデータが不正です" });
+  });
+
   it("returns error when validation fails", async () => {
     mockSupabaseClient({ id: "user-1" });
     validateCreateConversationInputMock.mockReturnValue(
@@ -98,6 +111,19 @@ describe("createConversationAction", () => {
     const formData = createFormData({
       ...validFormData,
       participants: "invalid-json",
+    });
+    const result = await createConversationAction(undefined, formData);
+
+    expect(result).toEqual({ error: "参加者のデータが不正です" });
+  });
+
+  it("returns error when participants JSON shape is invalid", async () => {
+    mockSupabaseClient({ id: "user-1" });
+
+    const { createConversationAction } = await import("./actions");
+    const formData = createFormData({
+      ...validFormData,
+      participants: JSON.stringify({ name: "メンバーA" }),
     });
     const result = await createConversationAction(undefined, formData);
 
