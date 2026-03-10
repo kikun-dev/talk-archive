@@ -101,6 +101,38 @@ export type Database = {
           },
         ]
       }
+      conversation_participants: {
+        Row: {
+          conversation_id: string
+          created_at: string
+          id: string
+          name: string
+          sort_order: number
+        }
+        Insert: {
+          conversation_id: string
+          created_at?: string
+          id?: string
+          name: string
+          sort_order: number
+        }
+        Update: {
+          conversation_id?: string
+          created_at?: string
+          id?: string
+          name?: string
+          sort_order?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "conversation_participants_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       conversations: {
         Row: {
           cover_image_path: string | null
@@ -238,6 +270,7 @@ export type Database = {
           p_active_periods: Json
           p_cover_image_path: string | null
           p_idol_group: Database["public"]["Enums"]["idol_group"]
+          p_participants: Json
           p_source_id: string | null
           p_title: string
           p_user_id: string
@@ -260,11 +293,14 @@ export type Database = {
           p_active_periods: Json
           p_conversation_id: string
           p_cover_image_path: string | null
+          p_has_active_periods: boolean
           p_has_cover_image_path: boolean
           p_has_idol_group: boolean
+          p_has_participants: boolean
           p_has_source_id: boolean
           p_has_title: boolean
           p_idol_group: Database["public"]["Enums"]["idol_group"] | null
+          p_participants: Json
           p_source_id: string | null
           p_title: string | null
         }

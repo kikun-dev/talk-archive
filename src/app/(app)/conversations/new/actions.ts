@@ -28,6 +28,7 @@ export async function createConversationAction(
   const title = formData.get("title") as string;
   const idolGroup = formData.get("idolGroup") as string;
   const activePeriodsJson = formData.get("activePeriods") as string;
+  const participantsJson = formData.get("participants") as string;
 
   let activePeriods: Array<{ startDate: string; endDate?: string | null }>;
   try {
@@ -36,11 +37,19 @@ export async function createConversationAction(
     return { error: "会話期間のデータが不正です" };
   }
 
+  let participants: Array<{ name: string }>;
+  try {
+    participants = JSON.parse(participantsJson || "[]");
+  } catch {
+    return { error: "参加者のデータが不正です" };
+  }
+
   const input = {
     userId: user.id,
     title,
     idolGroup: idolGroup as IdolGroup,
     activePeriods,
+    participants,
   };
 
   const validationError = validateCreateConversationInput(input);

@@ -92,6 +92,9 @@ export async function createConversationWithMetadata(
       startDate: string;
       endDate?: string | null;
     }>;
+    participants: Array<{
+      name: string;
+    }>;
   },
 ): Promise<Conversation> {
   const { data, error } = await client
@@ -104,6 +107,10 @@ export async function createConversationWithMetadata(
       p_active_periods: params.activePeriods.map((period) => ({
         start_date: period.startDate,
         end_date: period.endDate ?? null,
+      })),
+      p_participants: params.participants.map((participant, index) => ({
+        name: participant.name,
+        sort_order: index,
       })),
     })
     .single();
@@ -162,9 +169,12 @@ export async function updateConversationWithMetadata(
     idolGroup?: IdolGroup;
     sourceId?: string | null;
     coverImagePath?: string | null;
-    activePeriods: Array<{
+    activePeriods?: Array<{
       startDate: string;
       endDate?: string | null;
+    }>;
+    participants?: Array<{
+      name: string;
     }>;
   },
 ): Promise<Conversation> {
@@ -179,10 +189,18 @@ export async function updateConversationWithMetadata(
       p_has_source_id: params.sourceId !== undefined,
       p_cover_image_path: params.coverImagePath ?? null,
       p_has_cover_image_path: params.coverImagePath !== undefined,
-      p_active_periods: params.activePeriods.map((period) => ({
+      p_active_periods: (params.activePeriods ?? []).map((period) => ({
         start_date: period.startDate,
         end_date: period.endDate ?? null,
       })),
+      p_has_active_periods: params.activePeriods !== undefined,
+      p_participants: (params.participants ?? []).map(
+        (participant, index) => ({
+          name: participant.name,
+          sort_order: index,
+        }),
+      ),
+      p_has_participants: params.participants !== undefined,
     })
     .single();
 

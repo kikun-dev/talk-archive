@@ -46,6 +46,7 @@ const validFormData = {
   title: "テスト会話",
   idolGroup: "nogizaka",
   activePeriods: JSON.stringify([{ startDate: "2026-01-01", endDate: null }]),
+  participants: JSON.stringify([{ name: "メンバーA" }]),
 };
 
 describe("createConversationAction", () => {
@@ -90,6 +91,19 @@ describe("createConversationAction", () => {
     expect(result).toEqual({ error: "タイトルを入力してください" });
   });
 
+  it("returns error when participants JSON is invalid", async () => {
+    mockSupabaseClient({ id: "user-1" });
+
+    const { createConversationAction } = await import("./actions");
+    const formData = createFormData({
+      ...validFormData,
+      participants: "invalid-json",
+    });
+    const result = await createConversationAction(undefined, formData);
+
+    expect(result).toEqual({ error: "参加者のデータが不正です" });
+  });
+
   it("creates conversation and redirects on success", async () => {
     mockSupabaseClient({ id: "user-1" });
     validateCreateConversationInputMock.mockReturnValue(null);
@@ -107,6 +121,7 @@ describe("createConversationAction", () => {
         title: "テスト会話",
         idolGroup: "nogizaka",
         activePeriods: [{ startDate: "2026-01-01", endDate: null }],
+        participants: [{ name: "メンバーA" }],
       }),
     );
     expect(redirectMock).toHaveBeenCalledWith("/conversations/conv-new");

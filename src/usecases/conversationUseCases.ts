@@ -3,6 +3,7 @@ import type { Database } from "@/types/database";
 import type {
   Conversation,
   ConversationActivePeriod,
+  ConversationParticipant,
   IdolGroup,
   Record,
 } from "@/types/domain";
@@ -15,10 +16,12 @@ import {
   updateConversationWithMetadata,
 } from "@/repositories/conversationRepository";
 import { getConversationActivePeriods } from "@/repositories/conversationActivePeriodRepository";
+import { getConversationParticipants } from "@/repositories/conversationParticipantRepository";
 import { getRecordsByConversation } from "@/repositories/recordRepository";
 
 export type ConversationWithMetadata = Conversation & {
   activePeriods: ConversationActivePeriod[];
+  participants: ConversationParticipant[];
   activeDays: number;
 };
 
@@ -29,6 +32,10 @@ export type ConversationWithRecords = ConversationWithMetadata & {
 export type ConversationActivePeriodInput = {
   startDate: string;
   endDate?: string | null;
+};
+
+export type ConversationParticipantInput = {
+  name: string;
 };
 
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
@@ -101,6 +108,34 @@ export function validateConversationActivePeriods(
   return null;
 }
 
+export function validateConversationParticipants(
+  participants: ConversationParticipantInput[],
+): string | null {
+  if (participants.length === 0) {
+    return "参加者を1人以上入力してください";
+  }
+
+  const normalizedNames = new Set<string>();
+
+  for (const participant of participants) {
+    const trimmedName = participant.name.trim();
+
+    if (trimmedName.length === 0) {
+      return "参加者名を入力してください";
+    }
+    if (trimmedName.length > 100) {
+      return "参加者名は100文字以内で入力してください";
+    }
+    if (normalizedNames.has(trimmedName)) {
+      return "参加者名が重複しています";
+    }
+
+    normalizedNames.add(trimmedName);
+  }
+
+  return null;
+}
+
 export function calculateConversationActiveDays(
   periods: ConversationActivePeriodInput[] | ConversationActivePeriod[],
   today: Date = new Date(),
@@ -160,11 +195,13 @@ export async function getConversationWithRecords(
   }
 
   const activePeriods = await getConversationActivePeriods(client, id);
+  const participants = await getConversationParticipants(client, id);
   const records = await getRecordsByConversation(client, id);
 
   return {
     ...conversation,
     activePeriods,
+    participants,
     activeDays: calculateConversationActiveDays(activePeriods),
     records,
   };
@@ -177,6 +214,7 @@ export type CreateConversationInput = {
   sourceId?: string | null;
   coverImagePath?: string | null;
   activePeriods: ConversationActivePeriodInput[];
+  participants: ConversationParticipantInput[];
 };
 
 export function validateCreateConversationInput(
@@ -193,7 +231,12 @@ export function validateCreateConversationInput(
     return "グループを選択してください";
   }
 
-  return validateConversationActivePeriods(input.activePeriods);
+  const activePeriodError = validateConversationActivePeriods(input.activePeriods);
+  if (activePeriodError) {
+    return activePeriodError;
+  }
+
+  return validateConversationParticipants(input.participants);
 }
 
 export async function createNewConversation(
@@ -212,12 +255,17 @@ export async function createNewConversation(
     sourceId: input.sourceId,
     coverImagePath: input.coverImagePath,
     activePeriods: input.activePeriods,
+    participants: input.participants.map((participant) => ({
+      name: participant.name.trim(),
+    })),
   });
   const activePeriods = await getConversationActivePeriods(client, conversation.id);
+  const participants = await getConversationParticipants(client, conversation.id);
 
   return {
     ...conversation,
     activePeriods,
+    participants,
     activeDays: calculateConversationActiveDays(activePeriods),
   };
 }
@@ -228,6 +276,7 @@ export type UpdateConversationInput = {
   sourceId?: string | null;
   coverImagePath?: string | null;
   activePeriods?: ConversationActivePeriodInput[];
+  participants?: ConversationParticipantInput[];
 };
 
 export function validateUpdateConversationInput(
@@ -238,7 +287,8 @@ export function validateUpdateConversationInput(
     input.idolGroup === undefined &&
     input.sourceId === undefined &&
     input.coverImagePath === undefined &&
-    input.activePeriods === undefined
+    input.activePeriods === undefined &&
+    input.participants === undefined
   ) {
     return "更新項目を指定してください";
   }
@@ -258,7 +308,14 @@ export function validateUpdateConversationInput(
   }
 
   if (input.activePeriods !== undefined) {
-    return validateConversationActivePeriods(input.activePeriods);
+    const activePeriodError = validateConversationActivePeriods(input.activePeriods);
+    if (activePeriodError) {
+      return activePeriodError;
+    }
+  }
+
+  if (input.participants !== undefined) {
+    return validateConversationParticipants(input.participants);
   }
 
   return null;
@@ -275,13 +332,16 @@ export async function updateExistingConversation(
   }
 
   const conversation =
-    input.activePeriods !== undefined
+    input.activePeriods !== undefined || input.participants !== undefined
       ? await updateConversationWithMetadata(client, id, {
           title: input.title?.trim(),
           idolGroup: input.idolGroup,
           sourceId: input.sourceId,
           coverImagePath: input.coverImagePath,
           activePeriods: input.activePeriods,
+          participants: input.participants?.map((participant) => ({
+            name: participant.name.trim(),
+          })),
         })
       : await updateConversation(client, id, {
           title: input.title?.trim(),
@@ -290,10 +350,12 @@ export async function updateExistingConversation(
           coverImagePath: input.coverImagePath,
         });
   const activePeriods = await getConversationActivePeriods(client, id);
+  const participants = await getConversationParticipants(client, id);
 
   return {
     ...conversation,
     activePeriods,
+    participants,
     activeDays: calculateConversationActiveDays(activePeriods),
   };
 }

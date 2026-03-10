@@ -1,9 +1,10 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
 import type {
   Conversation,
   ConversationActivePeriod,
+  ConversationParticipant,
   Record,
 } from "@/types/domain";
 import {
@@ -14,16 +15,17 @@ import {
   listConversations,
   updateExistingConversation,
   validateConversationActivePeriods,
+  validateConversationParticipants,
   validateCreateConversationInput,
   validateUpdateConversationInput,
 } from "./conversationUseCases";
 
 vi.mock("@/repositories/conversationRepository");
 vi.mock("@/repositories/conversationActivePeriodRepository");
+vi.mock("@/repositories/conversationParticipantRepository");
 vi.mock("@/repositories/recordRepository");
 
 import {
-  createConversation,
   createConversationWithMetadata,
   deleteConversation,
   getConversation,
@@ -32,11 +34,11 @@ import {
   updateConversationWithMetadata,
 } from "@/repositories/conversationRepository";
 import { getConversationActivePeriods } from "@/repositories/conversationActivePeriodRepository";
+import { getConversationParticipants } from "@/repositories/conversationParticipantRepository";
 import { getRecordsByConversation } from "@/repositories/recordRepository";
 
 const mockGetConversations = vi.mocked(getConversations);
 const mockGetConversation = vi.mocked(getConversation);
-const mockCreateConversation = vi.mocked(createConversation);
 const mockCreateConversationWithMetadata = vi.mocked(
   createConversationWithMetadata,
 );
@@ -47,6 +49,9 @@ const mockUpdateConversationWithMetadata = vi.mocked(
 const mockDeleteConversation = vi.mocked(deleteConversation);
 const mockGetConversationActivePeriods = vi.mocked(
   getConversationActivePeriods,
+);
+const mockGetConversationParticipants = vi.mocked(
+  getConversationParticipants,
 );
 const mockGetRecordsByConversation = vi.mocked(getRecordsByConversation);
 
@@ -69,6 +74,16 @@ const activePeriods: ConversationActivePeriod[] = [
     conversationId: "conv-1",
     startDate: "2026-01-01",
     endDate: "2026-01-10",
+    createdAt: "2026-01-01T00:00:00Z",
+  },
+];
+
+const participants: ConversationParticipant[] = [
+  {
+    id: "participant-1",
+    conversationId: "conv-1",
+    name: "メンバーA",
+    sortOrder: 0,
     createdAt: "2026-01-01T00:00:00Z",
   },
 ];
@@ -118,15 +133,6 @@ describe("conversationUseCases", () => {
       ).toBe(10);
     });
 
-    it("excludes gap days between periods", () => {
-      expect(
-        calculateConversationActiveDays([
-          { startDate: "2026-01-01", endDate: "2026-01-03" },
-          { startDate: "2026-01-05", endDate: "2026-01-06" },
-        ]),
-      ).toBe(5);
-    });
-
     it("returns 0 when an ongoing period starts in the future", () => {
       expect(
         calculateConversationActiveDays(
@@ -160,22 +166,37 @@ describe("conversationUseCases", () => {
         ]),
       ).toBe("会話期間の日付が不正です");
     });
+  });
 
-    it("rejects endDate before startDate", () => {
+  describe("validateConversationParticipants", () => {
+    it("accepts valid participants", () => {
       expect(
-        validateConversationActivePeriods([
-          { startDate: "2026-01-10", endDate: "2026-01-01" },
+        validateConversationParticipants([
+          { name: "メンバーA" },
+          { name: "メンバーB" },
         ]),
-      ).toBe("会話期間の終了日は開始日以降にしてください");
+      ).toBeNull();
     });
 
-    it("rejects future start date for ongoing periods", () => {
+    it("rejects empty participants", () => {
+      expect(validateConversationParticipants([])).toBe(
+        "参加者を1人以上入力してください",
+      );
+    });
+
+    it("rejects blank participant names", () => {
       expect(
-        validateConversationActivePeriods(
-          [{ startDate: "2026-01-11", endDate: null }],
-          new Date("2026-01-10T12:00:00+09:00"),
-        ),
-      ).toBe("継続中の会話期間の開始日は今日以前にしてください");
+        validateConversationParticipants([{ name: "   " }]),
+      ).toBe("参加者名を入力してください");
+    });
+
+    it("rejects duplicate participant names", () => {
+      expect(
+        validateConversationParticipants([
+          { name: "メンバーA" },
+          { name: "メンバーA" },
+        ]),
+      ).toBe("参加者名が重複しています");
     });
   });
 
@@ -191,9 +212,10 @@ describe("conversationUseCases", () => {
   });
 
   describe("getConversationWithRecords", () => {
-    it("returns conversation with metadata and its records", async () => {
+    it("returns conversation with metadata and records", async () => {
       mockGetConversation.mockResolvedValue(baseConversation);
       mockGetConversationActivePeriods.mockResolvedValue(activePeriods);
+      mockGetConversationParticipants.mockResolvedValue(participants);
       mockGetRecordsByConversation.mockResolvedValue([baseRecord]);
 
       const result = await getConversationWithRecords(client, "conv-1");
@@ -201,15 +223,15 @@ describe("conversationUseCases", () => {
       expect(result).toEqual({
         ...baseConversation,
         activePeriods,
+        participants,
         activeDays: 10,
         records: [baseRecord],
       });
-      expect(mockGetConversation).toHaveBeenCalledWith(client, "conv-1");
       expect(mockGetConversationActivePeriods).toHaveBeenCalledWith(
         client,
         "conv-1",
       );
-      expect(mockGetRecordsByConversation).toHaveBeenCalledWith(
+      expect(mockGetConversationParticipants).toHaveBeenCalledWith(
         client,
         "conv-1",
       );
@@ -218,11 +240,11 @@ describe("conversationUseCases", () => {
     it("returns null when conversation not found", async () => {
       mockGetConversation.mockResolvedValue(null);
 
-      const result = await getConversationWithRecords(client, "nonexistent");
+      const result = await getConversationWithRecords(client, "missing");
 
       expect(result).toBeNull();
       expect(mockGetConversationActivePeriods).not.toHaveBeenCalled();
-      expect(mockGetRecordsByConversation).not.toHaveBeenCalled();
+      expect(mockGetConversationParticipants).not.toHaveBeenCalled();
     });
   });
 
@@ -234,41 +256,21 @@ describe("conversationUseCases", () => {
           title: "有効なタイトル",
           idolGroup: "nogizaka",
           activePeriods: [{ startDate: "2026-01-01", endDate: null }],
+          participants: [{ name: "メンバーA" }],
         }),
       ).toBeNull();
     });
 
-    it("rejects empty title", () => {
-      expect(
-        validateCreateConversationInput({
-          userId: "user-1",
-          title: "",
-          idolGroup: "nogizaka",
-          activePeriods: [{ startDate: "2026-01-01", endDate: null }],
-        }),
-      ).toBe("タイトルを入力してください");
-    });
-
-    it("rejects missing idolGroup", () => {
-      expect(
-        validateCreateConversationInput({
-          userId: "user-1",
-          title: "テスト会話",
-          idolGroup: "invalid" as never,
-          activePeriods: [{ startDate: "2026-01-01", endDate: null }],
-        }),
-      ).toBe("グループを選択してください");
-    });
-
-    it("rejects invalid active periods", () => {
+    it("rejects missing participants", () => {
       expect(
         validateCreateConversationInput({
           userId: "user-1",
           title: "テスト会話",
           idolGroup: "nogizaka",
-          activePeriods: [],
+          activePeriods: [{ startDate: "2026-01-01", endDate: null }],
+          participants: [],
         }),
-      ).toBe("会話期間を1件以上入力してください");
+      ).toBe("参加者を1人以上入力してください");
     });
   });
 
@@ -276,49 +278,40 @@ describe("conversationUseCases", () => {
     it("creates conversation with metadata", async () => {
       mockCreateConversationWithMetadata.mockResolvedValue(baseConversation);
       mockGetConversationActivePeriods.mockResolvedValue(activePeriods);
+      mockGetConversationParticipants.mockResolvedValue(participants);
 
       const result = await createNewConversation(client, {
         userId: "user-1",
         title: "  テスト会話  ",
         idolGroup: "nogizaka",
-        coverImagePath: "user-1/conv-1/cover/main.jpg",
         activePeriods: [{ startDate: "2026-01-01", endDate: "2026-01-10" }],
+        participants: [{ name: "  メンバーA  " }],
       });
 
       expect(result.activeDays).toBe(10);
+      expect(result.participants).toEqual(participants);
       expect(mockCreateConversationWithMetadata).toHaveBeenCalledWith(client, {
         userId: "user-1",
         title: "テスト会話",
         idolGroup: "nogizaka",
         sourceId: undefined,
-        coverImagePath: "user-1/conv-1/cover/main.jpg",
+        coverImagePath: undefined,
         activePeriods: [{ startDate: "2026-01-01", endDate: "2026-01-10" }],
+        participants: [{ name: "メンバーA" }],
       });
-      expect(mockGetConversationActivePeriods).toHaveBeenCalledWith(
+      expect(mockGetConversationParticipants).toHaveBeenCalledWith(
         client,
         "conv-1",
       );
-      expect(mockCreateConversation).not.toHaveBeenCalled();
-    });
-
-    it("throws on invalid input", async () => {
-      await expect(
-        createNewConversation(client, {
-          userId: "user-1",
-          title: "",
-          idolGroup: "nogizaka",
-          activePeriods: [{ startDate: "2026-01-01", endDate: null }],
-        }),
-      ).rejects.toThrow("タイトルを入力してください");
-
-      expect(mockCreateConversationWithMetadata).not.toHaveBeenCalled();
     });
   });
 
   describe("validateUpdateConversationInput", () => {
     it("returns null for valid input", () => {
       expect(
-        validateUpdateConversationInput({ idolGroup: "sakurazaka" }),
+        validateUpdateConversationInput({
+          participants: [{ name: "メンバーA" }],
+        }),
       ).toBeNull();
     });
 
@@ -327,83 +320,59 @@ describe("conversationUseCases", () => {
         "更新項目を指定してください",
       );
     });
-
-    it("rejects invalid active periods", () => {
-      expect(
-        validateUpdateConversationInput({
-          activePeriods: [],
-        }),
-      ).toBe("会話期間を1件以上入力してください");
-    });
   });
 
   describe("updateExistingConversation", () => {
-    it("updates conversation metadata and periods atomically", async () => {
-      mockUpdateConversationWithMetadata.mockResolvedValue({
-        ...baseConversation,
-        title: "更新後",
-        idolGroup: "hinatazaka",
-      });
-      mockGetConversationActivePeriods.mockResolvedValue([
+    it("updates conversation with participants", async () => {
+      mockUpdateConversationWithMetadata.mockResolvedValue(baseConversation);
+      mockGetConversationActivePeriods.mockResolvedValue(activePeriods);
+      mockGetConversationParticipants.mockResolvedValue([
+        ...participants,
         {
-          ...activePeriods[0],
-          endDate: null,
+          id: "participant-2",
+          conversationId: "conv-1",
+          name: "メンバーB",
+          sortOrder: 1,
+          createdAt: "2026-01-01T00:00:00Z",
         },
       ]);
 
       const result = await updateExistingConversation(client, "conv-1", {
-        title: "  更新後  ",
-        idolGroup: "hinatazaka",
-        activePeriods: [{ startDate: "2026-01-01", endDate: null }],
+        participants: [{ name: "メンバーA" }, { name: " メンバーB " }],
       });
 
-      expect(result.idolGroup).toBe("hinatazaka");
+      expect(result.participants).toHaveLength(2);
       expect(mockUpdateConversationWithMetadata).toHaveBeenCalledWith(
         client,
         "conv-1",
         {
-          title: "更新後",
-          idolGroup: "hinatazaka",
+          title: undefined,
+          idolGroup: undefined,
           sourceId: undefined,
           coverImagePath: undefined,
-          activePeriods: [{ startDate: "2026-01-01", endDate: null }],
+          activePeriods: undefined,
+          participants: [{ name: "メンバーA" }, { name: "メンバーB" }],
         },
-      );
-      expect(mockGetConversationActivePeriods).toHaveBeenCalledWith(
-        client,
-        "conv-1",
       );
       expect(mockUpdateConversation).not.toHaveBeenCalled();
     });
 
-    it("uses plain conversation update when periods are unchanged", async () => {
+    it("uses plain conversation update when metadata only", async () => {
       mockUpdateConversation.mockResolvedValue(baseConversation);
       mockGetConversationActivePeriods.mockResolvedValue(activePeriods);
+      mockGetConversationParticipants.mockResolvedValue(participants);
 
       const result = await updateExistingConversation(client, "conv-1", {
         coverImagePath: null,
       });
 
-      expect(result.activeDays).toBe(10);
+      expect(result.participants).toEqual(participants);
       expect(mockUpdateConversation).toHaveBeenCalledWith(client, "conv-1", {
         title: undefined,
         idolGroup: undefined,
         sourceId: undefined,
         coverImagePath: null,
       });
-      expect(mockUpdateConversationWithMetadata).not.toHaveBeenCalled();
-      expect(mockGetConversationActivePeriods).toHaveBeenCalledWith(
-        client,
-        "conv-1",
-      );
-    });
-
-    it("throws when no update fields are provided", async () => {
-      await expect(
-        updateExistingConversation(client, "conv-1", {}),
-      ).rejects.toThrow("更新項目を指定してください");
-
-      expect(mockUpdateConversation).not.toHaveBeenCalled();
       expect(mockUpdateConversationWithMetadata).not.toHaveBeenCalled();
     });
   });

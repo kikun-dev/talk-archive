@@ -6,12 +6,19 @@ import {
   type CreateConversationState,
 } from "@/app/(app)/conversations/new/actions";
 import { ActivePeriodFields } from "@/components/ActivePeriodFields";
-import type { ConversationActivePeriodInput } from "@/usecases/conversationUseCases";
+import { ParticipantFields } from "@/components/ParticipantFields";
+import type {
+  ConversationActivePeriodInput,
+  ConversationParticipantInput,
+} from "@/usecases/conversationUseCases";
 
 export function NewConversationForm() {
   const [activePeriods, setActivePeriods] = useState<
     ConversationActivePeriodInput[]
   >([{ startDate: "", endDate: null }]);
+  const [participants, setParticipants] = useState<
+    ConversationParticipantInput[]
+  >([{ name: "" }]);
 
   const [state, formAction, isPending] = useActionState<
     CreateConversationState,
@@ -57,11 +64,20 @@ export function NewConversationForm() {
         periods={activePeriods}
         onChange={setActivePeriods}
       />
+      <ParticipantFields
+        participants={participants}
+        onChange={setParticipants}
+      />
 
       <input
         type="hidden"
         name="activePeriods"
         value={JSON.stringify(activePeriods)}
+      />
+      <input
+        type="hidden"
+        name="participants"
+        value={JSON.stringify(participants)}
       />
 
       {state?.error && (
