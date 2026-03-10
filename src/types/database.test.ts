@@ -3,16 +3,20 @@ import type { Database } from "./database";
 import type {
   Source,
   Conversation,
+  ConversationActivePeriod,
+  IdolGroup,
   Record,
   Attachment,
   RecordType,
 } from "./domain";
 
 type Tables = Database["public"]["Tables"];
+type ConversationActivePeriodRow = Tables["conversation_active_periods"]["Row"];
 type SourceRow = Tables["sources"]["Row"];
 type ConversationRow = Tables["conversations"]["Row"];
 type RecordRow = Tables["records"]["Row"];
 type AttachmentRow = Tables["attachments"]["Row"];
+type DbIdolGroup = Database["public"]["Enums"]["idol_group"];
 type DbRecordType = Database["public"]["Enums"]["record_type"];
 
 describe("database types", () => {
@@ -37,6 +41,8 @@ describe("database types", () => {
       expectTypeOf<ConversationRow>().toHaveProperty("id");
       expectTypeOf<ConversationRow>().toHaveProperty("user_id");
       expectTypeOf<ConversationRow>().toHaveProperty("source_id");
+      expectTypeOf<ConversationRow>().toHaveProperty("idol_group");
+      expectTypeOf<ConversationRow>().toHaveProperty("cover_image_path");
       expectTypeOf<ConversationRow>().toHaveProperty("title");
       expectTypeOf<ConversationRow>().toHaveProperty("created_at");
       expectTypeOf<ConversationRow>().toHaveProperty("updated_at");
@@ -52,8 +58,38 @@ describe("database types", () => {
       expectTypeOf<ConversationRow["source_id"]>().toEqualTypeOf<
         Conversation["sourceId"]
       >();
+      expectTypeOf<ConversationRow["idol_group"]>().toEqualTypeOf<
+        Conversation["idolGroup"]
+      >();
+      expectTypeOf<ConversationRow["cover_image_path"]>().toEqualTypeOf<
+        Conversation["coverImagePath"]
+      >();
       expectTypeOf<ConversationRow["title"]>().toEqualTypeOf<
         Conversation["title"]
+      >();
+    });
+  });
+
+  describe("ConversationActivePeriod", () => {
+    it("Row has the expected columns", () => {
+      expectTypeOf<ConversationActivePeriodRow>().toHaveProperty("id");
+      expectTypeOf<ConversationActivePeriodRow>().toHaveProperty(
+        "conversation_id",
+      );
+      expectTypeOf<ConversationActivePeriodRow>().toHaveProperty("start_date");
+      expectTypeOf<ConversationActivePeriodRow>().toHaveProperty("end_date");
+      expectTypeOf<ConversationActivePeriodRow>().toHaveProperty("created_at");
+    });
+
+    it("Row column types match domain types", () => {
+      expectTypeOf<ConversationActivePeriodRow["conversation_id"]>().toEqualTypeOf<
+        ConversationActivePeriod["conversationId"]
+      >();
+      expectTypeOf<ConversationActivePeriodRow["start_date"]>().toEqualTypeOf<
+        ConversationActivePeriod["startDate"]
+      >();
+      expectTypeOf<ConversationActivePeriodRow["end_date"]>().toEqualTypeOf<
+        ConversationActivePeriod["endDate"]
       >();
     });
   });
@@ -117,6 +153,12 @@ describe("database types", () => {
   describe("record_type enum", () => {
     it("matches RecordType domain type", () => {
       expectTypeOf<DbRecordType>().toEqualTypeOf<RecordType>();
+    });
+  });
+
+  describe("idol_group enum", () => {
+    it("matches IdolGroup domain type", () => {
+      expectTypeOf<DbIdolGroup>().toEqualTypeOf<IdolGroup>();
     });
   });
 });

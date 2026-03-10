@@ -15,6 +15,8 @@ const baseRow: ConversationRow = {
   id: "conv-1",
   user_id: "user-1",
   source_id: null,
+  idol_group: "nogizaka",
+  cover_image_path: null,
   title: "テスト会話",
   created_at: "2026-01-01T00:00:00Z",
   updated_at: "2026-01-01T00:00:00Z",
@@ -69,6 +71,8 @@ describe("conversationRepository", () => {
           id: "conv-1",
           userId: "user-1",
           sourceId: null,
+          idolGroup: "nogizaka",
+          coverImagePath: null,
           title: "テスト会話",
           createdAt: "2026-01-01T00:00:00Z",
           updatedAt: "2026-01-01T00:00:00Z",
@@ -109,6 +113,8 @@ describe("conversationRepository", () => {
         id: "conv-1",
         userId: "user-1",
         sourceId: null,
+        idolGroup: "nogizaka",
+        coverImagePath: null,
         title: "テスト会話",
         createdAt: "2026-01-01T00:00:00Z",
         updatedAt: "2026-01-01T00:00:00Z",
@@ -153,6 +159,7 @@ describe("conversationRepository", () => {
 
       const result = await createConversation(client, {
         userId: "user-1",
+        idolGroup: "nogizaka",
         title: "テスト会話",
       });
 
@@ -161,7 +168,9 @@ describe("conversationRepository", () => {
       expect(builder.insert).toHaveBeenCalledWith({
         user_id: "user-1",
         title: "テスト会話",
+        idol_group: "nogizaka",
         source_id: null,
+        cover_image_path: null,
       });
     });
 
@@ -176,6 +185,7 @@ describe("conversationRepository", () => {
 
       const result = await createConversation(client, {
         userId: "user-1",
+        idolGroup: "nogizaka",
         title: "テスト会話",
         sourceId: "source-1",
       });
@@ -184,7 +194,35 @@ describe("conversationRepository", () => {
       expect(builder.insert).toHaveBeenCalledWith({
         user_id: "user-1",
         title: "テスト会話",
+        idol_group: "nogizaka",
         source_id: "source-1",
+        cover_image_path: null,
+      });
+    });
+
+    it("creates with coverImagePath", async () => {
+      const rowWithCover = { ...baseRow, cover_image_path: "user-1/conv-1/cover/main.jpg" };
+      builder = createMockQueryBuilder({
+        single: vi
+          .fn()
+          .mockResolvedValue({ data: rowWithCover, error: null }),
+      });
+      client = createMockClient(builder);
+
+      const result = await createConversation(client, {
+        userId: "user-1",
+        idolGroup: "sakurazaka",
+        title: "テスト会話",
+        coverImagePath: "user-1/conv-1/cover/main.jpg",
+      });
+
+      expect(result.coverImagePath).toBe("user-1/conv-1/cover/main.jpg");
+      expect(builder.insert).toHaveBeenCalledWith({
+        user_id: "user-1",
+        title: "テスト会話",
+        idol_group: "sakurazaka",
+        source_id: null,
+        cover_image_path: "user-1/conv-1/cover/main.jpg",
       });
     });
 
@@ -198,7 +236,11 @@ describe("conversationRepository", () => {
       client = createMockClient(builder);
 
       await expect(
-        createConversation(client, { userId: "user-1", title: "テスト" }),
+        createConversation(client, {
+          userId: "user-1",
+          idolGroup: "nogizaka",
+          title: "テスト",
+        }),
       ).rejects.toEqual(dbError);
     });
   });
@@ -220,6 +262,32 @@ describe("conversationRepository", () => {
       expect(result.title).toBe("更新後");
       expect(builder.update).toHaveBeenCalledWith({ title: "更新後" });
       expect(builder.eq).toHaveBeenCalledWith("id", "conv-1");
+    });
+
+    it("updates idolGroup and coverImagePath", async () => {
+      const updatedRow = {
+        ...baseRow,
+        idol_group: "hinatazaka",
+        cover_image_path: "user-1/conv-1/cover/updated.jpg",
+      };
+      builder = createMockQueryBuilder({
+        single: vi
+          .fn()
+          .mockResolvedValue({ data: updatedRow, error: null }),
+      });
+      client = createMockClient(builder);
+
+      const result = await updateConversation(client, "conv-1", {
+        idolGroup: "hinatazaka",
+        coverImagePath: "user-1/conv-1/cover/updated.jpg",
+      });
+
+      expect(result.idolGroup).toBe("hinatazaka");
+      expect(result.coverImagePath).toBe("user-1/conv-1/cover/updated.jpg");
+      expect(builder.update).toHaveBeenCalledWith({
+        idol_group: "hinatazaka",
+        cover_image_path: "user-1/conv-1/cover/updated.jpg",
+      });
     });
 
     it("updates sourceId", async () => {

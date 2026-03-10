@@ -8,6 +8,8 @@ const baseConversation: Conversation = {
   userId: "user-1",
   sourceId: null,
   title: "テスト会話",
+  idolGroup: "nogizaka",
+  coverImagePath: null,
   createdAt: "2026-01-15T00:00:00Z",
   updatedAt: "2026-01-20T00:00:00Z",
 };

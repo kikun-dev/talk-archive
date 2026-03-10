@@ -69,26 +69,64 @@ export type Database = {
           },
         ]
       }
+      conversation_active_periods: {
+        Row: {
+          conversation_id: string
+          created_at: string
+          end_date: string | null
+          id: string
+          start_date: string
+        }
+        Insert: {
+          conversation_id: string
+          created_at?: string
+          end_date?: string | null
+          id?: string
+          start_date: string
+        }
+        Update: {
+          conversation_id?: string
+          created_at?: string
+          end_date?: string | null
+          id?: string
+          start_date?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "conversation_active_periods_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       conversations: {
         Row: {
+          cover_image_path: string | null
           created_at: string
           id: string
+          idol_group: Database["public"]["Enums"]["idol_group"]
           source_id: string | null
           title: string
           updated_at: string
           user_id: string
         }
         Insert: {
+          cover_image_path?: string | null
           created_at?: string
           id?: string
+          idol_group?: Database["public"]["Enums"]["idol_group"]
           source_id?: string | null
           title: string
           updated_at?: string
           user_id: string
         }
         Update: {
+          cover_image_path?: string | null
           created_at?: string
           id?: string
+          idol_group?: Database["public"]["Enums"]["idol_group"]
           source_id?: string | null
           title?: string
           updated_at?: string
@@ -199,6 +237,7 @@ export type Database = {
       show_trgm: { Args: { "": string }; Returns: string[] }
     }
     Enums: {
+      idol_group: "nogizaka" | "sakurazaka" | "hinatazaka"
       record_type: "text" | "image" | "video" | "audio"
     }
     CompositeTypes: {
@@ -330,6 +369,7 @@ export const Constants = {
   },
   public: {
     Enums: {
+      idol_group: ["nogizaka", "sakurazaka", "hinatazaka"],
       record_type: ["text", "image", "video", "audio"],
     },
   },
