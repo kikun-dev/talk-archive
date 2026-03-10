@@ -78,6 +78,10 @@ export type UpdateConversationInput = {
 export function validateUpdateConversationInput(
   input: UpdateConversationInput,
 ): string | null {
+  if (input.title === undefined && input.sourceId === undefined) {
+    return "更新項目を指定してください";
+  }
+
   if (input.title !== undefined) {
     const trimmed = input.title.trim();
     if (trimmed.length === 0) {

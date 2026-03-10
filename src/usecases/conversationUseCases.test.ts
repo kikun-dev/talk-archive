@@ -202,6 +202,21 @@ describe("conversationUseCases", () => {
       ).toBeNull();
     });
 
+    it("rejects empty update input", () => {
+      expect(validateUpdateConversationInput({})).toBe(
+        "更新項目を指定してください",
+      );
+    });
+
+    it("rejects update input when all fields are undefined", () => {
+      expect(
+        validateUpdateConversationInput({
+          title: undefined,
+          sourceId: undefined,
+        }),
+      ).toBe("更新項目を指定してください");
+    });
+
     it("rejects empty title", () => {
       expect(validateUpdateConversationInput({ title: "" })).toBe(
         "タイトルを入力してください",
@@ -260,6 +275,14 @@ describe("conversationUseCases", () => {
       await expect(
         updateExistingConversation(client, "conv-1", { title: "" }),
       ).rejects.toThrow("タイトルを入力してください");
+
+      expect(mockUpdateConversation).not.toHaveBeenCalled();
+    });
+
+    it("throws when no update fields are provided", async () => {
+      await expect(
+        updateExistingConversation(client, "conv-1", {}),
+      ).rejects.toThrow("更新項目を指定してください");
 
       expect(mockUpdateConversation).not.toHaveBeenCalled();
     });
