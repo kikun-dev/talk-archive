@@ -33,7 +33,10 @@ create table records (
   has_audio boolean not null default false,
   position integer not null default 0,
   created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
+  updated_at timestamptz not null default now(),
+  constraint records_text_content_check check (
+    record_type <> 'text' or content is not null
+  )
 );
 
 -- Attachments: media file metadata
@@ -72,7 +75,17 @@ create policy "Users can manage their own sources"
 create policy "Users can manage their own conversations"
   on conversations for all
   using (auth.uid() = user_id)
-  with check (auth.uid() = user_id);
+  with check (
+    auth.uid() = user_id
+    and (
+      source_id is null
+      or exists (
+        select 1 from sources
+        where sources.id = conversations.source_id
+          and sources.user_id = auth.uid()
+      )
+    )
+  );
 
 create policy "Users can manage records in their conversations"
   on records for all

@@ -43,6 +43,7 @@ docs/database.md で定義された5テーブル（users, sources, conversations
 - **users テーブルは作成しない。** `auth.users` を直接参照する。単一ユーザーアプリのため、プロフィール拡張の必要性が低い。将来必要になれば `profiles` テーブルを追加する。
 - **pg_trgm + GIN インデックス** を採用。Supabase Cloud で利用可能で、日本語の部分一致検索に十分対応できる。
 - **RLS** を全テーブルに設定し、`auth.uid()` でユーザーを制限する。records と attachments は親テーブル経由で所有者を判定する。
+- conversations は **同一ユーザーが所有する source のみ参照可能** とし、records は **text レコードで content を必須** にする。
 - **updated_at** の自動更新トリガーを設定する。
 
 ## Consequences
@@ -50,3 +51,4 @@ docs/database.md で定義された5テーブル（users, sources, conversations
 - users テーブルが無いため、ユーザープロフィール情報の保存には別途テーブル追加が必要
 - pg_trgm は形態素解析ではないため、日本語の検索精度に限界がある（データ量増加時に外部検索サービスを検討）
 - records/attachments の RLS は EXISTS サブクエリを使うため、大量データ時にパフォーマンスへの影響を確認する必要がある
+- 制約を DB に寄せたため、UseCase/Repository 層は不正データを前提にした防御を減らせる一方、将来仕様変更時はマイグレーション更新が必要
