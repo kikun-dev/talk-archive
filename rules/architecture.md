@@ -8,11 +8,11 @@ CLAUDE.md の「アーキテクチャ前提（A運用）」を具体化したも
 ## レイヤー構成
 
 ```
-UI層（app/, components/）
+UI層（src/app/, src/components/）
   ↓ 呼び出す
-UseCase層（usecases/）
+UseCase層（src/usecases/）
   ↓ 呼び出す
-Data/Repository層（repositories/）
+Data/Repository層（src/repositories/）
   ↓ アクセスする
 外部サービス（Supabase, Storage）
 ```
@@ -21,11 +21,11 @@ Data/Repository層（repositories/）
 
 | レイヤー | 配置先 | 責務 | 許可される依存 |
 |---------|--------|------|---------------|
-| UI | `app/`, `components/` | 表示・ユーザー操作・Server Actions の定義 | UseCase, types |
-| UseCase | `usecases/` | ビジネスロジック・バリデーション・オーケストレーション | Repository, types |
-| Repository | `repositories/` | DB/Storage/API アクセス（副作用） | lib（Supabase client）, types |
-| Lib | `lib/` | Supabase クライアント等のユーティリティ | 外部ライブラリのみ |
-| Types | `types/` | 型定義 | なし（純粋な型のみ） |
+| UI | `src/app/`, `src/components/` | 表示・ユーザー操作・Server Actions の定義 | UseCase, types |
+| UseCase | `src/usecases/` | ビジネスロジック・バリデーション・オーケストレーション | Repository, types |
+| Repository | `src/repositories/` | DB/Storage/API アクセス（副作用） | lib（Supabase client）, types |
+| Lib | `src/lib/` | Supabase クライアント等のユーティリティ | 外部ライブラリのみ |
+| Types | `src/types/` | 型定義 | なし（純粋な型のみ） |
 
 ---
 
@@ -40,7 +40,7 @@ Data/Repository層（repositories/）
 - Repository が UseCase を import する
 - UseCase が UI コンポーネントを import する
 - Repository が別の Repository を直接呼ぶ（UseCase で合成する）
-- `types/` が他のレイヤーを import する
+- `src/types/` が他のレイヤーを import する
 
 ---
 
@@ -76,8 +76,8 @@ Data/Repository層（repositories/）
 
 - `any` 禁止
 - 型は明示的に書く（過度な型推論に頼らない）
-- ドメイン型は `types/` に集約する
-- Supabase 生成型（`Database`）は `types/database.ts` に配置し、Repository 層でのみ直接参照する
+- ドメイン型は `src/types/` に集約する
+- Supabase 生成型（`Database`）は `src/types/database.ts` に配置し、Repository 層でのみ直接参照する
 - UseCase/UI 層はドメイン型を使用する（DB スキーマの詳細を漏洩させない）
 
 ---

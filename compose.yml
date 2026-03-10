@@ -2,14 +2,13 @@ services:
   web:
     build:
       context: .
-      dockerfile: apps/web/Dockerfile
-    working_dir: /app/apps/web
+      dockerfile: Dockerfile
+    working_dir: /app
     ports:
       - "3000:3000"
     volumes:
       - .:/app
       - /app/node_modules
-      - /app/apps/web/node_modules
     environment:
       NODE_ENV: development
     command: pnpm dev --hostname 0.0.0.0
