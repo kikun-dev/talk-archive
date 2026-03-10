@@ -1,0 +1,57 @@
+name: "Bug"
+description: "不具合報告・修正"
+title: "[Bug] "
+labels: ["type:bug"]
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: 概要
+      placeholder: 何が起きているか（1〜3行）
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: 再現手順
+      placeholder: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期待する挙動
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: 実際の挙動
+    validations:
+      required: true
+
+  - type: textarea
+    id: env
+    attributes:
+      label: 環境情報（任意）
+      placeholder: |
+        - 端末：
+        - ブラウザ：
+        - 画面/URL：
+        - ログ：
+    validations:
+      required: false
+
+  - type: textarea
+    id: fix_notes
+    attributes:
+      label: 修正方針メモ（任意）
+      description: 原因仮説・影響範囲・暫定対応など
+    validations:
+      required: false

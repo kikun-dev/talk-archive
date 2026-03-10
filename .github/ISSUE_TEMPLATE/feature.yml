@@ -1,0 +1,92 @@
+name: "Feature"
+description: "機能追加・改善（設計ログを残す）"
+title: "[Feature] "
+labels: ["type:feature"]
+body:
+  - type: textarea
+    id: background
+    attributes:
+      label: 背景
+      description: なぜ必要か（現状の課題/きっかけ）
+      placeholder: |
+        例）推し活イベントの出費をイベント単位で把握したいが、現状タグが弱い
+    validations:
+      required: true
+
+  - type: textarea
+    id: goals
+    attributes:
+      label: Goals（達成したいこと）
+      placeholder: |
+        - ユーザーが◯◯できる
+        - ◯◯が◯◯になる
+    validations:
+      required: true
+
+  - type: textarea
+    id: non_goals
+    attributes:
+      label: Non-goals（やらないこと）
+      placeholder: |
+        - 今回は◯◯しない
+        - 管理画面の作成は別Issue
+    validations:
+      required: false
+
+  - type: textarea
+    id: acceptance_criteria
+    attributes:
+      label: Acceptance Criteria（受け入れ条件）
+      description: “完了”を客観的に判定できる条件
+      placeholder: |
+        - [ ] ◯◯ができる
+        - [ ] バリデーション：◯◯
+        - [ ] エッジケース：◯◯
+    validations:
+      required: true
+
+  - type: textarea
+    id: constraints
+    attributes:
+      label: Constraints（固定方針）
+      description: A運用の前提（守るべき方針）
+      value: |
+        - Next.js + TypeScript 前提
+        - 層分離（UI / UseCase / Data）を維持
+        - 新規ライブラリ追加は最小限（理由と代替案を書く）
+    validations:
+      required: true
+
+  - type: textarea
+    id: design_notes
+    attributes:
+      label: Design notes（案・比較・決定）
+      description: AIに設計提案させる欄。決めたら「Decision」を追記。
+      placeholder: |
+        ## Options
+        - 案A：
+        - 案B：
+
+        ## Recommendation
+        - 推奨：
+
+        ## Trade-offs
+        - 
+
+        ## Decision
+        - （決定したらここに残す）
+    validations:
+      required: false
+
+  - type: textarea
+    id: tasks
+    attributes:
+      label: Tasks（実装タスク）
+      placeholder: |
+        - [ ] UI
+        - [ ] UseCase
+        - [ ] Data
+        - [ ] テスト
+        - [ ] ドキュメント更新（必要なら）
+    validations:
+      required: false

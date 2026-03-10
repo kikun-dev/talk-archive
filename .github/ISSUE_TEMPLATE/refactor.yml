@@ -1,0 +1,53 @@
+name: "Refactor"
+description: "リファクタ（振る舞いは基本不変）"
+title: "[Refactor] "
+labels: ["type:refactor"]
+body:
+  - type: textarea
+    id: background
+    attributes:
+      label: 背景（なぜ今やるか）
+    validations:
+      required: true
+
+  - type: textarea
+    id: scope
+    attributes:
+      label: スコープ
+      placeholder: |
+        - 対象：
+        - 非対象：
+    validations:
+      required: true
+
+  - type: textarea
+    id: risk
+    attributes:
+      label: リスク/影響範囲
+      placeholder: |
+        - 影響：
+        - ロールバック：
+    validations:
+      required: false
+
+  - type: textarea
+    id: acceptance_criteria
+    attributes:
+      label: 完了条件
+      placeholder: |
+        - [ ] 振る舞い不変（確認方法：）
+        - [ ] テストが通る
+    validations:
+      required: true
+
+  - type: textarea
+    id: tasks
+    attributes:
+      label: Tasks
+      placeholder: |
+        - [ ] 分割/移動
+        - [ ] 依存方向確認
+        - [ ] テスト
+        - [ ] docs更新（必要なら）
+    validations:
+      required: false
