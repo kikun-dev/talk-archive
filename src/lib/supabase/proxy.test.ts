@@ -18,9 +18,9 @@ describe("updateSession", () => {
     vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://example.supabase.co");
     vi.stubEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY", "test-anon-key");
 
-    createServerClientMock.mockImplementation((_url, _key, _options) => ({
+    createServerClientMock.mockReturnValue({
       auth: { getUser: getUserMock },
-    }));
+    });
   });
 
   it("redirects unauthenticated user to /login", async () => {
