@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { getSources } from "@/repositories/sourceRepository";
 import { NewConversationForm } from "@/components/NewConversationForm";
+import { listSources } from "@/usecases/sourceUseCases";
 
 export default async function NewConversationPage() {
   const supabase = await createSupabaseServerClient();
@@ -13,7 +13,7 @@ export default async function NewConversationPage() {
     redirect("/login");
   }
 
-  const sources = await getSources(supabase, user.id);
+  const sources = await listSources(supabase, user.id);
 
   return (
     <div className="mx-auto max-w-lg">
