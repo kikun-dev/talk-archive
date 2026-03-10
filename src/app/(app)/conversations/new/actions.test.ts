@@ -1,7 +1,8 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const getUserMock = vi.fn();
 const createSupabaseServerClientMock = vi.fn();
+
 class RedirectError extends Error {
   constructor(public url: string) {
     super(`NEXT_REDIRECT: ${url}`);
@@ -36,9 +37,11 @@ function mockSupabaseClient(user: { id: string } | null) {
 
 function createFormData(data: Record<string, string>): FormData {
   const formData = new FormData();
+
   for (const [key, value] of Object.entries(data)) {
     formData.set(key, value);
   }
+
   return formData;
 }
 

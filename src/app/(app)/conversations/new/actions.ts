@@ -1,12 +1,12 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import type { IdolGroup } from "@/types/domain";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import {
   createNewConversation,
   validateCreateConversationInput,
 } from "@/usecases/conversationUseCases";
-import type { IdolGroup } from "@/types/domain";
 
 export type CreateConversationState = {
   error?: string;

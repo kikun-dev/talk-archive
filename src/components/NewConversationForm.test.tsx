@@ -1,5 +1,5 @@
-import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
 import { NewConversationForm } from "./NewConversationForm";
 
 vi.mock("@/app/(app)/conversations/new/actions", () => ({
@@ -32,7 +32,6 @@ describe("NewConversationForm", () => {
     render(<NewConversationForm />);
 
     const dateInputs = screen.getAllByDisplayValue("");
-    // At least 2 date inputs (start + end) from the initial period
     expect(dateInputs.length).toBeGreaterThanOrEqual(2);
   });
 
