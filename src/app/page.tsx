@@ -1,20 +1,25 @@
-"use client";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { logout } from "@/app/login/actions";
 
-import { useEffect } from "react";
-import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
-
-export default function Home() {
-  useEffect(() => {
-    const supabase = createSupabaseBrowserClient();
-
-    supabase.auth.getSession().then(({ data }) => {
-      console.log("session", data);
-    });
-  }, []);
+export default async function Home() {
+  const supabase = await createSupabaseServerClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
   return (
-    <div className="flex min-h-screen items-center justify-center">
-      Supabase connection test
+    <div className="flex min-h-screen flex-col items-center justify-center gap-4">
+      <p className="text-sm text-gray-600">
+        ログイン中: {user?.email}
+      </p>
+      <form action={logout}>
+        <button
+          type="submit"
+          className="rounded border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50"
+        >
+          ログアウト
+        </button>
+      </form>
     </div>
   );
 }
