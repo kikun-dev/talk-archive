@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { listConversations } from "@/usecases/conversationUseCases";
 import { ConversationList } from "@/components/ConversationList";
@@ -8,6 +9,10 @@ export default async function HomePage() {
   const {
     data: { user },
   } = await supabase.auth.getUser();
+
+  if (!user) {
+    redirect("/login");
+  }
 
   const conversations = await listConversations(supabase, user!.id);
 
