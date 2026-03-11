@@ -50,6 +50,15 @@ function createFormData(data: Record<string, string>): FormData {
   return formData;
 }
 
+function createFormDataWithFile(
+  fieldName: string,
+  filename: string = "invalid.txt",
+): FormData {
+  const formData = new FormData();
+  formData.set(fieldName, new File(["dummy"], filename, { type: "text/plain" }));
+  return formData;
+}
+
 describe("addTextRecordAction", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -82,6 +91,50 @@ describe("addTextRecordAction", () => {
     );
 
     expect(result).toEqual({ error: "テキストを入力してください" });
+    expect(addTextRecordMock).not.toHaveBeenCalled();
+  });
+
+  it("returns error when title is not a string", async () => {
+    mockSupabaseClient({ id: "user-1" });
+
+    const { addTextRecordAction } = await import("./actions");
+    const formData = createFormData({ content: "テスト内容" });
+    formData.set("title", new File(["dummy"], "title.txt", { type: "text/plain" }));
+
+    const result = await addTextRecordAction("conv-1", undefined, formData);
+
+    expect(result).toEqual({ error: "タイトルのデータが不正です" });
+    expect(validateAddTextRecordInputMock).not.toHaveBeenCalled();
+    expect(addTextRecordMock).not.toHaveBeenCalled();
+  });
+
+  it("returns error when content is missing", async () => {
+    mockSupabaseClient({ id: "user-1" });
+
+    const { addTextRecordAction } = await import("./actions");
+    const result = await addTextRecordAction(
+      "conv-1",
+      undefined,
+      createFormData({ title: "タイトル" }),
+    );
+
+    expect(result).toEqual({ error: "テキストのデータが不正です" });
+    expect(validateAddTextRecordInputMock).not.toHaveBeenCalled();
+    expect(addTextRecordMock).not.toHaveBeenCalled();
+  });
+
+  it("returns error when content is not a string", async () => {
+    mockSupabaseClient({ id: "user-1" });
+
+    const { addTextRecordAction } = await import("./actions");
+    const result = await addTextRecordAction(
+      "conv-1",
+      undefined,
+      createFormDataWithFile("content"),
+    );
+
+    expect(result).toEqual({ error: "テキストのデータが不正です" });
+    expect(validateAddTextRecordInputMock).not.toHaveBeenCalled();
     expect(addTextRecordMock).not.toHaveBeenCalled();
   });
 

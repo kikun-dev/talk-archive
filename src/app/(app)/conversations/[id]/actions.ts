@@ -14,6 +14,35 @@ export type AddTextRecordState =
     }
   | undefined;
 
+function getOptionalStringField(
+  formData: FormData,
+  fieldName: string,
+): string | null | undefined {
+  const value = formData.get(fieldName);
+
+  if (value === null) {
+    return undefined;
+  }
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  return value;
+}
+
+function getRequiredStringField(
+  formData: FormData,
+  fieldName: string,
+): string | null {
+  const value = formData.get(fieldName);
+
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  return value;
+}
+
 export async function addTextRecordAction(
   conversationId: string,
   _prevState: AddTextRecordState,
@@ -28,12 +57,19 @@ export async function addTextRecordAction(
     redirect("/login");
   }
 
-  const title = (formData.get("title") as string) || null;
-  const content = formData.get("content") as string;
+  const titleValue = getOptionalStringField(formData, "title");
+  if (titleValue === null) {
+    return { error: "タイトルのデータが不正です" };
+  }
+
+  const content = getRequiredStringField(formData, "content");
+  if (content === null) {
+    return { error: "テキストのデータが不正です" };
+  }
 
   const input = {
     conversationId,
-    title,
+    title: titleValue || null,
     content,
   };
 
