@@ -15,6 +15,8 @@ const redirectMock = vi.fn((url: string) => {
 const revalidatePathMock = vi.fn();
 const validateAddTextRecordInputMock = vi.fn();
 const addTextRecordMock = vi.fn();
+const addImageRecordMock = vi.fn();
+const validateAddMediaRecordInputMock = vi.fn();
 const validateUpdateConversationInputMock = vi.fn();
 const updateExistingConversationMock = vi.fn();
 const deleteExistingConversationMock = vi.fn();
@@ -43,6 +45,8 @@ vi.mock("@/usecases/conversationUseCases", () => ({
 vi.mock("@/usecases/recordUseCases", () => ({
   validateAddTextRecordInput: validateAddTextRecordInputMock,
   addTextRecord: addTextRecordMock,
+  addImageRecord: addImageRecordMock,
+  validateAddMediaRecordInput: validateAddMediaRecordInputMock,
   validateUpdateRecordInput: validateUpdateRecordInputMock,
   updateExistingRecord: updateExistingRecordMock,
   deleteExistingRecord: deleteExistingRecordMock,
@@ -410,5 +414,183 @@ describe("deleteRecordAction", () => {
       "rec-1",
     );
     expect(revalidatePathMock).toHaveBeenCalledWith("/conversations/conv-1");
+  });
+});
+
+function createImageFormData(overrides?: {
+  file?: File;
+  title?: string;
+  content?: string;
+}): FormData {
+  const formData = new FormData();
+  const file =
+    overrides?.file ??
+    new File(["image-data"], "photo.jpg", { type: "image/jpeg" });
+  formData.set("file", file);
+  if (overrides?.title !== undefined) {
+    formData.set("title", overrides.title);
+  }
+  if (overrides?.content !== undefined) {
+    formData.set("content", overrides.content);
+  }
+  return formData;
+}
+
+describe("addImageRecordAction", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("redirects to login when not authenticated", async () => {
+    mockSupabaseClient(null);
+
+    const { addImageRecordAction } = await import("./actions");
+    await expect(
+      addImageRecordAction("conv-1", undefined, createImageFormData()),
+    ).rejects.toThrow("NEXT_REDIRECT: /login");
+  });
+
+  it("returns error when file is missing", async () => {
+    mockSupabaseClient({ id: "user-1" });
+
+    const { addImageRecordAction } = await import("./actions");
+    const formData = new FormData();
+    const result = await addImageRecordAction("conv-1", undefined, formData);
+
+    expect(result).toEqual({ error: "画像ファイルを選択してください" });
+    expect(addImageRecordMock).not.toHaveBeenCalled();
+  });
+
+  it("returns error when file is empty", async () => {
+    mockSupabaseClient({ id: "user-1" });
+
+    const { addImageRecordAction } = await import("./actions");
+    const formData = new FormData();
+    formData.set("file", new File([], "empty.jpg", { type: "image/jpeg" }));
+    const result = await addImageRecordAction("conv-1", undefined, formData);
+
+    expect(result).toEqual({ error: "画像ファイルを選択してください" });
+  });
+
+  it("returns error when file exceeds 10MB", async () => {
+    mockSupabaseClient({ id: "user-1" });
+
+    const { addImageRecordAction } = await import("./actions");
+    const largeFile = new File(
+      [new ArrayBuffer(10 * 1024 * 1024 + 1)],
+      "large.jpg",
+      { type: "image/jpeg" },
+    );
+    const result = await addImageRecordAction(
+      "conv-1",
+      undefined,
+      createImageFormData({ file: largeFile }),
+    );
+
+    expect(result).toEqual({
+      error: "ファイルサイズは10MB以内にしてください",
+    });
+  });
+
+  it("returns error when file is not an image", async () => {
+    mockSupabaseClient({ id: "user-1" });
+
+    const { addImageRecordAction } = await import("./actions");
+    const textFile = new File(["text"], "doc.txt", { type: "text/plain" });
+    const result = await addImageRecordAction(
+      "conv-1",
+      undefined,
+      createImageFormData({ file: textFile }),
+    );
+
+    expect(result).toEqual({ error: "画像ファイルを選択してください" });
+  });
+
+  it("returns error when title is not a string", async () => {
+    mockSupabaseClient({ id: "user-1" });
+
+    const { addImageRecordAction } = await import("./actions");
+    const formData = createImageFormData();
+    formData.set(
+      "title",
+      new File(["dummy"], "title.txt", { type: "text/plain" }),
+    );
+
+    const result = await addImageRecordAction("conv-1", undefined, formData);
+
+    expect(result).toEqual({ error: "タイトルのデータが不正です" });
+  });
+
+  it("returns error when validation fails", async () => {
+    mockSupabaseClient({ id: "user-1" });
+    validateAddMediaRecordInputMock.mockReturnValue(
+      "タイトルは200文字以内で入力してください",
+    );
+
+    const { addImageRecordAction } = await import("./actions");
+    const result = await addImageRecordAction(
+      "conv-1",
+      undefined,
+      createImageFormData(),
+    );
+
+    expect(result).toEqual({
+      error: "タイトルは200文字以内で入力してください",
+    });
+    expect(addImageRecordMock).not.toHaveBeenCalled();
+  });
+
+  it("uploads image and revalidates on success", async () => {
+    mockSupabaseClient({ id: "user-1" });
+    validateAddMediaRecordInputMock.mockReturnValue(null);
+    addImageRecordMock.mockResolvedValue({
+      record: { id: "rec-1" },
+      attachment: { id: "att-1" },
+    });
+
+    const { addImageRecordAction } = await import("./actions");
+    const result = await addImageRecordAction(
+      "conv-1",
+      undefined,
+      createImageFormData({ title: "写真タイトル", content: "説明文" }),
+    );
+
+    expect(result).toBeUndefined();
+    expect(addImageRecordMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        userId: "user-1",
+        conversationId: "conv-1",
+        title: "写真タイトル",
+        content: "説明文",
+        filename: "photo.jpg",
+        contentType: "image/jpeg",
+      }),
+    );
+    expect(revalidatePathMock).toHaveBeenCalledWith("/conversations/conv-1");
+  });
+
+  it("passes null title and content when empty", async () => {
+    mockSupabaseClient({ id: "user-1" });
+    validateAddMediaRecordInputMock.mockReturnValue(null);
+    addImageRecordMock.mockResolvedValue({
+      record: { id: "rec-1" },
+      attachment: { id: "att-1" },
+    });
+
+    const { addImageRecordAction } = await import("./actions");
+    await addImageRecordAction(
+      "conv-1",
+      undefined,
+      createImageFormData({ title: "", content: "" }),
+    );
+
+    expect(addImageRecordMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        title: null,
+        content: null,
+      }),
+    );
   });
 });
