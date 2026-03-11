@@ -1,11 +1,15 @@
 import type { Record } from "@/types/domain";
-import { RecordCard } from "@/components/RecordCard";
+import { EditableRecordCard } from "@/components/EditableRecordCard";
 
 type RecordTimelineProps = {
   records: Record[];
+  conversationId: string;
 };
 
-export function RecordTimeline({ records }: RecordTimelineProps) {
+export function RecordTimeline({
+  records,
+  conversationId,
+}: RecordTimelineProps) {
   if (records.length === 0) {
     return (
       <p className="text-sm text-gray-500">
@@ -17,7 +21,11 @@ export function RecordTimeline({ records }: RecordTimelineProps) {
   return (
     <div className="space-y-3">
       {records.map((record) => (
-        <RecordCard key={record.id} record={record} />
+        <EditableRecordCard
+          key={record.id}
+          record={record}
+          conversationId={conversationId}
+        />
       ))}
     </div>
   );

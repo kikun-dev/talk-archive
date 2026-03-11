@@ -1,7 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { getConversationWithRecords } from "@/usecases/conversationUseCases";
-import { ConversationHeader } from "@/components/ConversationHeader";
+import { ConversationActions } from "@/components/ConversationActions";
 import { RecordTimeline } from "@/components/RecordTimeline";
 import { AddTextRecordForm } from "@/components/AddTextRecordForm";
 
@@ -31,9 +31,12 @@ export default async function ConversationDetailPage({
 
   return (
     <div className="mx-auto max-w-3xl">
-      <ConversationHeader conversation={conversation} />
+      <ConversationActions conversation={conversation} />
       <div className="mt-6">
-        <RecordTimeline records={conversation.records} />
+        <RecordTimeline
+          records={conversation.records}
+          conversationId={conversation.id}
+        />
       </div>
       <div className="mt-8 border-t border-gray-200 pt-6">
         <h2 className="mb-3 text-lg font-semibold">テキストを追加</h2>
