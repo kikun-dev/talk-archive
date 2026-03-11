@@ -16,6 +16,7 @@ const revalidatePathMock = vi.fn();
 const validateAddTextRecordInputMock = vi.fn();
 const addTextRecordMock = vi.fn();
 const addImageRecordMock = vi.fn();
+const addVideoRecordMock = vi.fn();
 const validateAddMediaRecordInputMock = vi.fn();
 const validateUpdateConversationInputMock = vi.fn();
 const updateExistingConversationMock = vi.fn();
@@ -46,6 +47,7 @@ vi.mock("@/usecases/recordUseCases", () => ({
   validateAddTextRecordInput: validateAddTextRecordInputMock,
   addTextRecord: addTextRecordMock,
   addImageRecord: addImageRecordMock,
+  addVideoRecord: addVideoRecordMock,
   validateAddMediaRecordInput: validateAddMediaRecordInputMock,
   validateUpdateRecordInput: validateUpdateRecordInputMock,
   updateExistingRecord: updateExistingRecordMock,
@@ -591,6 +593,139 @@ describe("addImageRecordAction", () => {
         title: null,
         content: null,
       }),
+    );
+  });
+});
+
+function createVideoFormData(overrides?: {
+  file?: File;
+  title?: string;
+  hasAudio?: string;
+}): FormData {
+  const formData = new FormData();
+  const file =
+    overrides?.file ??
+    new File(["video-data"], "clip.mp4", { type: "video/mp4" });
+  formData.set("file", file);
+  if (overrides?.title !== undefined) {
+    formData.set("title", overrides.title);
+  }
+  if (overrides?.hasAudio !== undefined) {
+    formData.set("hasAudio", overrides.hasAudio);
+  }
+  return formData;
+}
+
+describe("addVideoRecordAction", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("redirects to login when not authenticated", async () => {
+    mockSupabaseClient(null);
+
+    const { addVideoRecordAction } = await import("./actions");
+    await expect(
+      addVideoRecordAction("conv-1", undefined, createVideoFormData()),
+    ).rejects.toThrow("NEXT_REDIRECT: /login");
+  });
+
+  it("returns error when file is missing", async () => {
+    mockSupabaseClient({ id: "user-1" });
+
+    const { addVideoRecordAction } = await import("./actions");
+    const result = await addVideoRecordAction(
+      "conv-1",
+      undefined,
+      new FormData(),
+    );
+
+    expect(result).toEqual({ error: "動画ファイルを選択してください" });
+    expect(addVideoRecordMock).not.toHaveBeenCalled();
+  });
+
+  it("returns error when file exceeds 50MB", async () => {
+    mockSupabaseClient({ id: "user-1" });
+
+    const { addVideoRecordAction } = await import("./actions");
+    const largeFile = new File(
+      [new ArrayBuffer(50 * 1024 * 1024 + 1)],
+      "large.mp4",
+      { type: "video/mp4" },
+    );
+    const result = await addVideoRecordAction(
+      "conv-1",
+      undefined,
+      createVideoFormData({ file: largeFile }),
+    );
+
+    expect(result).toEqual({
+      error: "ファイルサイズは50MB以内にしてください",
+    });
+  });
+
+  it("returns error when file is not a video", async () => {
+    mockSupabaseClient({ id: "user-1" });
+
+    const { addVideoRecordAction } = await import("./actions");
+    const imageFile = new File(["img"], "photo.jpg", { type: "image/jpeg" });
+    const result = await addVideoRecordAction(
+      "conv-1",
+      undefined,
+      createVideoFormData({ file: imageFile }),
+    );
+
+    expect(result).toEqual({ error: "動画ファイルを選択してください" });
+  });
+
+  it("uploads video with hasAudio true and revalidates on success", async () => {
+    mockSupabaseClient({ id: "user-1" });
+    validateAddMediaRecordInputMock.mockReturnValue(null);
+    addVideoRecordMock.mockResolvedValue({
+      record: { id: "rec-1" },
+      attachment: { id: "att-1" },
+    });
+
+    const { addVideoRecordAction } = await import("./actions");
+    const result = await addVideoRecordAction(
+      "conv-1",
+      undefined,
+      createVideoFormData({ title: "動画タイトル", hasAudio: "true" }),
+    );
+
+    expect(result).toBeUndefined();
+    expect(addVideoRecordMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        userId: "user-1",
+        conversationId: "conv-1",
+        title: "動画タイトル",
+        filename: "clip.mp4",
+        contentType: "video/mp4",
+        hasAudio: true,
+      }),
+    );
+    expect(revalidatePathMock).toHaveBeenCalledWith("/conversations/conv-1");
+  });
+
+  it("sets hasAudio to false when checkbox is unchecked", async () => {
+    mockSupabaseClient({ id: "user-1" });
+    validateAddMediaRecordInputMock.mockReturnValue(null);
+    addVideoRecordMock.mockResolvedValue({
+      record: { id: "rec-1" },
+      attachment: { id: "att-1" },
+    });
+
+    const { addVideoRecordAction } = await import("./actions");
+    await addVideoRecordAction(
+      "conv-1",
+      undefined,
+      createVideoFormData(),
+    );
+
+    expect(addVideoRecordMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ hasAudio: false }),
     );
   });
 });

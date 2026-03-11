@@ -5,6 +5,7 @@ import { ConversationActions } from "@/components/ConversationActions";
 import { RecordTimeline } from "@/components/RecordTimeline";
 import { AddTextRecordForm } from "@/components/AddTextRecordForm";
 import { AddImageRecordForm } from "@/components/AddImageRecordForm";
+import { AddVideoRecordForm } from "@/components/AddVideoRecordForm";
 
 type ConversationDetailPageProps = {
   params: Promise<{ id: string }>;
@@ -46,6 +47,10 @@ export default async function ConversationDetailPage({
       <div className="mt-8 border-t border-gray-200 pt-6">
         <h2 className="mb-3 text-lg font-semibold">画像を追加</h2>
         <AddImageRecordForm conversationId={conversation.id} />
+      </div>
+      <div className="mt-8 border-t border-gray-200 pt-6">
+        <h2 className="mb-3 text-lg font-semibold">動画を追加</h2>
+        <AddVideoRecordForm conversationId={conversation.id} />
       </div>
     </div>
   );
