@@ -12,6 +12,8 @@ import {
 import {
   addTextRecord,
   validateAddTextRecordInput,
+  addImageRecord,
+  validateAddMediaRecordInput,
   updateExistingRecord,
   validateUpdateRecordInput,
   deleteExistingRecord,
@@ -164,6 +166,67 @@ export async function addTextRecordAction(
   }
 
   await addTextRecord(supabase, input);
+
+  revalidatePath(`/conversations/${conversationId}`);
+
+  return undefined;
+}
+
+const MAX_IMAGE_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+
+export async function addImageRecordAction(
+  conversationId: string,
+  _prevState: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const supabase = await createSupabaseServerClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    redirect("/login");
+  }
+
+  const file = formData.get("file");
+  if (!(file instanceof File) || file.size === 0) {
+    return { error: "画像ファイルを選択してください" };
+  }
+
+  if (file.size > MAX_IMAGE_FILE_SIZE) {
+    return { error: "ファイルサイズは10MB以内にしてください" };
+  }
+
+  if (!file.type.startsWith("image/")) {
+    return { error: "画像ファイルを選択してください" };
+  }
+
+  const titleValue = getOptionalStringField(formData, "title");
+  if (titleValue === null) {
+    return { error: "タイトルのデータが不正です" };
+  }
+
+  const contentValue = getOptionalStringField(formData, "content");
+  if (contentValue === null) {
+    return { error: "テキストのデータが不正です" };
+  }
+
+  const input = {
+    userId: user.id,
+    conversationId,
+    title: titleValue || null,
+    content: contentValue || null,
+    file,
+    filename: file.name,
+    contentType: file.type,
+  };
+
+  const validationError = validateAddMediaRecordInput(input);
+  if (validationError) {
+    return { error: validationError };
+  }
+
+  await addImageRecord(supabase, input);
 
   revalidatePath(`/conversations/${conversationId}`);
 
