@@ -17,6 +17,7 @@ const validateAddTextRecordInputMock = vi.fn();
 const addTextRecordMock = vi.fn();
 const addImageRecordMock = vi.fn();
 const addVideoRecordMock = vi.fn();
+const addAudioRecordMock = vi.fn();
 const validateAddMediaRecordInputMock = vi.fn();
 const validateUpdateConversationInputMock = vi.fn();
 const updateExistingConversationMock = vi.fn();
@@ -48,6 +49,7 @@ vi.mock("@/usecases/recordUseCases", () => ({
   addTextRecord: addTextRecordMock,
   addImageRecord: addImageRecordMock,
   addVideoRecord: addVideoRecordMock,
+  addAudioRecord: addAudioRecordMock,
   validateAddMediaRecordInput: validateAddMediaRecordInputMock,
   validateUpdateRecordInput: validateUpdateRecordInputMock,
   updateExistingRecord: updateExistingRecordMock,
@@ -727,5 +729,113 @@ describe("addVideoRecordAction", () => {
       expect.anything(),
       expect.objectContaining({ hasAudio: false }),
     );
+  });
+});
+
+function createAudioFormData(overrides?: {
+  file?: File;
+  title?: string;
+}): FormData {
+  const formData = new FormData();
+  const file =
+    overrides?.file ??
+    new File(["audio-data"], "voice.mp3", { type: "audio/mpeg" });
+  formData.set("file", file);
+  if (overrides?.title !== undefined) {
+    formData.set("title", overrides.title);
+  }
+  return formData;
+}
+
+describe("addAudioRecordAction", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("redirects to login when not authenticated", async () => {
+    mockSupabaseClient(null);
+
+    const { addAudioRecordAction } = await import("./actions");
+    await expect(
+      addAudioRecordAction("conv-1", undefined, createAudioFormData()),
+    ).rejects.toThrow("NEXT_REDIRECT: /login");
+  });
+
+  it("returns error when file is missing", async () => {
+    mockSupabaseClient({ id: "user-1" });
+
+    const { addAudioRecordAction } = await import("./actions");
+    const result = await addAudioRecordAction(
+      "conv-1",
+      undefined,
+      new FormData(),
+    );
+
+    expect(result).toEqual({ error: "音声ファイルを選択してください" });
+    expect(addAudioRecordMock).not.toHaveBeenCalled();
+  });
+
+  it("returns error when file exceeds 50MB", async () => {
+    mockSupabaseClient({ id: "user-1" });
+
+    const { addAudioRecordAction } = await import("./actions");
+    const largeFile = new File(
+      [new ArrayBuffer(50 * 1024 * 1024 + 1)],
+      "large.mp3",
+      { type: "audio/mpeg" },
+    );
+    const result = await addAudioRecordAction(
+      "conv-1",
+      undefined,
+      createAudioFormData({ file: largeFile }),
+    );
+
+    expect(result).toEqual({
+      error: "ファイルサイズは50MB以内にしてください",
+    });
+  });
+
+  it("returns error when file is not audio", async () => {
+    mockSupabaseClient({ id: "user-1" });
+
+    const { addAudioRecordAction } = await import("./actions");
+    const imageFile = new File(["img"], "photo.jpg", { type: "image/jpeg" });
+    const result = await addAudioRecordAction(
+      "conv-1",
+      undefined,
+      createAudioFormData({ file: imageFile }),
+    );
+
+    expect(result).toEqual({ error: "音声ファイルを選択してください" });
+  });
+
+  it("uploads audio and revalidates on success", async () => {
+    mockSupabaseClient({ id: "user-1" });
+    validateAddMediaRecordInputMock.mockReturnValue(null);
+    addAudioRecordMock.mockResolvedValue({
+      record: { id: "rec-1" },
+      attachment: { id: "att-1" },
+    });
+
+    const { addAudioRecordAction } = await import("./actions");
+    const result = await addAudioRecordAction(
+      "conv-1",
+      undefined,
+      createAudioFormData({ title: "音声タイトル" }),
+    );
+
+    expect(result).toBeUndefined();
+    expect(addAudioRecordMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        userId: "user-1",
+        conversationId: "conv-1",
+        title: "音声タイトル",
+        content: null,
+        filename: "voice.mp3",
+        contentType: "audio/mpeg",
+      }),
+    );
+    expect(revalidatePathMock).toHaveBeenCalledWith("/conversations/conv-1");
   });
 });
