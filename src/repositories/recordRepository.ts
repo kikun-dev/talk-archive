@@ -106,6 +106,33 @@ export async function createTextRecordAtNextPosition(
   return toRecord(data);
 }
 
+export async function createMediaRecordAtNextPosition(
+  client: SupabaseClient<Database>,
+  params: {
+    conversationId: string;
+    recordType: Exclude<RecordType, "text">;
+    title?: string | null;
+    content?: string | null;
+    hasAudio?: boolean;
+  },
+): Promise<Record> {
+  const { data, error } = await client
+    .rpc("append_media_record", {
+      p_conversation_id: params.conversationId,
+      p_record_type: params.recordType,
+      p_title: params.title ?? null,
+      p_content: params.content ?? null,
+      p_has_audio: params.hasAudio ?? false,
+    })
+    .single();
+
+  if (error) {
+    throw error;
+  }
+
+  return toRecord(data);
+}
+
 export async function updateRecord(
   client: SupabaseClient<Database>,
   id: string,
@@ -156,6 +183,25 @@ export async function deleteRecord(
   if (error) {
     throw error;
   }
+}
+
+export async function getNextRecordPosition(
+  client: SupabaseClient<Database>,
+  conversationId: string,
+): Promise<number> {
+  const { data, error } = await client
+    .from("records")
+    .select("position")
+    .eq("conversation_id", conversationId)
+    .order("position", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  return data ? data.position + 1 : 0;
 }
 
 export async function searchRecords(

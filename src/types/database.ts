@@ -247,6 +247,26 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      append_media_record: {
+        Args: {
+          p_content: string | null
+          p_conversation_id: string
+          p_has_audio: boolean
+          p_record_type: Database["public"]["Enums"]["record_type"]
+          p_title: string | null
+        }
+        Returns: {
+          content: string | null
+          conversation_id: string
+          created_at: string
+          has_audio: boolean
+          id: string
+          position: number
+          record_type: Database["public"]["Enums"]["record_type"]
+          title: string | null
+          updated_at: string
+        }[]
+      }
       append_text_record: {
         Args: {
           p_content: string
