@@ -13,6 +13,7 @@ import {
   addTextRecord,
   validateAddTextRecordInput,
   addImageRecord,
+  addVideoRecord,
   validateAddMediaRecordInput,
   updateExistingRecord,
   validateUpdateRecordInput,
@@ -227,6 +228,66 @@ export async function addImageRecordAction(
   }
 
   await addImageRecord(supabase, input);
+
+  revalidatePath(`/conversations/${conversationId}`);
+
+  return undefined;
+}
+
+const MAX_VIDEO_FILE_SIZE = 50 * 1024 * 1024; // 50MB
+
+export async function addVideoRecordAction(
+  conversationId: string,
+  _prevState: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const supabase = await createSupabaseServerClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    redirect("/login");
+  }
+
+  const file = formData.get("file");
+  if (!(file instanceof File) || file.size === 0) {
+    return { error: "動画ファイルを選択してください" };
+  }
+
+  if (file.size > MAX_VIDEO_FILE_SIZE) {
+    return { error: "ファイルサイズは50MB以内にしてください" };
+  }
+
+  if (!file.type.startsWith("video/")) {
+    return { error: "動画ファイルを選択してください" };
+  }
+
+  const hasAudioValue = formData.get("hasAudio");
+  const hasAudio = hasAudioValue === "true";
+
+  const titleValue = getOptionalStringField(formData, "title");
+  if (titleValue === null) {
+    return { error: "タイトルのデータが不正です" };
+  }
+
+  const input = {
+    userId: user.id,
+    conversationId,
+    title: titleValue || null,
+    content: null,
+    file,
+    filename: file.name,
+    contentType: file.type,
+    hasAudio,
+  };
+
+  const validationError = validateAddMediaRecordInput(input);
+  if (validationError) {
+    return { error: validationError };
+  }
+
+  await addVideoRecord(supabase, input);
 
   revalidatePath(`/conversations/${conversationId}`);
 
