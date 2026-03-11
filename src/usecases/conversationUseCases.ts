@@ -185,6 +185,33 @@ export async function listConversations(
   return getConversations(client, userId);
 }
 
+export async function listConversationsWithMetadata(
+  client: SupabaseClient<Database>,
+  userId: string,
+): Promise<ConversationWithMetadata[]> {
+  const conversations = await getConversations(client, userId);
+
+  return Promise.all(
+    conversations.map(async (conversation) => {
+      const activePeriods = await getConversationActivePeriods(
+        client,
+        conversation.id,
+      );
+      const participants = await getConversationParticipants(
+        client,
+        conversation.id,
+      );
+
+      return {
+        ...conversation,
+        activePeriods,
+        participants,
+        activeDays: calculateConversationActiveDays(activePeriods),
+      };
+    }),
+  );
+}
+
 export async function getConversationWithRecords(
   client: SupabaseClient<Database>,
   id: string,

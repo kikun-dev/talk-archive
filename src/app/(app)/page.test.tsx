@@ -1,9 +1,9 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
-import type { Conversation } from "@/types/domain";
+import type { ConversationWithMetadata } from "@/usecases/conversationUseCases";
 
 const createSupabaseServerClientMock = vi.fn();
-const listConversationsMock = vi.fn();
+const listConversationsWithMetadataMock = vi.fn();
 const redirectMock = vi.fn();
 
 vi.mock("@/lib/supabase/server", () => ({
@@ -11,14 +11,14 @@ vi.mock("@/lib/supabase/server", () => ({
 }));
 
 vi.mock("@/usecases/conversationUseCases", () => ({
-  listConversations: listConversationsMock,
+  listConversationsWithMetadata: listConversationsWithMetadataMock,
 }));
 
 vi.mock("next/navigation", () => ({
   redirect: redirectMock,
 }));
 
-const baseConversation: Conversation = {
+const baseConversation: ConversationWithMetadata = {
   id: "conv-1",
   userId: "user-1",
   sourceId: null,
@@ -27,6 +27,9 @@ const baseConversation: Conversation = {
   coverImagePath: null,
   createdAt: "2026-01-15T00:00:00Z",
   updatedAt: "2026-01-20T00:00:00Z",
+  activePeriods: [],
+  participants: [],
+  activeDays: 100,
 };
 
 function mockSupabaseUser(user: { id: string } | null) {
@@ -54,17 +57,17 @@ describe("HomePage", () => {
 
     await expect(HomePage()).rejects.toThrow("NEXT_REDIRECT");
     expect(redirectMock).toHaveBeenCalledWith("/login");
-    expect(listConversationsMock).not.toHaveBeenCalled();
+    expect(listConversationsWithMetadataMock).not.toHaveBeenCalled();
   });
 
   it("loads and renders conversations for the authenticated user", async () => {
     mockSupabaseUser({ id: "user-1" });
-    listConversationsMock.mockResolvedValue([baseConversation]);
+    listConversationsWithMetadataMock.mockResolvedValue([baseConversation]);
 
     const { default: HomePage } = await import("./page");
     render(await HomePage());
 
-    expect(listConversationsMock).toHaveBeenCalledWith(
+    expect(listConversationsWithMetadataMock).toHaveBeenCalledWith(
       expect.anything(),
       "user-1",
     );

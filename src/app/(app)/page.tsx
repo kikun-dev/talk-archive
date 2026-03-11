@@ -1,8 +1,8 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { listConversations } from "@/usecases/conversationUseCases";
-import { ConversationList } from "@/components/ConversationList";
+import { listConversationsWithMetadata } from "@/usecases/conversationUseCases";
+import { GroupedConversationList } from "@/components/GroupedConversationList";
 
 export default async function HomePage() {
   const supabase = await createSupabaseServerClient();
@@ -14,7 +14,7 @@ export default async function HomePage() {
     redirect("/login");
   }
 
-  const conversations = await listConversations(supabase, user!.id);
+  const conversations = await listConversationsWithMetadata(supabase, user!.id);
 
   return (
     <div>
@@ -28,7 +28,7 @@ export default async function HomePage() {
         </Link>
       </div>
       <div className="mt-4">
-        <ConversationList conversations={conversations} />
+        <GroupedConversationList conversations={conversations} />
       </div>
     </div>
   );
