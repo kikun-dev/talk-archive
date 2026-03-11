@@ -1,7 +1,10 @@
+import Image from "next/image";
 import type { Record, RecordType } from "@/types/domain";
+import type { MediaUrl } from "@/usecases/recordUseCases";
 
 type RecordCardProps = {
   record: Record;
+  mediaUrl?: MediaUrl;
 };
 
 const recordTypeLabels: { [K in RecordType]: { icon: string; label: string } } = {
@@ -22,7 +25,52 @@ function formatTimestamp(dateString: string): string {
   });
 }
 
-export function RecordCard({ record }: RecordCardProps) {
+function MediaDisplay({
+  record,
+  mediaUrl,
+}: {
+  record: Record;
+  mediaUrl: MediaUrl;
+}) {
+  switch (record.recordType) {
+    case "image":
+      return (
+        <div className="mt-2">
+          <Image
+            src={mediaUrl.url}
+            alt={record.title ?? "画像"}
+            unoptimized
+            width={480}
+            height={320}
+            className="max-h-80 w-auto rounded border border-gray-200 object-contain"
+          />
+        </div>
+      );
+    case "video":
+      return (
+        <div className="mt-2">
+          <video
+            controls
+            className="max-h-80 w-full rounded border border-gray-200"
+          >
+            <source src={mediaUrl.url} type={mediaUrl.mimeType} />
+          </video>
+        </div>
+      );
+    case "audio":
+      return (
+        <div className="mt-2">
+          <audio controls className="w-full">
+            <source src={mediaUrl.url} type={mediaUrl.mimeType} />
+          </audio>
+        </div>
+      );
+    default:
+      return null;
+  }
+}
+
+export function RecordCard({ record, mediaUrl }: RecordCardProps) {
   const typeInfo = recordTypeLabels[record.recordType];
 
   return (
@@ -46,6 +94,7 @@ export function RecordCard({ record }: RecordCardProps) {
           {record.content}
         </p>
       )}
+      {mediaUrl && <MediaDisplay record={record} mediaUrl={mediaUrl} />}
     </div>
   );
 }

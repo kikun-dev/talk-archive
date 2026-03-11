@@ -7,10 +7,14 @@ import {
   updateRecord,
   deleteRecord,
 } from "@/repositories/recordRepository";
-import { createAttachment } from "@/repositories/attachmentRepository";
+import {
+  createAttachment,
+  getAttachmentsByRecord,
+} from "@/repositories/attachmentRepository";
 import {
   buildStoragePath,
   uploadFile,
+  getFileUrl,
   deleteFile,
 } from "@/repositories/storageService";
 
@@ -238,4 +242,57 @@ export async function addAudioRecord(
   input: AddMediaRecordInput,
 ): Promise<MediaRecordResult> {
   return createMediaRecord(client, "audio", input);
+}
+
+// --- メディア表示 ---
+
+const MEDIA_RECORD_TYPES: ReadonlySet<string> = new Set([
+  "image",
+  "video",
+  "audio",
+]);
+
+export type MediaUrl = {
+  url: string;
+  mimeType: string;
+};
+
+/**
+ * メディアレコードの Signed URL を一括取得する
+ * recordId → MediaUrl のマップを返す
+ */
+export async function getMediaUrlsForRecords(
+  client: SupabaseClient<Database>,
+  records: Record[],
+): Promise<Map<string, MediaUrl>> {
+  const mediaRecords = records.filter((r) =>
+    MEDIA_RECORD_TYPES.has(r.recordType),
+  );
+
+  if (mediaRecords.length === 0) {
+    return new Map();
+  }
+
+  const results = await Promise.all(
+    mediaRecords.map(async (record) => {
+      const attachments = await getAttachmentsByRecord(client, record.id);
+      if (attachments.length === 0) {
+        return null;
+      }
+      const attachment = attachments[0];
+      const url = await getFileUrl(client, attachment.filePath);
+      return {
+        recordId: record.id,
+        mediaUrl: { url, mimeType: attachment.mimeType },
+      };
+    }),
+  );
+
+  const map = new Map<string, MediaUrl>();
+  for (const result of results) {
+    if (result) {
+      map.set(result.recordId, result.mediaUrl);
+    }
+  }
+  return map;
 }
