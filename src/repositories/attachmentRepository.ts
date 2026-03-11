@@ -46,6 +46,27 @@ export async function getAttachmentsByRecord(
   return data.map(toAttachment);
 }
 
+export async function getAttachmentsByRecordIds(
+  client: SupabaseClient<Database>,
+  recordIds: string[],
+): Promise<Attachment[]> {
+  if (recordIds.length === 0) {
+    return [];
+  }
+
+  const { data, error } = await client
+    .from("attachments")
+    .select("*")
+    .in("record_id", recordIds)
+    .order("created_at", { ascending: true });
+
+  if (error) {
+    throw error;
+  }
+
+  return data.map(toAttachment);
+}
+
 export async function getAttachmentsByType(
   client: SupabaseClient<Database>,
   userId: string,

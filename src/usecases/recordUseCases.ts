@@ -9,7 +9,7 @@ import {
 } from "@/repositories/recordRepository";
 import {
   createAttachment,
-  getAttachmentsByRecord,
+  getAttachmentsByRecordIds,
 } from "@/repositories/attachmentRepository";
 import {
   buildStoragePath,
@@ -273,13 +273,23 @@ export async function getMediaUrlsForRecords(
     return new Map();
   }
 
+  const attachments = await getAttachmentsByRecordIds(
+    client,
+    mediaRecords.map((record) => record.id),
+  );
+  const firstAttachmentByRecordId = new Map<string, Attachment>();
+  for (const attachment of attachments) {
+    if (!firstAttachmentByRecordId.has(attachment.recordId)) {
+      firstAttachmentByRecordId.set(attachment.recordId, attachment);
+    }
+  }
+
   const results = await Promise.all(
     mediaRecords.map(async (record) => {
-      const attachments = await getAttachmentsByRecord(client, record.id);
-      if (attachments.length === 0) {
+      const attachment = firstAttachmentByRecordId.get(record.id);
+      if (!attachment) {
         return null;
       }
-      const attachment = attachments[0];
       const url = await getFileUrl(client, attachment.filePath);
       return {
         recordId: record.id,

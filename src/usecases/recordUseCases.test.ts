@@ -27,7 +27,7 @@ import {
 } from "@/repositories/recordRepository";
 import {
   createAttachment,
-  getAttachmentsByRecord,
+  getAttachmentsByRecordIds,
 } from "@/repositories/attachmentRepository";
 import {
   buildStoragePath,
@@ -45,7 +45,7 @@ const mockCreateMediaRecordAtNextPosition = vi.mocked(
 const mockUpdateRecord = vi.mocked(updateRecord);
 const mockDeleteRecord = vi.mocked(deleteRecord);
 const mockCreateAttachment = vi.mocked(createAttachment);
-const mockGetAttachmentsByRecord = vi.mocked(getAttachmentsByRecord);
+const mockGetAttachmentsByRecordIds = vi.mocked(getAttachmentsByRecordIds);
 const mockBuildStoragePath = vi.mocked(buildStoragePath);
 const mockUploadFile = vi.mocked(uploadFile);
 const mockGetFileUrl = vi.mocked(getFileUrl);
@@ -603,7 +603,7 @@ describe("recordUseCases", () => {
       const result = await getMediaUrlsForRecords(client, [textRecord]);
 
       expect(result.size).toBe(0);
-      expect(mockGetAttachmentsByRecord).not.toHaveBeenCalled();
+      expect(mockGetAttachmentsByRecordIds).not.toHaveBeenCalled();
     });
 
     it("returns empty map for empty records array", async () => {
@@ -613,7 +613,7 @@ describe("recordUseCases", () => {
     });
 
     it("fetches signed URLs for media records", async () => {
-      mockGetAttachmentsByRecord.mockResolvedValue([
+      mockGetAttachmentsByRecordIds.mockResolvedValue([
         {
           ...baseAttachment,
           recordId: "rec-img-1",
@@ -633,38 +633,34 @@ describe("recordUseCases", () => {
         url: "https://example.supabase.co/signed-url",
         mimeType: "image/jpeg",
       });
-      expect(mockGetAttachmentsByRecord).toHaveBeenCalledWith(
-        client,
+      expect(mockGetAttachmentsByRecordIds).toHaveBeenCalledWith(client, [
         "rec-img-1",
-      );
+      ]);
     });
 
     it("handles multiple media types", async () => {
-      mockGetAttachmentsByRecord
-        .mockResolvedValueOnce([
-          {
-            ...baseAttachment,
-            recordId: "rec-img-1",
-            filePath: "path/photo.jpg",
-            mimeType: "image/jpeg",
-          },
-        ])
-        .mockResolvedValueOnce([
-          {
-            ...baseAttachment,
-            recordId: "rec-vid-1",
-            filePath: "path/video.mp4",
-            mimeType: "video/mp4",
-          },
-        ])
-        .mockResolvedValueOnce([
-          {
-            ...baseAttachment,
-            recordId: "rec-aud-1",
-            filePath: "path/audio.mp3",
-            mimeType: "audio/mpeg",
-          },
-        ]);
+      mockGetAttachmentsByRecordIds.mockResolvedValue([
+        {
+          ...baseAttachment,
+          recordId: "rec-img-1",
+          filePath: "path/photo.jpg",
+          mimeType: "image/jpeg",
+        },
+        {
+          ...baseAttachment,
+          id: "att-2",
+          recordId: "rec-vid-1",
+          filePath: "path/video.mp4",
+          mimeType: "video/mp4",
+        },
+        {
+          ...baseAttachment,
+          id: "att-3",
+          recordId: "rec-aud-1",
+          filePath: "path/audio.mp3",
+          mimeType: "audio/mpeg",
+        },
+      ]);
       mockGetFileUrl
         .mockResolvedValueOnce("https://example.supabase.co/img-url")
         .mockResolvedValueOnce("https://example.supabase.co/vid-url")
@@ -683,7 +679,7 @@ describe("recordUseCases", () => {
     });
 
     it("skips records with no attachments", async () => {
-      mockGetAttachmentsByRecord.mockResolvedValue([]);
+      mockGetAttachmentsByRecordIds.mockResolvedValue([]);
 
       const result = await getMediaUrlsForRecords(client, [imgRecord]);
 
