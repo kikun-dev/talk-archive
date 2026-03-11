@@ -1,6 +1,7 @@
 "use client";
 
-import { useActionState, useRef, useState } from "react";
+import Image from "next/image";
+import { useActionState, useEffect, useRef, useState } from "react";
 import {
   addImageRecordAction,
   type ActionState,
@@ -36,6 +37,14 @@ export function AddImageRecordForm({
     return result;
   }, undefined);
 
+  useEffect(() => {
+    return () => {
+      if (previewUrl) {
+        URL.revokeObjectURL(previewUrl);
+      }
+    };
+  }, [previewUrl]);
+
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     setClientError(null);
     const file = e.target.files?.[0];
@@ -59,11 +68,7 @@ export function AddImageRecordForm({
       return;
     }
 
-    const url = URL.createObjectURL(file);
-    setPreviewUrl((prev) => {
-      if (prev) URL.revokeObjectURL(prev);
-      return url;
-    });
+    setPreviewUrl(URL.createObjectURL(file));
   }
 
   const displayError = clientError ?? state?.error;
@@ -121,10 +126,13 @@ export function AddImageRecordForm({
 
       {previewUrl && (
         <div className="mt-2">
-          <img
+          <Image
             src={previewUrl}
             alt="プレビュー"
-            className="max-h-48 rounded border border-gray-200"
+            unoptimized
+            width={320}
+            height={192}
+            className="max-h-48 w-auto rounded border border-gray-200 object-contain"
           />
         </div>
       )}
