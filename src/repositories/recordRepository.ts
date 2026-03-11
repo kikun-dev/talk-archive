@@ -158,6 +158,25 @@ export async function deleteRecord(
   }
 }
 
+export async function getNextRecordPosition(
+  client: SupabaseClient<Database>,
+  conversationId: string,
+): Promise<number> {
+  const { data, error } = await client
+    .from("records")
+    .select("position")
+    .eq("conversation_id", conversationId)
+    .order("position", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  return data ? data.position + 1 : 0;
+}
+
 export async function searchRecords(
   client: SupabaseClient<Database>,
   userId: string,

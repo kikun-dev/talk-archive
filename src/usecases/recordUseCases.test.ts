@@ -1,28 +1,48 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
-import type { Record } from "@/types/domain";
+import type { Record, Attachment } from "@/types/domain";
 import {
   addTextRecord,
   updateExistingRecord,
   deleteExistingRecord,
   validateAddTextRecordInput,
   validateUpdateRecordInput,
+  addImageRecord,
+  addVideoRecord,
+  addAudioRecord,
+  validateAddMediaRecordInput,
 } from "./recordUseCases";
 
 vi.mock("@/repositories/recordRepository");
+vi.mock("@/repositories/attachmentRepository");
+vi.mock("@/repositories/storageService");
 
 import {
   createTextRecordAtNextPosition,
+  createRecord,
+  getNextRecordPosition,
   updateRecord,
   deleteRecord,
 } from "@/repositories/recordRepository";
+import { createAttachment } from "@/repositories/attachmentRepository";
+import {
+  buildStoragePath,
+  uploadFile,
+  deleteFile,
+} from "@/repositories/storageService";
 
 const mockCreateTextRecordAtNextPosition = vi.mocked(
   createTextRecordAtNextPosition,
 );
+const mockCreateRecord = vi.mocked(createRecord);
+const mockGetNextRecordPosition = vi.mocked(getNextRecordPosition);
 const mockUpdateRecord = vi.mocked(updateRecord);
 const mockDeleteRecord = vi.mocked(deleteRecord);
+const mockCreateAttachment = vi.mocked(createAttachment);
+const mockBuildStoragePath = vi.mocked(buildStoragePath);
+const mockUploadFile = vi.mocked(uploadFile);
+const mockDeleteFile = vi.mocked(deleteFile);
 
 const client = {} as SupabaseClient<Database>;
 
@@ -265,6 +285,294 @@ describe("recordUseCases", () => {
       await deleteExistingRecord(client, "rec-1");
 
       expect(mockDeleteRecord).toHaveBeenCalledWith(client, "rec-1");
+    });
+  });
+
+  // --- メディアレコード ---
+
+  const imageRecord: Record = {
+    id: "rec-img-1",
+    conversationId: "conv-1",
+    recordType: "image",
+    title: null,
+    content: null,
+    hasAudio: false,
+    position: 3,
+    createdAt: "2026-01-01T00:00:00Z",
+    updatedAt: "2026-01-01T00:00:00Z",
+  };
+
+  const baseAttachment: Attachment = {
+    id: "att-1",
+    recordId: "rec-img-1",
+    filePath: "user-1/conv-1/rec-img-1/photo.jpg",
+    mimeType: "image/jpeg",
+    fileSize: 102400,
+    createdAt: "2026-01-01T00:00:00Z",
+  };
+
+  const baseMediaInput = {
+    userId: "user-1",
+    conversationId: "conv-1",
+    file: new Blob(["test-data"], { type: "image/jpeg" }),
+    filename: "photo.jpg",
+    contentType: "image/jpeg",
+  };
+
+  function setupMediaMocks(record: Record = imageRecord) {
+    mockGetNextRecordPosition.mockResolvedValue(3);
+    mockCreateRecord.mockResolvedValue(record);
+    mockBuildStoragePath.mockReturnValue(
+      `user-1/conv-1/${record.id}/photo.jpg`,
+    );
+    mockUploadFile.mockResolvedValue(
+      `user-1/conv-1/${record.id}/photo.jpg`,
+    );
+    mockCreateAttachment.mockResolvedValue({
+      ...baseAttachment,
+      recordId: record.id,
+    });
+  }
+
+  describe("validateAddMediaRecordInput", () => {
+    it("returns null for valid input", () => {
+      expect(validateAddMediaRecordInput(baseMediaInput)).toBeNull();
+    });
+
+    it("rejects title over 200 characters", () => {
+      expect(
+        validateAddMediaRecordInput({
+          ...baseMediaInput,
+          title: "あ".repeat(201),
+        }),
+      ).toBe("タイトルは200文字以内で入力してください");
+    });
+
+    it("rejects empty filename", () => {
+      expect(
+        validateAddMediaRecordInput({
+          ...baseMediaInput,
+          filename: "",
+        }),
+      ).toBe("ファイル名を指定してください");
+    });
+
+    it("rejects empty contentType", () => {
+      expect(
+        validateAddMediaRecordInput({
+          ...baseMediaInput,
+          contentType: "",
+        }),
+      ).toBe("コンテンツタイプを指定してください");
+    });
+  });
+
+  describe("addImageRecord", () => {
+    it("orchestrates record creation, upload, and attachment", async () => {
+      setupMediaMocks();
+
+      const result = await addImageRecord(client, baseMediaInput);
+
+      expect(result.record.id).toBe("rec-img-1");
+      expect(result.record.recordType).toBe("image");
+      expect(result.attachment.id).toBe("att-1");
+
+      expect(mockGetNextRecordPosition).toHaveBeenCalledWith(
+        client,
+        "conv-1",
+      );
+      expect(mockCreateRecord).toHaveBeenCalledWith(client, {
+        conversationId: "conv-1",
+        recordType: "image",
+        title: null,
+        content: null,
+        hasAudio: false,
+        position: 3,
+      });
+      expect(mockUploadFile).toHaveBeenCalledWith(client, {
+        path: "user-1/conv-1/rec-img-1/photo.jpg",
+        file: baseMediaInput.file,
+        contentType: "image/jpeg",
+      });
+      expect(mockCreateAttachment).toHaveBeenCalledWith(client, {
+        recordId: "rec-img-1",
+        filePath: "user-1/conv-1/rec-img-1/photo.jpg",
+        mimeType: "image/jpeg",
+        fileSize: baseMediaInput.file.size,
+      });
+    });
+
+    it("trims title", async () => {
+      setupMediaMocks();
+
+      await addImageRecord(client, {
+        ...baseMediaInput,
+        title: "  タイトル  ",
+      });
+
+      expect(mockCreateRecord).toHaveBeenCalledWith(
+        client,
+        expect.objectContaining({ title: "タイトル" }),
+      );
+    });
+
+    it("throws on validation error without creating record", async () => {
+      await expect(
+        addImageRecord(client, { ...baseMediaInput, filename: "" }),
+      ).rejects.toThrow("ファイル名を指定してください");
+
+      expect(mockCreateRecord).not.toHaveBeenCalled();
+    });
+
+    it("rolls back record on upload failure", async () => {
+      mockGetNextRecordPosition.mockResolvedValue(3);
+      mockCreateRecord.mockResolvedValue(imageRecord);
+      mockBuildStoragePath.mockReturnValue(
+        "user-1/conv-1/rec-img-1/photo.jpg",
+      );
+      mockUploadFile.mockRejectedValue(new Error("Upload failed"));
+      mockDeleteRecord.mockResolvedValue(undefined);
+
+      await expect(
+        addImageRecord(client, baseMediaInput),
+      ).rejects.toThrow("Upload failed");
+
+      expect(mockDeleteRecord).toHaveBeenCalledWith(client, "rec-img-1");
+    });
+
+    it("rolls back record and storage on attachment creation failure", async () => {
+      mockGetNextRecordPosition.mockResolvedValue(3);
+      mockCreateRecord.mockResolvedValue(imageRecord);
+      mockBuildStoragePath.mockReturnValue(
+        "user-1/conv-1/rec-img-1/photo.jpg",
+      );
+      mockUploadFile.mockResolvedValue(
+        "user-1/conv-1/rec-img-1/photo.jpg",
+      );
+      mockCreateAttachment.mockRejectedValue(
+        new Error("Attachment failed"),
+      );
+      mockDeleteFile.mockResolvedValue(undefined);
+      mockDeleteRecord.mockResolvedValue(undefined);
+
+      await expect(
+        addImageRecord(client, baseMediaInput),
+      ).rejects.toThrow("Attachment failed");
+
+      expect(mockDeleteFile).toHaveBeenCalledWith(
+        client,
+        "user-1/conv-1/rec-img-1/photo.jpg",
+      );
+      expect(mockDeleteRecord).toHaveBeenCalledWith(client, "rec-img-1");
+    });
+  });
+
+  describe("addVideoRecord", () => {
+    const videoRecord: Record = {
+      ...imageRecord,
+      id: "rec-vid-1",
+      recordType: "video",
+      hasAudio: true,
+    };
+
+    it("creates video record with hasAudio flag", async () => {
+      mockGetNextRecordPosition.mockResolvedValue(0);
+      mockCreateRecord.mockResolvedValue(videoRecord);
+      mockBuildStoragePath.mockReturnValue(
+        "user-1/conv-1/rec-vid-1/video.mp4",
+      );
+      mockUploadFile.mockResolvedValue(
+        "user-1/conv-1/rec-vid-1/video.mp4",
+      );
+      mockCreateAttachment.mockResolvedValue({
+        ...baseAttachment,
+        id: "att-vid-1",
+        recordId: "rec-vid-1",
+        filePath: "user-1/conv-1/rec-vid-1/video.mp4",
+        mimeType: "video/mp4",
+      });
+
+      const result = await addVideoRecord(client, {
+        ...baseMediaInput,
+        filename: "video.mp4",
+        contentType: "video/mp4",
+        hasAudio: true,
+      });
+
+      expect(result.record.recordType).toBe("video");
+      expect(mockCreateRecord).toHaveBeenCalledWith(
+        client,
+        expect.objectContaining({
+          recordType: "video",
+          hasAudio: true,
+        }),
+      );
+    });
+
+    it("creates video record without audio", async () => {
+      const silentVideoRecord = { ...videoRecord, hasAudio: false };
+      mockGetNextRecordPosition.mockResolvedValue(0);
+      mockCreateRecord.mockResolvedValue(silentVideoRecord);
+      mockBuildStoragePath.mockReturnValue(
+        "user-1/conv-1/rec-vid-1/video.mp4",
+      );
+      mockUploadFile.mockResolvedValue(
+        "user-1/conv-1/rec-vid-1/video.mp4",
+      );
+      mockCreateAttachment.mockResolvedValue({
+        ...baseAttachment,
+        recordId: "rec-vid-1",
+      });
+
+      await addVideoRecord(client, {
+        ...baseMediaInput,
+        filename: "video.mp4",
+        contentType: "video/mp4",
+        hasAudio: false,
+      });
+
+      expect(mockCreateRecord).toHaveBeenCalledWith(
+        client,
+        expect.objectContaining({ hasAudio: false }),
+      );
+    });
+  });
+
+  describe("addAudioRecord", () => {
+    const audioRecord: Record = {
+      ...imageRecord,
+      id: "rec-aud-1",
+      recordType: "audio",
+    };
+
+    it("creates audio record", async () => {
+      mockGetNextRecordPosition.mockResolvedValue(0);
+      mockCreateRecord.mockResolvedValue(audioRecord);
+      mockBuildStoragePath.mockReturnValue(
+        "user-1/conv-1/rec-aud-1/audio.mp3",
+      );
+      mockUploadFile.mockResolvedValue(
+        "user-1/conv-1/rec-aud-1/audio.mp3",
+      );
+      mockCreateAttachment.mockResolvedValue({
+        ...baseAttachment,
+        id: "att-aud-1",
+        recordId: "rec-aud-1",
+        filePath: "user-1/conv-1/rec-aud-1/audio.mp3",
+        mimeType: "audio/mpeg",
+      });
+
+      const result = await addAudioRecord(client, {
+        ...baseMediaInput,
+        filename: "audio.mp3",
+        contentType: "audio/mpeg",
+      });
+
+      expect(result.record.recordType).toBe("audio");
+      expect(mockCreateRecord).toHaveBeenCalledWith(
+        client,
+        expect.objectContaining({ recordType: "audio" }),
+      );
     });
   });
 });

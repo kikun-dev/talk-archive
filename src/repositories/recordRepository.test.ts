@@ -6,6 +6,7 @@ import {
   getRecord,
   createRecord,
   createTextRecordAtNextPosition,
+  getNextRecordPosition,
   updateRecord,
   deleteRecord,
   searchRecords,
@@ -36,6 +37,7 @@ function createMockQueryBuilder(overrides: Record<string, unknown> = {}) {
     "eq",
     "ilike",
     "order",
+    "limit",
     "single",
     "maybeSingle",
   ];
@@ -357,6 +359,54 @@ describe("recordRepository", () => {
       client = createMockClient(builder);
 
       await expect(deleteRecord(client, "rec-1")).rejects.toEqual(dbError);
+    });
+  });
+
+  describe("getNextRecordPosition", () => {
+    it("returns max position + 1 when records exist", async () => {
+      builder = createMockQueryBuilder({
+        maybeSingle: vi
+          .fn()
+          .mockResolvedValue({ data: { position: 5 }, error: null }),
+      });
+      client = createMockClient(builder);
+
+      const result = await getNextRecordPosition(client, "conv-1");
+
+      expect(result).toBe(6);
+      expect(builder.select).toHaveBeenCalledWith("position");
+      expect(builder.eq).toHaveBeenCalledWith("conversation_id", "conv-1");
+      expect(builder.order).toHaveBeenCalledWith("position", {
+        ascending: false,
+      });
+      expect(builder.limit).toHaveBeenCalledWith(1);
+    });
+
+    it("returns 0 when no records exist", async () => {
+      builder = createMockQueryBuilder({
+        maybeSingle: vi
+          .fn()
+          .mockResolvedValue({ data: null, error: null }),
+      });
+      client = createMockClient(builder);
+
+      const result = await getNextRecordPosition(client, "conv-1");
+
+      expect(result).toBe(0);
+    });
+
+    it("throws on error", async () => {
+      const dbError = { message: "DB error", code: "42000" };
+      builder = createMockQueryBuilder({
+        maybeSingle: vi
+          .fn()
+          .mockResolvedValue({ data: null, error: dbError }),
+      });
+      client = createMockClient(builder);
+
+      await expect(
+        getNextRecordPosition(client, "conv-1"),
+      ).rejects.toEqual(dbError);
     });
   });
 
