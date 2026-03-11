@@ -69,6 +69,10 @@ Postgres
 Supabase Storage
 
 - 会話カードのトップ画像も Storage で管理する
+- `media` バケットを使用する
+- 現行のメディアファイルのパス規約は `{userId}/{conversationId}/{recordId}/{filename}`
+- RLS により、ユーザーは自分の `userId` プレフィックス配下のファイルのみ upload / read / delete できる
+- ファイル取得は公開 URL ではなく signed URL を使う
 
 ---
 
