@@ -15,9 +15,16 @@ import {
   updateConversation,
   updateConversationWithMetadata,
 } from "@/repositories/conversationRepository";
-import { getConversationActivePeriods } from "@/repositories/conversationActivePeriodRepository";
+import {
+  getConversationActivePeriods,
+  listConversationActivePeriods,
+} from "@/repositories/conversationActivePeriodRepository";
 import { getConversationParticipants } from "@/repositories/conversationParticipantRepository";
 import { getRecordsByConversation } from "@/repositories/recordRepository";
+
+export type ConversationSummary = Conversation & {
+  activeDays: number;
+};
 
 export type ConversationWithMetadata = Conversation & {
   activePeriods: ConversationActivePeriod[];
@@ -183,6 +190,36 @@ export async function listConversations(
   userId: string,
 ): Promise<Conversation[]> {
   return getConversations(client, userId);
+}
+
+export async function listConversationsWithMetadata(
+  client: SupabaseClient<Database>,
+  userId: string,
+): Promise<ConversationSummary[]> {
+  const conversations = await getConversations(client, userId);
+  const activePeriods = await listConversationActivePeriods(
+    client,
+    conversations.map((conversation) => conversation.id),
+  );
+
+  const activePeriodsByConversationId = new Map<
+    string,
+    ConversationActivePeriod[]
+  >();
+
+  for (const activePeriod of activePeriods) {
+    const current =
+      activePeriodsByConversationId.get(activePeriod.conversationId) ?? [];
+    current.push(activePeriod);
+    activePeriodsByConversationId.set(activePeriod.conversationId, current);
+  }
+
+  return conversations.map((conversation) => ({
+    ...conversation,
+    activeDays: calculateConversationActiveDays(
+      activePeriodsByConversationId.get(conversation.id) ?? [],
+    ),
+  }));
 }
 
 export async function getConversationWithRecords(

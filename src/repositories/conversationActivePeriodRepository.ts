@@ -33,3 +33,24 @@ export async function getConversationActivePeriods(
 
   return data.map(toConversationActivePeriod);
 }
+
+export async function listConversationActivePeriods(
+  client: SupabaseClient<Database>,
+  conversationIds: string[],
+): Promise<ConversationActivePeriod[]> {
+  if (conversationIds.length === 0) {
+    return [];
+  }
+
+  const { data, error } = await client
+    .from("conversation_active_periods")
+    .select("*")
+    .in("conversation_id", conversationIds)
+    .order("start_date", { ascending: true });
+
+  if (error) {
+    throw error;
+  }
+
+  return data.map(toConversationActivePeriod);
+}
