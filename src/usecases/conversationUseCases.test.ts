@@ -12,6 +12,7 @@ import {
   createNewConversation,
   deleteExistingConversation,
   getConversationWithRecords,
+  listConversationsWithMetadata,
   listConversations,
   updateExistingConversation,
   validateConversationActivePeriods,
@@ -33,7 +34,10 @@ import {
   updateConversation,
   updateConversationWithMetadata,
 } from "@/repositories/conversationRepository";
-import { getConversationActivePeriods } from "@/repositories/conversationActivePeriodRepository";
+import {
+  getConversationActivePeriods,
+  listConversationActivePeriods,
+} from "@/repositories/conversationActivePeriodRepository";
 import { getConversationParticipants } from "@/repositories/conversationParticipantRepository";
 import { getRecordsByConversation } from "@/repositories/recordRepository";
 
@@ -49,6 +53,9 @@ const mockUpdateConversationWithMetadata = vi.mocked(
 const mockDeleteConversation = vi.mocked(deleteConversation);
 const mockGetConversationActivePeriods = vi.mocked(
   getConversationActivePeriods,
+);
+const mockListConversationActivePeriods = vi.mocked(
+  listConversationActivePeriods,
 );
 const mockGetConversationParticipants = vi.mocked(
   getConversationParticipants,
@@ -208,6 +215,49 @@ describe("conversationUseCases", () => {
 
       expect(result).toEqual([baseConversation]);
       expect(mockGetConversations).toHaveBeenCalledWith(client, "user-1");
+    });
+  });
+
+  describe("listConversationsWithMetadata", () => {
+    it("returns conversations with active days using a batched period query", async () => {
+      mockGetConversations.mockResolvedValue([
+        baseConversation,
+        {
+          ...baseConversation,
+          id: "conv-2",
+          title: "別の会話",
+        },
+      ]);
+      mockListConversationActivePeriods.mockResolvedValue([
+        ...activePeriods,
+        {
+          id: "period-2",
+          conversationId: "conv-2",
+          startDate: "2026-01-20",
+          endDate: "2026-01-21",
+          createdAt: "2026-01-20T00:00:00Z",
+        },
+      ]);
+
+      const result = await listConversationsWithMetadata(client, "user-1");
+
+      expect(result).toEqual([
+        {
+          ...baseConversation,
+          activeDays: 10,
+        },
+        {
+          ...baseConversation,
+          id: "conv-2",
+          title: "別の会話",
+          activeDays: 2,
+        },
+      ]);
+      expect(mockListConversationActivePeriods).toHaveBeenCalledWith(client, [
+        "conv-1",
+        "conv-2",
+      ]);
+      expect(mockGetConversationParticipants).not.toHaveBeenCalled();
     });
   });
 

@@ -1,10 +1,20 @@
 import Image from "next/image";
 import Link from "next/link";
-import type { ConversationWithMetadata } from "@/usecases/conversationUseCases";
+import type { ConversationSummary } from "@/usecases/conversationUseCases";
 
 type ConversationCardProps = {
-  conversation: ConversationWithMetadata;
+  conversation: ConversationSummary;
 };
+
+function canRenderConversationCoverImage(
+  coverImagePath: string | null,
+): coverImagePath is string {
+  return (
+    typeof coverImagePath === "string" &&
+    coverImagePath.startsWith("/") &&
+    !coverImagePath.startsWith("//")
+  );
+}
 
 export function ConversationCard({ conversation }: ConversationCardProps) {
   return (
@@ -13,7 +23,7 @@ export function ConversationCard({ conversation }: ConversationCardProps) {
       className="block overflow-hidden rounded-lg border border-gray-200 hover:shadow-md"
     >
       <div className="relative aspect-[16/9] bg-gray-100">
-        {conversation.coverImagePath ? (
+        {canRenderConversationCoverImage(conversation.coverImagePath) ? (
           <Image
             src={conversation.coverImagePath}
             alt={conversation.title}

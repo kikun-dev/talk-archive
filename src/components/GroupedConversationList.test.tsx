@@ -1,9 +1,9 @@
 import { describe, it, expect } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { GroupedConversationList } from "./GroupedConversationList";
-import type { ConversationWithMetadata } from "@/usecases/conversationUseCases";
+import type { ConversationSummary } from "@/usecases/conversationUseCases";
 
-const baseConversation: ConversationWithMetadata = {
+const baseConversation: ConversationSummary = {
   id: "conv-1",
   userId: "user-1",
   sourceId: null,
@@ -12,12 +12,10 @@ const baseConversation: ConversationWithMetadata = {
   title: "乃木坂の会話",
   createdAt: "2026-01-15T00:00:00Z",
   updatedAt: "2026-01-20T00:00:00Z",
-  activePeriods: [],
-  participants: [],
   activeDays: 100,
 };
 
-const conversations: ConversationWithMetadata[] = [
+const conversations: ConversationSummary[] = [
   baseConversation,
   {
     ...baseConversation,

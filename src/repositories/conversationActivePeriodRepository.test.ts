@@ -1,7 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
-import { getConversationActivePeriods } from "./conversationActivePeriodRepository";
+import {
+  getConversationActivePeriods,
+  listConversationActivePeriods,
+} from "./conversationActivePeriodRepository";
 
 type ConversationActivePeriodRow =
   Database["public"]["Tables"]["conversation_active_periods"]["Row"];
@@ -16,7 +19,7 @@ const baseRow: ConversationActivePeriodRow = {
 
 function createMockQueryBuilder(overrides: Record<string, unknown> = {}) {
   const builder: Record<string, ReturnType<typeof vi.fn>> = {};
-  const methods = ["select", "eq", "order"];
+  const methods = ["select", "eq", "in", "order"];
   for (const method of methods) {
     builder[method] = vi.fn().mockReturnValue(builder);
   }
@@ -58,6 +61,37 @@ describe("conversationActivePeriodRepository", () => {
       },
     ]);
     expect(builder.eq).toHaveBeenCalledWith("conversation_id", "conv-1");
+    expect(builder.order).toHaveBeenCalledWith("start_date", {
+      ascending: true,
+    });
+  });
+
+  it("returns periods for multiple conversations in a single query", async () => {
+    builder = createMockQueryBuilder({
+      order: vi.fn().mockResolvedValue({
+        data: [
+          baseRow,
+          {
+            ...baseRow,
+            id: "period-2",
+            conversation_id: "conv-2",
+          },
+        ],
+        error: null,
+      }),
+    });
+    client = createMockClient(builder);
+
+    const result = await listConversationActivePeriods(client, [
+      "conv-1",
+      "conv-2",
+    ]);
+
+    expect(result).toHaveLength(2);
+    expect(builder.in).toHaveBeenCalledWith("conversation_id", [
+      "conv-1",
+      "conv-2",
+    ]);
     expect(builder.order).toHaveBeenCalledWith("start_date", {
       ascending: true,
     });

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
-import type { ConversationWithMetadata } from "@/usecases/conversationUseCases";
+import type { ConversationSummary } from "@/usecases/conversationUseCases";
 
 const createSupabaseServerClientMock = vi.fn();
 const listConversationsWithMetadataMock = vi.fn();
@@ -18,7 +18,7 @@ vi.mock("next/navigation", () => ({
   redirect: redirectMock,
 }));
 
-const baseConversation: ConversationWithMetadata = {
+const baseConversation: ConversationSummary = {
   id: "conv-1",
   userId: "user-1",
   sourceId: null,
@@ -27,8 +27,6 @@ const baseConversation: ConversationWithMetadata = {
   coverImagePath: null,
   createdAt: "2026-01-15T00:00:00Z",
   updatedAt: "2026-01-20T00:00:00Z",
-  activePeriods: [],
-  participants: [],
   activeDays: 100,
 };
 

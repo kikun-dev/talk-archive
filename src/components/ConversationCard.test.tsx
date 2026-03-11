@@ -1,9 +1,9 @@
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { ConversationCard } from "./ConversationCard";
-import type { ConversationWithMetadata } from "@/usecases/conversationUseCases";
+import type { ConversationSummary } from "@/usecases/conversationUseCases";
 
-const baseConversation: ConversationWithMetadata = {
+const baseConversation: ConversationSummary = {
   id: "conv-1",
   userId: "user-1",
   sourceId: null,
@@ -12,8 +12,6 @@ const baseConversation: ConversationWithMetadata = {
   title: "テスト会話",
   createdAt: "2026-01-15T00:00:00Z",
   updatedAt: "2026-01-20T00:00:00Z",
-  activePeriods: [],
-  participants: [],
   activeDays: 100,
 };
 
@@ -53,5 +51,16 @@ describe("ConversationCard", () => {
     const img = screen.getByRole("img");
     expect(img.getAttribute("src")).toContain("cover.jpg");
     expect(img).toHaveAttribute("alt", "テスト会話");
+  });
+
+  it("falls back to placeholder for non-local image paths", () => {
+    const conversation = {
+      ...baseConversation,
+      coverImagePath: "https://example.com/cover.jpg",
+    };
+    render(<ConversationCard conversation={conversation} />);
+
+    expect(screen.getByText("No Image")).toBeInTheDocument();
+    expect(screen.queryByRole("img")).not.toBeInTheDocument();
   });
 });

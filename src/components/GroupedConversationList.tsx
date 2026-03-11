@@ -2,11 +2,11 @@
 
 import { useState } from "react";
 import type { IdolGroup } from "@/types/domain";
-import type { ConversationWithMetadata } from "@/usecases/conversationUseCases";
+import type { ConversationSummary } from "@/usecases/conversationUseCases";
 import { ConversationCard } from "@/components/ConversationCard";
 
 type GroupedConversationListProps = {
-  conversations: ConversationWithMetadata[];
+  conversations: ConversationSummary[];
 };
 
 const groups: { value: IdolGroup; label: string }[] = [
