@@ -3,8 +3,7 @@ import type { Database } from "@/types/database";
 import type { Record, Attachment, RecordType } from "@/types/domain";
 import {
   createTextRecordAtNextPosition,
-  createRecord,
-  getNextRecordPosition,
+  createMediaRecordAtNextPosition,
   updateRecord,
   deleteRecord,
 } from "@/repositories/recordRepository";
@@ -157,16 +156,15 @@ export function validateAddMediaRecordInput(
 
 /**
  * メディアレコードを作成する共通処理
- * 1. 次のポジションを取得
- * 2. レコード作成
- * 3. ファイルアップロード
- * 4. Attachment メタデータ作成
+ * 1. DB 側で position を原子的に採番しながらレコード作成
+ * 2. ファイルアップロード
+ * 3. Attachment メタデータ作成
  *
  * アップロードまたは Attachment 作成に失敗した場合、レコードをロールバック（削除）する
  */
 async function createMediaRecord(
   client: SupabaseClient<Database>,
-  recordType: RecordType,
+  recordType: Exclude<RecordType, "text">,
   input: AddMediaRecordInput,
   options?: { hasAudio?: boolean },
 ): Promise<MediaRecordResult> {
@@ -175,15 +173,12 @@ async function createMediaRecord(
     throw new Error(validationError);
   }
 
-  const position = await getNextRecordPosition(client, input.conversationId);
-
-  const record = await createRecord(client, {
+  const record = await createMediaRecordAtNextPosition(client, {
     conversationId: input.conversationId,
     recordType,
     title: input.title?.trim() ?? null,
     content: input.content?.trim() ?? null,
     hasAudio: options?.hasAudio ?? false,
-    position,
   });
 
   const storagePath = buildStoragePath({

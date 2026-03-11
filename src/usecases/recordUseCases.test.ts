@@ -20,8 +20,7 @@ vi.mock("@/repositories/storageService");
 
 import {
   createTextRecordAtNextPosition,
-  createRecord,
-  getNextRecordPosition,
+  createMediaRecordAtNextPosition,
   updateRecord,
   deleteRecord,
 } from "@/repositories/recordRepository";
@@ -35,8 +34,9 @@ import {
 const mockCreateTextRecordAtNextPosition = vi.mocked(
   createTextRecordAtNextPosition,
 );
-const mockCreateRecord = vi.mocked(createRecord);
-const mockGetNextRecordPosition = vi.mocked(getNextRecordPosition);
+const mockCreateMediaRecordAtNextPosition = vi.mocked(
+  createMediaRecordAtNextPosition,
+);
 const mockUpdateRecord = vi.mocked(updateRecord);
 const mockDeleteRecord = vi.mocked(deleteRecord);
 const mockCreateAttachment = vi.mocked(createAttachment);
@@ -320,8 +320,7 @@ describe("recordUseCases", () => {
   };
 
   function setupMediaMocks(record: Record = imageRecord) {
-    mockGetNextRecordPosition.mockResolvedValue(3);
-    mockCreateRecord.mockResolvedValue(record);
+    mockCreateMediaRecordAtNextPosition.mockResolvedValue(record);
     mockBuildStoragePath.mockReturnValue(
       `user-1/conv-1/${record.id}/photo.jpg`,
     );
@@ -377,17 +376,12 @@ describe("recordUseCases", () => {
       expect(result.record.recordType).toBe("image");
       expect(result.attachment.id).toBe("att-1");
 
-      expect(mockGetNextRecordPosition).toHaveBeenCalledWith(
-        client,
-        "conv-1",
-      );
-      expect(mockCreateRecord).toHaveBeenCalledWith(client, {
+      expect(mockCreateMediaRecordAtNextPosition).toHaveBeenCalledWith(client, {
         conversationId: "conv-1",
         recordType: "image",
         title: null,
         content: null,
         hasAudio: false,
-        position: 3,
       });
       expect(mockUploadFile).toHaveBeenCalledWith(client, {
         path: "user-1/conv-1/rec-img-1/photo.jpg",
@@ -410,7 +404,7 @@ describe("recordUseCases", () => {
         title: "  タイトル  ",
       });
 
-      expect(mockCreateRecord).toHaveBeenCalledWith(
+      expect(mockCreateMediaRecordAtNextPosition).toHaveBeenCalledWith(
         client,
         expect.objectContaining({ title: "タイトル" }),
       );
@@ -421,12 +415,11 @@ describe("recordUseCases", () => {
         addImageRecord(client, { ...baseMediaInput, filename: "" }),
       ).rejects.toThrow("ファイル名を指定してください");
 
-      expect(mockCreateRecord).not.toHaveBeenCalled();
+      expect(mockCreateMediaRecordAtNextPosition).not.toHaveBeenCalled();
     });
 
     it("rolls back record on upload failure", async () => {
-      mockGetNextRecordPosition.mockResolvedValue(3);
-      mockCreateRecord.mockResolvedValue(imageRecord);
+      mockCreateMediaRecordAtNextPosition.mockResolvedValue(imageRecord);
       mockBuildStoragePath.mockReturnValue(
         "user-1/conv-1/rec-img-1/photo.jpg",
       );
@@ -441,8 +434,7 @@ describe("recordUseCases", () => {
     });
 
     it("rolls back record and storage on attachment creation failure", async () => {
-      mockGetNextRecordPosition.mockResolvedValue(3);
-      mockCreateRecord.mockResolvedValue(imageRecord);
+      mockCreateMediaRecordAtNextPosition.mockResolvedValue(imageRecord);
       mockBuildStoragePath.mockReturnValue(
         "user-1/conv-1/rec-img-1/photo.jpg",
       );
@@ -476,8 +468,7 @@ describe("recordUseCases", () => {
     };
 
     it("creates video record with hasAudio flag", async () => {
-      mockGetNextRecordPosition.mockResolvedValue(0);
-      mockCreateRecord.mockResolvedValue(videoRecord);
+      mockCreateMediaRecordAtNextPosition.mockResolvedValue(videoRecord);
       mockBuildStoragePath.mockReturnValue(
         "user-1/conv-1/rec-vid-1/video.mp4",
       );
@@ -500,7 +491,7 @@ describe("recordUseCases", () => {
       });
 
       expect(result.record.recordType).toBe("video");
-      expect(mockCreateRecord).toHaveBeenCalledWith(
+      expect(mockCreateMediaRecordAtNextPosition).toHaveBeenCalledWith(
         client,
         expect.objectContaining({
           recordType: "video",
@@ -511,8 +502,7 @@ describe("recordUseCases", () => {
 
     it("creates video record without audio", async () => {
       const silentVideoRecord = { ...videoRecord, hasAudio: false };
-      mockGetNextRecordPosition.mockResolvedValue(0);
-      mockCreateRecord.mockResolvedValue(silentVideoRecord);
+      mockCreateMediaRecordAtNextPosition.mockResolvedValue(silentVideoRecord);
       mockBuildStoragePath.mockReturnValue(
         "user-1/conv-1/rec-vid-1/video.mp4",
       );
@@ -531,7 +521,7 @@ describe("recordUseCases", () => {
         hasAudio: false,
       });
 
-      expect(mockCreateRecord).toHaveBeenCalledWith(
+      expect(mockCreateMediaRecordAtNextPosition).toHaveBeenCalledWith(
         client,
         expect.objectContaining({ hasAudio: false }),
       );
@@ -546,8 +536,7 @@ describe("recordUseCases", () => {
     };
 
     it("creates audio record", async () => {
-      mockGetNextRecordPosition.mockResolvedValue(0);
-      mockCreateRecord.mockResolvedValue(audioRecord);
+      mockCreateMediaRecordAtNextPosition.mockResolvedValue(audioRecord);
       mockBuildStoragePath.mockReturnValue(
         "user-1/conv-1/rec-aud-1/audio.mp3",
       );
@@ -569,7 +558,7 @@ describe("recordUseCases", () => {
       });
 
       expect(result.record.recordType).toBe("audio");
-      expect(mockCreateRecord).toHaveBeenCalledWith(
+      expect(mockCreateMediaRecordAtNextPosition).toHaveBeenCalledWith(
         client,
         expect.objectContaining({ recordType: "audio" }),
       );

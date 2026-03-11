@@ -6,6 +6,7 @@ import {
   getRecord,
   createRecord,
   createTextRecordAtNextPosition,
+  createMediaRecordAtNextPosition,
   getNextRecordPosition,
   updateRecord,
   deleteRecord,
@@ -332,6 +333,59 @@ describe("recordRepository", () => {
           conversationId: "conv-1",
           title: null,
           content: "テスト内容",
+        }),
+      ).rejects.toEqual(dbError);
+    });
+  });
+
+  describe("createMediaRecordAtNextPosition", () => {
+    it("creates a media record via rpc", async () => {
+      const imageRow: RecordRow = {
+        ...baseRow,
+        id: "rec-img-1",
+        record_type: "image",
+        has_audio: true,
+        position: 3,
+      };
+      builder = createMockQueryBuilder({
+        single: vi.fn().mockResolvedValue({ data: imageRow, error: null }),
+      });
+      client = createMockClient(builder);
+
+      const result = await createMediaRecordAtNextPosition(client, {
+        conversationId: "conv-1",
+        recordType: "image",
+        title: "テストタイトル",
+        content: "テスト内容",
+        hasAudio: true,
+      });
+
+      expect(result.id).toBe("rec-img-1");
+      expect(result.recordType).toBe("image");
+      expect(result.position).toBe(3);
+      expect(client.rpc).toHaveBeenCalledWith("append_media_record", {
+        p_conversation_id: "conv-1",
+        p_record_type: "image",
+        p_title: "テストタイトル",
+        p_content: "テスト内容",
+        p_has_audio: true,
+      });
+    });
+
+    it("throws on rpc error", async () => {
+      const dbError = { message: "RPC error", code: "23505" };
+      builder = createMockQueryBuilder({
+        single: vi.fn().mockResolvedValue({ data: null, error: dbError }),
+      });
+      client = createMockClient(builder);
+
+      await expect(
+        createMediaRecordAtNextPosition(client, {
+          conversationId: "conv-1",
+          recordType: "audio",
+          title: null,
+          content: null,
+          hasAudio: false,
         }),
       ).rejects.toEqual(dbError);
     });
