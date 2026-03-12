@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
 import {
   getAttachmentsByRecord,
+  getAttachmentsByRecordIds,
   getAttachmentsByType,
   createAttachment,
   deleteAttachment,
@@ -35,6 +36,7 @@ function createMockQueryBuilder(overrides: Record<string, unknown> = {}) {
     "insert",
     "delete",
     "eq",
+    "in",
     "order",
     "limit",
     "range",
@@ -101,6 +103,52 @@ describe("attachmentRepository", () => {
 
       await expect(
         getAttachmentsByRecord(client, "rec-1"),
+      ).rejects.toEqual(dbError);
+    });
+  });
+
+  describe("getAttachmentsByRecordIds", () => {
+    it("returns attachments for multiple record ids", async () => {
+      builder = createMockQueryBuilder({
+        order: vi
+          .fn()
+          .mockResolvedValue({ data: [baseRow], error: null }),
+      });
+      client = createMockClient(builder);
+
+      const result = await getAttachmentsByRecordIds(client, [
+        "rec-1",
+        "rec-2",
+      ]);
+
+      expect(result).toHaveLength(1);
+      expect(builder.in).toHaveBeenCalledWith("record_id", ["rec-1", "rec-2"]);
+      expect(builder.order).toHaveBeenCalledWith("created_at", {
+        ascending: true,
+      });
+    });
+
+    it("returns empty array when record ids are empty", async () => {
+      builder = createMockQueryBuilder();
+      client = createMockClient(builder);
+
+      const result = await getAttachmentsByRecordIds(client, []);
+
+      expect(result).toEqual([]);
+      expect(builder.select).not.toHaveBeenCalled();
+    });
+
+    it("throws on error", async () => {
+      const dbError = { message: "DB error", code: "42000" };
+      builder = createMockQueryBuilder({
+        order: vi
+          .fn()
+          .mockResolvedValue({ data: null, error: dbError }),
+      });
+      client = createMockClient(builder);
+
+      await expect(
+        getAttachmentsByRecordIds(client, ["rec-1", "rec-2"]),
       ).rejects.toEqual(dbError);
     });
   });

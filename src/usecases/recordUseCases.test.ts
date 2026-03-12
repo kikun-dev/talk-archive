@@ -12,6 +12,7 @@ import {
   addVideoRecord,
   addAudioRecord,
   validateAddMediaRecordInput,
+  getMediaUrlsForRecords,
 } from "./recordUseCases";
 
 vi.mock("@/repositories/recordRepository");
@@ -24,10 +25,14 @@ import {
   updateRecord,
   deleteRecord,
 } from "@/repositories/recordRepository";
-import { createAttachment } from "@/repositories/attachmentRepository";
+import {
+  createAttachment,
+  getAttachmentsByRecordIds,
+} from "@/repositories/attachmentRepository";
 import {
   buildStoragePath,
   uploadFile,
+  getFileUrl,
   deleteFile,
 } from "@/repositories/storageService";
 
@@ -40,8 +45,10 @@ const mockCreateMediaRecordAtNextPosition = vi.mocked(
 const mockUpdateRecord = vi.mocked(updateRecord);
 const mockDeleteRecord = vi.mocked(deleteRecord);
 const mockCreateAttachment = vi.mocked(createAttachment);
+const mockGetAttachmentsByRecordIds = vi.mocked(getAttachmentsByRecordIds);
 const mockBuildStoragePath = vi.mocked(buildStoragePath);
 const mockUploadFile = vi.mocked(uploadFile);
+const mockGetFileUrl = vi.mocked(getFileUrl);
 const mockDeleteFile = vi.mocked(deleteFile);
 
 const client = {} as SupabaseClient<Database>;
@@ -562,6 +569,122 @@ describe("recordUseCases", () => {
         client,
         expect.objectContaining({ recordType: "audio" }),
       );
+    });
+  });
+
+  // --- メディア表示 ---
+
+  describe("getMediaUrlsForRecords", () => {
+    const textRecord: Record = {
+      ...baseRecord,
+      id: "rec-text-1",
+      recordType: "text",
+    };
+
+    const imgRecord: Record = {
+      ...baseRecord,
+      id: "rec-img-1",
+      recordType: "image",
+    };
+
+    const vidRecord: Record = {
+      ...baseRecord,
+      id: "rec-vid-1",
+      recordType: "video",
+    };
+
+    const audRecord: Record = {
+      ...baseRecord,
+      id: "rec-aud-1",
+      recordType: "audio",
+    };
+
+    it("returns empty map when no media records exist", async () => {
+      const result = await getMediaUrlsForRecords(client, [textRecord]);
+
+      expect(result.size).toBe(0);
+      expect(mockGetAttachmentsByRecordIds).not.toHaveBeenCalled();
+    });
+
+    it("returns empty map for empty records array", async () => {
+      const result = await getMediaUrlsForRecords(client, []);
+
+      expect(result.size).toBe(0);
+    });
+
+    it("fetches signed URLs for media records", async () => {
+      mockGetAttachmentsByRecordIds.mockResolvedValue([
+        {
+          ...baseAttachment,
+          recordId: "rec-img-1",
+          filePath: "user-1/conv-1/rec-img-1/photo.jpg",
+          mimeType: "image/jpeg",
+        },
+      ]);
+      mockGetFileUrl.mockResolvedValue("https://example.supabase.co/signed-url");
+
+      const result = await getMediaUrlsForRecords(client, [
+        textRecord,
+        imgRecord,
+      ]);
+
+      expect(result.size).toBe(1);
+      expect(result.get("rec-img-1")).toEqual({
+        url: "https://example.supabase.co/signed-url",
+        mimeType: "image/jpeg",
+      });
+      expect(mockGetAttachmentsByRecordIds).toHaveBeenCalledWith(client, [
+        "rec-img-1",
+      ]);
+    });
+
+    it("handles multiple media types", async () => {
+      mockGetAttachmentsByRecordIds.mockResolvedValue([
+        {
+          ...baseAttachment,
+          recordId: "rec-img-1",
+          filePath: "path/photo.jpg",
+          mimeType: "image/jpeg",
+        },
+        {
+          ...baseAttachment,
+          id: "att-2",
+          recordId: "rec-vid-1",
+          filePath: "path/video.mp4",
+          mimeType: "video/mp4",
+        },
+        {
+          ...baseAttachment,
+          id: "att-3",
+          recordId: "rec-aud-1",
+          filePath: "path/audio.mp3",
+          mimeType: "audio/mpeg",
+        },
+      ]);
+      mockGetFileUrl
+        .mockResolvedValueOnce("https://example.supabase.co/img-url")
+        .mockResolvedValueOnce("https://example.supabase.co/vid-url")
+        .mockResolvedValueOnce("https://example.supabase.co/aud-url");
+
+      const result = await getMediaUrlsForRecords(client, [
+        imgRecord,
+        vidRecord,
+        audRecord,
+      ]);
+
+      expect(result.size).toBe(3);
+      expect(result.get("rec-img-1")?.mimeType).toBe("image/jpeg");
+      expect(result.get("rec-vid-1")?.mimeType).toBe("video/mp4");
+      expect(result.get("rec-aud-1")?.mimeType).toBe("audio/mpeg");
+    });
+
+    it("skips records with no attachments", async () => {
+      mockGetAttachmentsByRecordIds.mockResolvedValue([]);
+
+      const result = await getMediaUrlsForRecords(client, [imgRecord]);
+
+      expect(result.size).toBe(0);
+      expect(mockGetFileUrl).not.toHaveBeenCalled();
     });
   });
 });

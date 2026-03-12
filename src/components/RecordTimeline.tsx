@@ -1,14 +1,17 @@
 import type { Record } from "@/types/domain";
+import type { MediaUrl } from "@/usecases/recordUseCases";
 import { EditableRecordCard } from "@/components/EditableRecordCard";
 
 type RecordTimelineProps = {
   records: Record[];
   conversationId: string;
+  mediaUrls?: Map<string, MediaUrl>;
 };
 
 export function RecordTimeline({
   records,
   conversationId,
+  mediaUrls,
 }: RecordTimelineProps) {
   if (records.length === 0) {
     return (
@@ -25,6 +28,7 @@ export function RecordTimeline({
           key={record.id}
           record={record}
           conversationId={conversationId}
+          mediaUrl={mediaUrls?.get(record.id)}
         />
       ))}
     </div>

@@ -1,6 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { getConversationWithRecords } from "@/usecases/conversationUseCases";
+import { getMediaUrlsForRecords } from "@/usecases/recordUseCases";
 import { ConversationActions } from "@/components/ConversationActions";
 import { RecordTimeline } from "@/components/RecordTimeline";
 import { AddTextRecordForm } from "@/components/AddTextRecordForm";
@@ -32,6 +33,8 @@ export default async function ConversationDetailPage({
     notFound();
   }
 
+  const mediaUrls = await getMediaUrlsForRecords(supabase, conversation.records);
+
   return (
     <div className="mx-auto max-w-3xl">
       <ConversationActions conversation={conversation} />
@@ -39,6 +42,7 @@ export default async function ConversationDetailPage({
         <RecordTimeline
           records={conversation.records}
           conversationId={conversation.id}
+          mediaUrls={mediaUrls}
         />
       </div>
       <div className="mt-8 border-t border-gray-200 pt-6">

@@ -8,15 +8,18 @@ import {
 } from "@/app/(app)/conversations/[id]/actions";
 import { RecordCard } from "@/components/RecordCard";
 import type { Record } from "@/types/domain";
+import type { MediaUrl } from "@/usecases/recordUseCases";
 
 type EditableRecordCardProps = {
   record: Record;
   conversationId: string;
+  mediaUrl?: MediaUrl;
 };
 
 export function EditableRecordCard({
   record,
   conversationId,
+  mediaUrl,
 }: EditableRecordCardProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [isDeleting, startDeleteTransition] = useTransition();
@@ -111,7 +114,7 @@ export function EditableRecordCard({
 
   return (
     <div>
-      <RecordCard record={record} />
+      <RecordCard record={record} mediaUrl={mediaUrl} />
       <div className="mt-1 flex gap-2">
         {record.recordType === "text" && (
           <button
