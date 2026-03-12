@@ -222,10 +222,34 @@ describe("addTextRecordAction", () => {
         title: "タイトル",
         content: "テスト内容",
         speakerParticipantId: "part-1",
-        postedAt: "2026-01-01T12:00:00Z",
+        postedAt: "2026-01-01T12:00:00.000Z",
       }),
     );
     expect(revalidatePathMock).toHaveBeenCalledWith("/conversations/conv-1");
+  });
+
+  it("converts datetime-local postedAt from JST before saving", async () => {
+    mockSupabaseClient({ id: "user-1" });
+    validateAddTextRecordInputMock.mockReturnValue(null);
+    addTextRecordMock.mockResolvedValue({ id: "rec-new" });
+
+    const { addTextRecordAction } = await import("./actions");
+    await addTextRecordAction(
+      "conv-1",
+      undefined,
+      createFormData({
+        content: "テスト内容",
+        speakerParticipantId: "part-1",
+        postedAt: "2026-02-28T15:53",
+      }),
+    );
+
+    expect(addTextRecordMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        postedAt: "2026-02-28T06:53:00.000Z",
+      }),
+    );
   });
 
   it("passes null title when title is empty", async () => {
@@ -617,10 +641,33 @@ describe("addImageRecordAction", () => {
         filename: "photo.jpg",
         contentType: "image/jpeg",
         speakerParticipantId: "part-1",
-        postedAt: "2026-01-01T12:00:00Z",
+        postedAt: "2026-01-01T12:00:00.000Z",
       }),
     );
     expect(revalidatePathMock).toHaveBeenCalledWith("/conversations/conv-1");
+  });
+
+  it("converts datetime-local postedAt for image records", async () => {
+    mockSupabaseClient({ id: "user-1" });
+    validateAddMediaRecordInputMock.mockReturnValue(null);
+    addImageRecordMock.mockResolvedValue({
+      record: { id: "rec-1" },
+      attachment: { id: "att-1" },
+    });
+
+    const { addImageRecordAction } = await import("./actions");
+    await addImageRecordAction(
+      "conv-1",
+      undefined,
+      createImageFormData({ postedAt: "2026-02-28T15:53" }),
+    );
+
+    expect(addImageRecordMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        postedAt: "2026-02-28T06:53:00.000Z",
+      }),
+    );
   });
 
   it("passes null title and content when empty", async () => {
@@ -759,7 +806,7 @@ describe("addVideoRecordAction", () => {
         contentType: "video/mp4",
         hasAudio: true,
         speakerParticipantId: "part-1",
-        postedAt: "2026-01-01T12:00:00Z",
+        postedAt: "2026-01-01T12:00:00.000Z",
       }),
     );
     expect(revalidatePathMock).toHaveBeenCalledWith("/conversations/conv-1");
@@ -894,7 +941,7 @@ describe("addAudioRecordAction", () => {
         filename: "voice.mp3",
         contentType: "audio/mpeg",
         speakerParticipantId: "part-1",
-        postedAt: "2026-01-01T12:00:00Z",
+        postedAt: "2026-01-01T12:00:00.000Z",
       }),
     );
     expect(revalidatePathMock).toHaveBeenCalledWith("/conversations/conv-1");
