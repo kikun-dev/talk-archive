@@ -1,18 +1,10 @@
 import Link from "next/link";
+import { formatDateJst } from "@/lib/dateTime";
 import type { Conversation } from "@/types/domain";
 
 type ConversationListProps = {
   conversations: Conversation[];
 };
-
-function formatDate(dateString: string): string {
-  const date = new Date(dateString);
-  return date.toLocaleDateString("ja-JP", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  });
-}
 
 export function ConversationList({ conversations }: ConversationListProps) {
   if (conversations.length === 0) {
@@ -33,7 +25,7 @@ export function ConversationList({ conversations }: ConversationListProps) {
           >
             <span className="font-medium">{conversation.title}</span>
             <span className="ml-2 text-xs text-gray-400">
-              {formatDate(conversation.updatedAt)}
+              {formatDateJst(conversation.updatedAt)}
             </span>
           </Link>
         </li>

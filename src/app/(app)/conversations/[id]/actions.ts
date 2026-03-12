@@ -146,6 +146,49 @@ function getRequiredStringField(
   return value;
 }
 
+function normalizePostedAtInput(value: string): string | null {
+  const trimmedValue = value.trim();
+  if (trimmedValue.length === 0) {
+    return null;
+  }
+
+  const localDateTimeMatch = trimmedValue.match(
+    /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(\.\d{1,3})?)?$/,
+  );
+  if (localDateTimeMatch) {
+    const [
+      ,
+      year,
+      month,
+      day,
+      hour,
+      minute,
+      second = "00",
+      millisecond = ".000",
+    ] = localDateTimeMatch;
+
+    const date = new Date(
+      Date.UTC(
+        Number(year),
+        Number(month) - 1,
+        Number(day),
+        Number(hour) - 9,
+        Number(minute),
+        Number(second),
+        Number(millisecond.slice(1).padEnd(3, "0")),
+      ),
+    );
+
+    return date.toISOString();
+  }
+
+  if (Number.isNaN(Date.parse(trimmedValue))) {
+    return null;
+  }
+
+  return new Date(trimmedValue).toISOString();
+}
+
 export async function addTextRecordAction(
   conversationId: string,
   _prevState: AddTextRecordState,
@@ -182,13 +225,17 @@ export async function addTextRecordAction(
   if (postedAt === null) {
     return { error: "投稿日時のデータが不正です" };
   }
+  const normalizedPostedAt = normalizePostedAtInput(postedAt);
+  if (normalizedPostedAt === null) {
+    return { error: "投稿日時のデータが不正です" };
+  }
 
   const input = {
     conversationId,
     title: titleValue || null,
     content,
     speakerParticipantId,
-    postedAt,
+    postedAt: normalizedPostedAt,
   };
 
   const validationError = validateAddTextRecordInput(input);
@@ -254,6 +301,10 @@ export async function addImageRecordAction(
   if (postedAt === null) {
     return { error: "投稿日時のデータが不正です" };
   }
+  const normalizedPostedAt = normalizePostedAtInput(postedAt);
+  if (normalizedPostedAt === null) {
+    return { error: "投稿日時のデータが不正です" };
+  }
 
   const input = {
     userId: user.id,
@@ -264,7 +315,7 @@ export async function addImageRecordAction(
     filename: file.name,
     contentType: file.type,
     speakerParticipantId,
-    postedAt,
+    postedAt: normalizedPostedAt,
   };
 
   const validationError = validateAddMediaRecordInput(input);
@@ -328,6 +379,10 @@ export async function addVideoRecordAction(
   if (postedAt === null) {
     return { error: "投稿日時のデータが不正です" };
   }
+  const normalizedPostedAt = normalizePostedAtInput(postedAt);
+  if (normalizedPostedAt === null) {
+    return { error: "投稿日時のデータが不正です" };
+  }
 
   const input = {
     userId: user.id,
@@ -339,7 +394,7 @@ export async function addVideoRecordAction(
     contentType: file.type,
     hasAudio,
     speakerParticipantId,
-    postedAt,
+    postedAt: normalizedPostedAt,
   };
 
   const validationError = validateAddMediaRecordInput(input);
@@ -400,6 +455,10 @@ export async function addAudioRecordAction(
   if (postedAt === null) {
     return { error: "投稿日時のデータが不正です" };
   }
+  const normalizedPostedAt = normalizePostedAtInput(postedAt);
+  if (normalizedPostedAt === null) {
+    return { error: "投稿日時のデータが不正です" };
+  }
 
   const input = {
     userId: user.id,
@@ -410,7 +469,7 @@ export async function addAudioRecordAction(
     filename: file.name,
     contentType: file.type,
     speakerParticipantId,
-    postedAt,
+    postedAt: normalizedPostedAt,
   };
 
   const validationError = validateAddMediaRecordInput(input);

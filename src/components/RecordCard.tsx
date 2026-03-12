@@ -1,4 +1,5 @@
 import Image from "next/image";
+import { formatDateTimeJst } from "@/lib/dateTime";
 import type { Record, RecordType } from "@/types/domain";
 import type { MediaUrl } from "@/usecases/recordUseCases";
 
@@ -13,17 +14,6 @@ const recordTypeLabels: { [K in RecordType]: { icon: string; label: string } } =
   video: { icon: "V", label: "動画" },
   audio: { icon: "A", label: "音声" },
 };
-
-function formatTimestamp(dateString: string): string {
-  const date = new Date(dateString);
-  return date.toLocaleDateString("ja-JP", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
 
 function MediaDisplay({
   record,
@@ -86,7 +76,7 @@ export function RecordCard({ record, mediaUrl }: RecordCardProps) {
           <span className="text-sm font-medium">{record.title}</span>
         )}
         <span className="ml-auto text-xs text-gray-400">
-          {formatTimestamp(record.createdAt)}
+          {formatDateTimeJst(record.createdAt)}
         </span>
       </div>
       {record.content && (

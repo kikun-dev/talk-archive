@@ -1,4 +1,5 @@
 import type { ConversationWithMetadata } from "@/usecases/conversationUseCases";
+import { formatDateJst } from "@/lib/dateTime";
 import type { IdolGroup } from "@/types/domain";
 
 type ConversationHeaderProps = {
@@ -10,15 +11,6 @@ const idolGroupLabels: Record<IdolGroup, string> = {
   sakurazaka: "櫻坂46",
   hinatazaka: "日向坂46",
 };
-
-function formatDate(dateString: string): string {
-  const date = new Date(dateString);
-  return date.toLocaleDateString("ja-JP", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  });
-}
 
 function formatPeriod(
   startDate: string,
@@ -66,7 +58,7 @@ export function ConversationHeader({
         )}
         <p>
           <span className="font-medium text-gray-700">作成日:</span>{" "}
-          {formatDate(conversation.createdAt)}
+          {formatDateJst(conversation.createdAt)}
         </p>
       </div>
     </div>

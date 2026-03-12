@@ -71,7 +71,7 @@ attachments
 - 表示順は `posted_at` を基準にし、同一日時の安定順序は `position` で担保する
 
 `speaker_participant_id` は `conversation_participants` を参照し、トーク詳細画面の吹き出し表示や日付検索の基準になる。
-participant 編集仕様の見直しは `#79` で対応する。
+participant 編集は、既存 participant の ID を維持する差分更新で扱う。
 
 ---
 
