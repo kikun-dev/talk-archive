@@ -174,6 +174,7 @@ export async function updateConversationWithMetadata(
       endDate?: string | null;
     }>;
     participants?: Array<{
+      id?: string;
       name: string;
     }>;
   },
@@ -196,6 +197,7 @@ export async function updateConversationWithMetadata(
       p_has_active_periods: params.activePeriods !== undefined,
       p_participants: (params.participants ?? []).map(
         (participant, index) => ({
+          id: participant.id ?? null,
           name: participant.name,
           sort_order: index,
         }),

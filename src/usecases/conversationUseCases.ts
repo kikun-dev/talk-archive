@@ -42,6 +42,7 @@ export type ConversationActivePeriodInput = {
 };
 
 export type ConversationParticipantInput = {
+  id?: string;
   name: string;
 };
 
@@ -75,6 +76,12 @@ function getTodayDateString(today: Date): string {
   const month = String(today.getMonth() + 1).padStart(2, "0");
   const day = String(today.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
+}
+
+function isValidUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+    value,
+  );
 }
 
 function validateIdolGroup(value: string | undefined): boolean {
@@ -125,6 +132,10 @@ export function validateConversationParticipants(
   const normalizedNames = new Set<string>();
 
   for (const participant of participants) {
+    if (participant.id !== undefined && !isValidUuid(participant.id)) {
+      return "参加者IDが不正です";
+    }
+
     const trimmedName = participant.name.trim();
 
     if (trimmedName.length === 0) {
@@ -138,6 +149,25 @@ export function validateConversationParticipants(
     }
 
     normalizedNames.add(trimmedName);
+  }
+
+  return null;
+}
+
+export function validateParticipantsPreserveExisting(
+  inputParticipants: ConversationParticipantInput[],
+  existingParticipantIds: string[],
+): string | null {
+  const inputIds = new Set(
+    inputParticipants
+      .filter((p) => p.id !== undefined)
+      .map((p) => p.id as string),
+  );
+
+  for (const existingId of existingParticipantIds) {
+    if (!inputIds.has(existingId)) {
+      return "既存の参加者を削除することはできません";
+    }
   }
 
   return null;
@@ -368,6 +398,17 @@ export async function updateExistingConversation(
     throw new Error(validationError);
   }
 
+  if (input.participants !== undefined) {
+    const existingParticipants = await getConversationParticipants(client, id);
+    const preserveError = validateParticipantsPreserveExisting(
+      input.participants,
+      existingParticipants.map((p) => p.id),
+    );
+    if (preserveError) {
+      throw new Error(preserveError);
+    }
+  }
+
   const conversation =
     input.activePeriods !== undefined || input.participants !== undefined
       ? await updateConversationWithMetadata(client, id, {
@@ -377,6 +418,7 @@ export async function updateExistingConversation(
           coverImagePath: input.coverImagePath,
           activePeriods: input.activePeriods,
           participants: input.participants?.map((participant) => ({
+            id: participant.id,
             name: participant.name.trim(),
           })),
         })

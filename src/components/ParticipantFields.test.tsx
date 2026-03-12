@@ -38,7 +38,7 @@ describe("ParticipantFields", () => {
     ]);
   });
 
-  it("removes a participant", () => {
+  it("removes a new participant", () => {
     const onChange = vi.fn();
 
     render(
@@ -68,5 +68,54 @@ describe("ParticipantFields", () => {
     });
 
     expect(onChange).toHaveBeenCalledWith([{ name: "メンバーC" }]);
+  });
+
+  it("does not show delete button for existing participants with id", () => {
+    render(
+      <ParticipantFields
+        participants={[
+          { id: "550e8400-e29b-41d4-a716-446655440000", name: "メンバーA" },
+        ]}
+        onChange={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByDisplayValue("メンバーA")).toBeInTheDocument();
+    expect(screen.queryByText("削除")).not.toBeInTheDocument();
+  });
+
+  it("shows delete button only for new participants", () => {
+    render(
+      <ParticipantFields
+        participants={[
+          { id: "550e8400-e29b-41d4-a716-446655440000", name: "メンバーA" },
+          { name: "メンバーB" },
+        ]}
+        onChange={vi.fn()}
+      />,
+    );
+
+    const deleteButtons = screen.getAllByText("削除");
+    expect(deleteButtons).toHaveLength(1);
+  });
+
+  it("preserves id when updating existing participant name", () => {
+    const onChange = vi.fn();
+    const participantId = "550e8400-e29b-41d4-a716-446655440000";
+
+    render(
+      <ParticipantFields
+        participants={[{ id: participantId, name: "メンバーA" }]}
+        onChange={onChange}
+      />,
+    );
+
+    fireEvent.change(screen.getByDisplayValue("メンバーA"), {
+      target: { value: "メンバーC" },
+    });
+
+    expect(onChange).toHaveBeenCalledWith([
+      { id: participantId, name: "メンバーC" },
+    ]);
   });
 });
