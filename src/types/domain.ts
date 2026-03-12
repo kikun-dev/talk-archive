@@ -92,3 +92,8 @@ export type Attachment = {
 export type MediaAttachment = Attachment & {
   conversationId: string;
 };
+
+/** 検索結果 */
+export type SearchRecordResult = Record & {
+  conversationTitle: string;
+};

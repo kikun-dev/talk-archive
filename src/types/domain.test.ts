@@ -6,6 +6,7 @@ import type {
   ConversationActivePeriod,
   ConversationParticipant,
   Record,
+  SearchRecordResult,
   Source,
 } from "./domain";
 
@@ -109,5 +110,24 @@ describe("domain types", () => {
       createdAt: "2026-01-01T00:00:00Z",
     };
     expect(attachment.mimeType).toBe("image/png");
+  });
+
+  it("allows valid SearchRecordResult", () => {
+    const searchResult: SearchRecordResult = {
+      id: "rec-1",
+      conversationId: "conv-1",
+      conversationTitle: "会話タイトル",
+      recordType: RecordType.TEXT,
+      title: "タイトル",
+      content: "テスト内容",
+      hasAudio: false,
+      speakerParticipantId: "part-1",
+      postedAt: "2026-01-01T12:00:00Z",
+      position: 0,
+      createdAt: "2026-01-01T00:00:00Z",
+      updatedAt: "2026-01-01T00:00:00Z",
+    };
+
+    expect(searchResult.conversationTitle).toBe("会話タイトル");
   });
 });
