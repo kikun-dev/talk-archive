@@ -245,6 +245,28 @@ export async function getNextRecordPosition(
   return data ? data.position + 1 : 0;
 }
 
+export async function getRecordsByConversationAndDateRange(
+  client: SupabaseClient<Database>,
+  conversationId: string,
+  startInclusive: string,
+  endExclusive: string,
+): Promise<Record[]> {
+  const { data, error } = await client
+    .from("records")
+    .select("*")
+    .eq("conversation_id", conversationId)
+    .gte("posted_at", startInclusive)
+    .lt("posted_at", endExclusive)
+    .order("posted_at", { ascending: true })
+    .order("position", { ascending: true });
+
+  if (error) {
+    throw error;
+  }
+
+  return data.map(toRecord);
+}
+
 export async function searchRecords(
   client: SupabaseClient<Database>,
   params: {

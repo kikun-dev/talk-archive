@@ -3,6 +3,10 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import { ChatView } from "./ChatView";
 import type { ConversationWithRecords } from "@/usecases/conversationUseCases";
 
+vi.mock("next/navigation", () => ({
+  useSearchParams: () => new URLSearchParams(),
+}));
+
 vi.mock("@/app/(app)/conversations/[id]/actions", () => ({
   updateRecordAction: vi.fn(),
   deleteRecordAction: vi.fn(),

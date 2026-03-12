@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { formatDateHeaderJst, getDateKeyJst } from "@/lib/dateTime";
 import type { ConversationParticipant, Record } from "@/types/domain";
 import type { ConversationWithRecords } from "@/usecases/conversationUseCases";
@@ -68,6 +69,8 @@ function searchRecordsLocal(
 export function ChatView({ conversation, mediaUrls }: ChatViewProps) {
   const participantMap = buildParticipantMap(conversation.participants);
   const dateGroups = groupRecordsByDate(conversation.records);
+  const searchParams = useSearchParams();
+  const targetRecordId = searchParams.get("recordId");
 
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -116,12 +119,14 @@ export function ChatView({ conversation, mediaUrls }: ChatViewProps) {
     });
   }
 
-  // Scroll to bottom on initial load
+  // Scroll to target record or bottom on initial load
   useEffect(() => {
-    if (timelineRef.current) {
+    if (targetRecordId) {
+      scrollToRecord(targetRecordId);
+    } else if (timelineRef.current) {
       timelineRef.current.scrollTop = timelineRef.current.scrollHeight;
     }
-  }, []);
+  }, [targetRecordId, scrollToRecord]);
 
   return (
     <div className="-m-6 flex h-[100vh] flex-col bg-gray-100">
