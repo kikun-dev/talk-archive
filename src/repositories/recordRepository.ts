@@ -253,24 +253,41 @@ export async function searchRecords(
     conversationId?: string;
   },
 ): Promise<SearchRecordResult[]> {
-  let queryBuilder = client
-    .from("records")
-    .select("*, conversations!inner(id, title, user_id)")
-    .eq("conversations.user_id", params.userId);
+  async function searchByColumn(
+    column: "content" | "title",
+  ): Promise<SearchRecordRow[]> {
+    let queryBuilder = client
+      .from("records")
+      .select("*, conversations!inner(id, title, user_id)")
+      .eq("conversations.user_id", params.userId);
 
-  if (params.conversationId !== undefined) {
-    queryBuilder = queryBuilder.eq("conversation_id", params.conversationId);
+    if (params.conversationId !== undefined) {
+      queryBuilder = queryBuilder.eq("conversation_id", params.conversationId);
+    }
+
+    const { data, error } = await queryBuilder
+      .ilike(column, `%${params.query}%`)
+      .order("posted_at", { ascending: false });
+
+    if (error) {
+      throw error;
+    }
+
+    return data as unknown as SearchRecordRow[];
   }
 
-  const { data, error } = await queryBuilder
-    .or(`content.ilike.%${params.query}%,title.ilike.%${params.query}%`)
-    .order("posted_at", { ascending: false });
+  const [contentMatches, titleMatches] = await Promise.all([
+    searchByColumn("content"),
+    searchByColumn("title"),
+  ]);
 
-  if (error) {
-    throw error;
+  const uniqueRows = new Map<string, SearchRecordRow>();
+
+  for (const row of [...contentMatches, ...titleMatches]) {
+    uniqueRows.set(row.id, row);
   }
 
-  return data.map((row) =>
-    toSearchRecordResult(row as unknown as SearchRecordRow),
-  );
+  return Array.from(uniqueRows.values())
+    .sort((a, b) => b.posted_at.localeCompare(a.posted_at))
+    .map(toSearchRecordResult);
 }

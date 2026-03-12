@@ -95,5 +95,20 @@ describe("searchUseCases", () => {
         conversationId: "conv-1",
       });
     });
+
+    it("keeps commas as searchable characters", async () => {
+      mockSearchRecordsInRepository.mockResolvedValue([baseSearchResult]);
+
+      await searchRecords(client, {
+        userId: "user-1",
+        query: "一期生,二期生",
+      });
+
+      expect(mockSearchRecordsInRepository).toHaveBeenCalledWith(client, {
+        userId: "user-1",
+        query: "一期生,二期生",
+        conversationId: undefined,
+      });
+    });
   });
 });

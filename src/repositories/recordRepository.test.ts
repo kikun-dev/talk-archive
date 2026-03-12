@@ -508,11 +508,11 @@ describe("recordRepository", () => {
 
   describe("searchRecords", () => {
     it("searches records by title and content with conversation context", async () => {
-      builder = createMockQueryBuilder({
-        order: vi
-          .fn()
-          .mockResolvedValue({ data: [baseSearchRow], error: null }),
-      });
+      builder = createMockQueryBuilder();
+      builder.order = vi
+        .fn()
+        .mockResolvedValueOnce({ data: [baseSearchRow], error: null })
+        .mockResolvedValueOnce({ data: [], error: null });
       client = createMockClient(builder);
 
       const result = await searchRecords(client, {
@@ -530,8 +530,15 @@ describe("recordRepository", () => {
         "conversations.user_id",
         "user-1",
       );
-      expect(builder.or).toHaveBeenCalledWith(
-        "content.ilike.%テスト%,title.ilike.%テスト%",
+      expect(builder.ilike).toHaveBeenNthCalledWith(
+        1,
+        "content",
+        "%テスト%",
+      );
+      expect(builder.ilike).toHaveBeenNthCalledWith(
+        2,
+        "title",
+        "%テスト%",
       );
       expect(builder.order).toHaveBeenCalledWith("posted_at", {
         ascending: false,
@@ -539,11 +546,11 @@ describe("recordRepository", () => {
     });
 
     it("filters by conversationId when provided", async () => {
-      builder = createMockQueryBuilder({
-        order: vi
-          .fn()
-          .mockResolvedValue({ data: [baseSearchRow], error: null }),
-      });
+      builder = createMockQueryBuilder();
+      builder.order = vi
+        .fn()
+        .mockResolvedValueOnce({ data: [baseSearchRow], error: null })
+        .mockResolvedValueOnce({ data: [], error: null });
       client = createMockClient(builder);
 
       await searchRecords(client, {
@@ -557,12 +564,19 @@ describe("recordRepository", () => {
         "conversation_id",
         "conv-1",
       );
+      expect(builder.eq).toHaveBeenNthCalledWith(
+        4,
+        "conversation_id",
+        "conv-1",
+      );
     });
 
     it("returns empty array when no matches", async () => {
-      builder = createMockQueryBuilder({
-        order: vi.fn().mockResolvedValue({ data: [], error: null }),
-      });
+      builder = createMockQueryBuilder();
+      builder.order = vi
+        .fn()
+        .mockResolvedValueOnce({ data: [], error: null })
+        .mockResolvedValueOnce({ data: [], error: null });
       client = createMockClient(builder);
 
       const result = await searchRecords(client, {
@@ -575,9 +589,10 @@ describe("recordRepository", () => {
 
     it("throws on error", async () => {
       const dbError = { message: "Search error", code: "42000" };
-      builder = createMockQueryBuilder({
-        order: vi.fn().mockResolvedValue({ data: null, error: dbError }),
-      });
+      builder = createMockQueryBuilder();
+      builder.order = vi
+        .fn()
+        .mockResolvedValueOnce({ data: null, error: dbError });
       client = createMockClient(builder);
 
       await expect(
@@ -586,6 +601,22 @@ describe("recordRepository", () => {
           query: "テスト",
         }),
       ).rejects.toEqual(dbError);
+    });
+
+    it("deduplicates records matched by both title and content", async () => {
+      builder = createMockQueryBuilder();
+      builder.order = vi
+        .fn()
+        .mockResolvedValueOnce({ data: [baseSearchRow], error: null })
+        .mockResolvedValueOnce({ data: [baseSearchRow], error: null });
+      client = createMockClient(builder);
+
+      const result = await searchRecords(client, {
+        userId: "user-1",
+        query: "テスト",
+      });
+
+      expect(result).toHaveLength(1);
     });
   });
 });
