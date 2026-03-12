@@ -82,6 +82,12 @@ function createFormDataWithFile(
   return formData;
 }
 
+const validTextFormData = {
+  content: "テスト内容",
+  speakerParticipantId: "part-1",
+  postedAt: "2026-01-01T12:00:00Z",
+};
+
 describe("addTextRecordAction", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -95,7 +101,7 @@ describe("addTextRecordAction", () => {
       addTextRecordAction(
         "conv-1",
         undefined,
-        createFormData({ content: "テスト" }),
+        createFormData(validTextFormData),
       ),
     ).rejects.toThrow("NEXT_REDIRECT: /login");
   });
@@ -110,7 +116,7 @@ describe("addTextRecordAction", () => {
     const result = await addTextRecordAction(
       "conv-1",
       undefined,
-      createFormData({ content: "" }),
+      createFormData({ ...validTextFormData, content: "" }),
     );
 
     expect(result).toEqual({ error: "テキストを入力してください" });
@@ -121,7 +127,7 @@ describe("addTextRecordAction", () => {
     mockSupabaseClient({ id: "user-1" });
 
     const { addTextRecordAction } = await import("./actions");
-    const formData = createFormData({ content: "テスト内容" });
+    const formData = createFormData(validTextFormData);
     formData.set("title", new File(["dummy"], "title.txt", { type: "text/plain" }));
 
     const result = await addTextRecordAction("conv-1", undefined, formData);
@@ -138,7 +144,11 @@ describe("addTextRecordAction", () => {
     const result = await addTextRecordAction(
       "conv-1",
       undefined,
-      createFormData({ title: "タイトル" }),
+      createFormData({
+        title: "タイトル",
+        speakerParticipantId: "part-1",
+        postedAt: "2026-01-01T12:00:00Z",
+      }),
     );
 
     expect(result).toEqual({ error: "テキストのデータが不正です" });
@@ -161,6 +171,34 @@ describe("addTextRecordAction", () => {
     expect(addTextRecordMock).not.toHaveBeenCalled();
   });
 
+  it("returns error when speakerParticipantId is missing", async () => {
+    mockSupabaseClient({ id: "user-1" });
+
+    const { addTextRecordAction } = await import("./actions");
+    const result = await addTextRecordAction(
+      "conv-1",
+      undefined,
+      createFormData({ content: "テスト", postedAt: "2026-01-01T12:00:00Z" }),
+    );
+
+    expect(result).toEqual({ error: "発言者のデータが不正です" });
+    expect(addTextRecordMock).not.toHaveBeenCalled();
+  });
+
+  it("returns error when postedAt is missing", async () => {
+    mockSupabaseClient({ id: "user-1" });
+
+    const { addTextRecordAction } = await import("./actions");
+    const result = await addTextRecordAction(
+      "conv-1",
+      undefined,
+      createFormData({ content: "テスト", speakerParticipantId: "part-1" }),
+    );
+
+    expect(result).toEqual({ error: "投稿日時のデータが不正です" });
+    expect(addTextRecordMock).not.toHaveBeenCalled();
+  });
+
   it("adds record and revalidates on success", async () => {
     mockSupabaseClient({ id: "user-1" });
     validateAddTextRecordInputMock.mockReturnValue(null);
@@ -170,7 +208,10 @@ describe("addTextRecordAction", () => {
     const result = await addTextRecordAction(
       "conv-1",
       undefined,
-      createFormData({ title: "タイトル", content: "テスト内容" }),
+      createFormData({
+        ...validTextFormData,
+        title: "タイトル",
+      }),
     );
 
     expect(result).toBeUndefined();
@@ -180,6 +221,8 @@ describe("addTextRecordAction", () => {
         conversationId: "conv-1",
         title: "タイトル",
         content: "テスト内容",
+        speakerParticipantId: "part-1",
+        postedAt: "2026-01-01T12:00:00Z",
       }),
     );
     expect(revalidatePathMock).toHaveBeenCalledWith("/conversations/conv-1");
@@ -194,7 +237,7 @@ describe("addTextRecordAction", () => {
     await addTextRecordAction(
       "conv-1",
       undefined,
-      createFormData({ title: "", content: "テスト" }),
+      createFormData({ ...validTextFormData, title: "" }),
     );
 
     expect(addTextRecordMock).toHaveBeenCalledWith(
@@ -425,12 +468,16 @@ function createImageFormData(overrides?: {
   file?: File;
   title?: string;
   content?: string;
+  speakerParticipantId?: string;
+  postedAt?: string;
 }): FormData {
   const formData = new FormData();
   const file =
     overrides?.file ??
     new File(["image-data"], "photo.jpg", { type: "image/jpeg" });
   formData.set("file", file);
+  formData.set("speakerParticipantId", overrides?.speakerParticipantId ?? "part-1");
+  formData.set("postedAt", overrides?.postedAt ?? "2026-01-01T12:00:00Z");
   if (overrides?.title !== undefined) {
     formData.set("title", overrides.title);
   }
@@ -569,6 +616,8 @@ describe("addImageRecordAction", () => {
         content: "説明文",
         filename: "photo.jpg",
         contentType: "image/jpeg",
+        speakerParticipantId: "part-1",
+        postedAt: "2026-01-01T12:00:00Z",
       }),
     );
     expect(revalidatePathMock).toHaveBeenCalledWith("/conversations/conv-1");
@@ -603,12 +652,16 @@ function createVideoFormData(overrides?: {
   file?: File;
   title?: string;
   hasAudio?: string;
+  speakerParticipantId?: string;
+  postedAt?: string;
 }): FormData {
   const formData = new FormData();
   const file =
     overrides?.file ??
     new File(["video-data"], "clip.mp4", { type: "video/mp4" });
   formData.set("file", file);
+  formData.set("speakerParticipantId", overrides?.speakerParticipantId ?? "part-1");
+  formData.set("postedAt", overrides?.postedAt ?? "2026-01-01T12:00:00Z");
   if (overrides?.title !== undefined) {
     formData.set("title", overrides.title);
   }
@@ -705,6 +758,8 @@ describe("addVideoRecordAction", () => {
         filename: "clip.mp4",
         contentType: "video/mp4",
         hasAudio: true,
+        speakerParticipantId: "part-1",
+        postedAt: "2026-01-01T12:00:00Z",
       }),
     );
     expect(revalidatePathMock).toHaveBeenCalledWith("/conversations/conv-1");
@@ -735,12 +790,16 @@ describe("addVideoRecordAction", () => {
 function createAudioFormData(overrides?: {
   file?: File;
   title?: string;
+  speakerParticipantId?: string;
+  postedAt?: string;
 }): FormData {
   const formData = new FormData();
   const file =
     overrides?.file ??
     new File(["audio-data"], "voice.mp3", { type: "audio/mpeg" });
   formData.set("file", file);
+  formData.set("speakerParticipantId", overrides?.speakerParticipantId ?? "part-1");
+  formData.set("postedAt", overrides?.postedAt ?? "2026-01-01T12:00:00Z");
   if (overrides?.title !== undefined) {
     formData.set("title", overrides.title);
   }
@@ -834,6 +893,8 @@ describe("addAudioRecordAction", () => {
         content: null,
         filename: "voice.mp3",
         contentType: "audio/mpeg",
+        speakerParticipantId: "part-1",
+        postedAt: "2026-01-01T12:00:00Z",
       }),
     );
     expect(revalidatePathMock).toHaveBeenCalledWith("/conversations/conv-1");

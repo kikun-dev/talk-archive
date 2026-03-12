@@ -22,7 +22,19 @@ export type AddTextRecordInput = {
   conversationId: string;
   title?: string | null;
   content: string;
+  speakerParticipantId: string;
+  postedAt: string;
 };
+
+function isValidUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+    value,
+  );
+}
+
+function isValidPostedAt(value: string): boolean {
+  return value.trim().length > 0 && !Number.isNaN(Date.parse(value));
+}
 
 export function validateAddTextRecordInput(
   input: AddTextRecordInput,
@@ -37,6 +49,14 @@ export function validateAddTextRecordInput(
     if (trimmedTitle.length > 200) {
       return "タイトルは200文字以内で入力してください";
     }
+  }
+
+  if (!isValidUuid(input.speakerParticipantId.trim())) {
+    return "発言者を正しく選択してください";
+  }
+
+  if (!isValidPostedAt(input.postedAt.trim())) {
+    return "投稿日時が不正です";
   }
 
   return null;
@@ -55,18 +75,27 @@ export async function addTextRecord(
     conversationId: input.conversationId,
     title: input.title?.trim() ?? null,
     content: input.content.trim(),
+    speakerParticipantId: input.speakerParticipantId.trim(),
+    postedAt: input.postedAt.trim(),
   });
 }
 
 export type UpdateRecordInput = {
   title?: string | null;
   content?: string | null;
+  speakerParticipantId?: string;
+  postedAt?: string;
 };
 
 export function validateUpdateRecordInput(
   input: UpdateRecordInput,
 ): string | null {
-  if (input.title === undefined && input.content === undefined) {
+  if (
+    input.title === undefined &&
+    input.content === undefined &&
+    input.speakerParticipantId === undefined &&
+    input.postedAt === undefined
+  ) {
     return "更新項目を指定してください";
   }
 
@@ -85,6 +114,20 @@ export function validateUpdateRecordInput(
   }
   if (input.content === null) {
     return "テキストを入力してください";
+  }
+
+  if (
+    input.speakerParticipantId !== undefined &&
+    !isValidUuid(input.speakerParticipantId.trim())
+  ) {
+    return "発言者を正しく選択してください";
+  }
+
+  if (
+    input.postedAt !== undefined &&
+    !isValidPostedAt(input.postedAt.trim())
+  ) {
+    return "投稿日時が不正です";
   }
 
   return null;
@@ -106,6 +149,11 @@ export async function updateExistingRecord(
       input.content !== undefined
         ? (input.content?.trim() ?? null)
         : undefined,
+    speakerParticipantId:
+      input.speakerParticipantId !== undefined
+        ? input.speakerParticipantId.trim()
+        : undefined,
+    postedAt: input.postedAt !== undefined ? input.postedAt.trim() : undefined,
   });
 }
 
@@ -126,6 +174,8 @@ export type AddMediaRecordInput = {
   file: File | Blob;
   filename: string;
   contentType: string;
+  speakerParticipantId: string;
+  postedAt: string;
 };
 
 export type AddVideoRecordInput = AddMediaRecordInput & {
@@ -153,6 +203,14 @@ export function validateAddMediaRecordInput(
 
   if (input.contentType.trim().length === 0) {
     return "コンテンツタイプを指定してください";
+  }
+
+  if (!isValidUuid(input.speakerParticipantId.trim())) {
+    return "発言者を正しく選択してください";
+  }
+
+  if (!isValidPostedAt(input.postedAt.trim())) {
+    return "投稿日時が不正です";
   }
 
   return null;
@@ -183,6 +241,8 @@ async function createMediaRecord(
     title: input.title?.trim() ?? null,
     content: input.content?.trim() ?? null,
     hasAudio: options?.hasAudio ?? false,
+    speakerParticipantId: input.speakerParticipantId.trim(),
+    postedAt: input.postedAt.trim(),
   });
 
   const storagePath = buildStoragePath({

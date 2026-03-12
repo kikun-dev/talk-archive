@@ -128,6 +128,8 @@ describe("database types", () => {
       expectTypeOf<RecordRow>().toHaveProperty("title");
       expectTypeOf<RecordRow>().toHaveProperty("content");
       expectTypeOf<RecordRow>().toHaveProperty("has_audio");
+      expectTypeOf<RecordRow>().toHaveProperty("speaker_participant_id");
+      expectTypeOf<RecordRow>().toHaveProperty("posted_at");
       expectTypeOf<RecordRow>().toHaveProperty("position");
       expectTypeOf<RecordRow>().toHaveProperty("created_at");
       expectTypeOf<RecordRow>().toHaveProperty("updated_at");
@@ -142,6 +144,12 @@ describe("database types", () => {
       expectTypeOf<RecordRow["content"]>().toEqualTypeOf<Record["content"]>();
       expectTypeOf<RecordRow["has_audio"]>().toEqualTypeOf<
         Record["hasAudio"]
+      >();
+      expectTypeOf<RecordRow["speaker_participant_id"]>().toEqualTypeOf<
+        Record["speakerParticipantId"]
+      >();
+      expectTypeOf<RecordRow["posted_at"]>().toEqualTypeOf<
+        Record["postedAt"]
       >();
       expectTypeOf<RecordRow["position"]>().toEqualTypeOf<
         Record["position"]

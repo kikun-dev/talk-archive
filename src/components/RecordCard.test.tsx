@@ -10,6 +10,8 @@ const baseRecord: Record = {
   title: "テストタイトル",
   content: "テスト内容です",
   hasAudio: false,
+  speakerParticipantId: "part-1",
+  postedAt: "2026-01-15T10:30:00Z",
   position: 0,
   createdAt: "2026-01-15T10:30:00Z",
   updatedAt: "2026-01-15T10:30:00Z",

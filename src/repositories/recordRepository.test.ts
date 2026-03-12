@@ -22,6 +22,8 @@ const baseRow: RecordRow = {
   title: "テストタイトル",
   content: "テスト内容",
   has_audio: false,
+  speaker_participant_id: "part-1",
+  posted_at: "2026-01-01T12:00:00Z",
   position: 0,
   created_at: "2026-01-01T00:00:00Z",
   updated_at: "2026-01-01T00:00:00Z",
@@ -67,14 +69,16 @@ describe("recordRepository", () => {
   });
 
   describe("getRecordsByConversation", () => {
-    it("returns records ordered by position", async () => {
+    it("returns records ordered by posted_at then position", async () => {
       const rows = [
         baseRow,
         { ...baseRow, id: "rec-2", position: 1, title: "2番目" },
       ];
-      builder = createMockQueryBuilder({
-        order: vi.fn().mockResolvedValue({ data: rows, error: null }),
-      });
+      builder = createMockQueryBuilder();
+      const orderMock = vi.fn()
+        .mockReturnValueOnce(builder)
+        .mockResolvedValueOnce({ data: rows, error: null });
+      builder.order = orderMock;
       client = createMockClient(builder);
 
       const result = await getRecordsByConversation(client, "conv-1");
@@ -85,16 +89,20 @@ describe("recordRepository", () => {
       expect(result[0].recordType).toBe("text");
       expect(result[1].position).toBe(1);
       expect(builder.eq).toHaveBeenCalledWith("conversation_id", "conv-1");
-      expect(builder.order).toHaveBeenCalledWith("position", {
+      expect(orderMock).toHaveBeenCalledWith("posted_at", {
+        ascending: true,
+      });
+      expect(orderMock).toHaveBeenCalledWith("position", {
         ascending: true,
       });
     });
 
     it("throws on error", async () => {
       const dbError = { message: "DB error", code: "42000" };
-      builder = createMockQueryBuilder({
-        order: vi.fn().mockResolvedValue({ data: null, error: dbError }),
-      });
+      builder = createMockQueryBuilder();
+      builder.order = vi.fn()
+        .mockReturnValueOnce(builder)
+        .mockResolvedValueOnce({ data: null, error: dbError });
       client = createMockClient(builder);
 
       await expect(
@@ -121,6 +129,8 @@ describe("recordRepository", () => {
         title: "テストタイトル",
         content: "テスト内容",
         hasAudio: false,
+        speakerParticipantId: "part-1",
+        postedAt: "2026-01-01T12:00:00Z",
         position: 0,
         createdAt: "2026-01-01T00:00:00Z",
         updatedAt: "2026-01-01T00:00:00Z",
@@ -164,6 +174,8 @@ describe("recordRepository", () => {
         conversationId: "conv-1",
         recordType: "text",
         content: "テスト内容",
+        speakerParticipantId: "part-1",
+        postedAt: "2026-01-01T12:00:00Z",
       });
 
       expect(result.id).toBe("rec-1");
@@ -174,6 +186,8 @@ describe("recordRepository", () => {
         title: null,
         content: "テスト内容",
         has_audio: false,
+        speaker_participant_id: "part-1",
+        posted_at: "2026-01-01T12:00:00Z",
         position: 0,
       });
     });
@@ -198,6 +212,8 @@ describe("recordRepository", () => {
         title: "テストタイトル",
         content: "テスト内容",
         hasAudio: true,
+        speakerParticipantId: "part-1",
+        postedAt: "2026-01-01T12:00:00Z",
         position: 3,
       });
 
@@ -210,6 +226,8 @@ describe("recordRepository", () => {
         title: "テストタイトル",
         content: "テスト内容",
         has_audio: true,
+        speaker_participant_id: "part-1",
+        posted_at: "2026-01-01T12:00:00Z",
         position: 3,
       });
     });
@@ -228,6 +246,8 @@ describe("recordRepository", () => {
           conversationId: "conv-1",
           recordType: "text",
           content: "テスト",
+          speakerParticipantId: "part-1",
+          postedAt: "2026-01-01T12:00:00Z",
         }),
       ).rejects.toEqual(dbError);
     });
@@ -310,6 +330,8 @@ describe("recordRepository", () => {
         conversationId: "conv-1",
         title: "テストタイトル",
         content: "テスト内容",
+        speakerParticipantId: "part-1",
+        postedAt: "2026-01-01T12:00:00Z",
       });
 
       expect(result.id).toBe("rec-1");
@@ -318,6 +340,8 @@ describe("recordRepository", () => {
         p_conversation_id: "conv-1",
         p_title: "テストタイトル",
         p_content: "テスト内容",
+        p_speaker_participant_id: "part-1",
+        p_posted_at: "2026-01-01T12:00:00Z",
       });
     });
 
@@ -333,6 +357,8 @@ describe("recordRepository", () => {
           conversationId: "conv-1",
           title: null,
           content: "テスト内容",
+          speakerParticipantId: "part-1",
+          postedAt: "2026-01-01T12:00:00Z",
         }),
       ).rejects.toEqual(dbError);
     });
@@ -358,6 +384,8 @@ describe("recordRepository", () => {
         title: "テストタイトル",
         content: "テスト内容",
         hasAudio: true,
+        speakerParticipantId: "part-1",
+        postedAt: "2026-01-01T12:00:00Z",
       });
 
       expect(result.id).toBe("rec-img-1");
@@ -369,6 +397,8 @@ describe("recordRepository", () => {
         p_title: "テストタイトル",
         p_content: "テスト内容",
         p_has_audio: true,
+        p_speaker_participant_id: "part-1",
+        p_posted_at: "2026-01-01T12:00:00Z",
       });
     });
 
@@ -386,6 +416,8 @@ describe("recordRepository", () => {
           title: null,
           content: null,
           hasAudio: false,
+          speakerParticipantId: "part-1",
+          postedAt: "2026-01-01T12:00:00Z",
         }),
       ).rejects.toEqual(dbError);
     });
@@ -483,7 +515,7 @@ describe("recordRepository", () => {
         "user-1",
       );
       expect(builder.ilike).toHaveBeenCalledWith("content", "%テスト%");
-      expect(builder.order).toHaveBeenCalledWith("created_at", {
+      expect(builder.order).toHaveBeenCalledWith("posted_at", {
         ascending: false,
       });
     });

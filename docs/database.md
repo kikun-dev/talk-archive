@@ -45,7 +45,9 @@ attachments
 - 自分自身は保持しない
 - `name` と `sort_order` を持つ
 - 1 人トークか複数人トークかは参加者数で判断する
-- 将来的には各レコードの発言者選択に利用する
+- 各 record の `speaker_participant_id` から参照される
+- そのため participant 更新は全置換ではなく、既存 ID を維持する差分更新を前提とする
+- record 作成後の participant 削除は許可しない
 
 ---
 
@@ -69,6 +71,7 @@ attachments
 - 表示順は `posted_at` を基準にし、同一日時の安定順序は `position` で担保する
 
 `speaker_participant_id` は `conversation_participants` を参照し、トーク詳細画面の吹き出し表示や日付検索の基準になる。
+participant 編集仕様の見直しは `#79` で対応する。
 
 ---
 
