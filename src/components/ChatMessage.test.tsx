@@ -64,8 +64,7 @@ describe("ChatMessage", () => {
       />,
     );
 
-    // postedAt "2026-01-15T10:30:00Z" → displayed as local time
-    expect(screen.getByText(/\d{2}:\d{2}/)).toBeInTheDocument();
+    expect(screen.getByText("19:30")).toBeInTheDocument();
   });
 
   it("switches to edit form when edit button is clicked", () => {

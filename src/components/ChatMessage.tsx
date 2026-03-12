@@ -7,6 +7,7 @@ import {
   deleteRecordAction,
   type ActionState,
 } from "@/app/(app)/conversations/[id]/actions";
+import { formatTimeJst } from "@/lib/dateTime";
 import type { Record } from "@/types/domain";
 import type { MediaUrl } from "@/usecases/recordUseCases";
 
@@ -19,14 +20,6 @@ type ChatMessageProps = {
 
 function getInitial(name: string): string {
   return name.charAt(0);
-}
-
-function formatTime(dateString: string): string {
-  const date = new Date(dateString);
-  return date.toLocaleTimeString("ja-JP", {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
 }
 
 function MediaContent({
@@ -188,9 +181,9 @@ export function ChatMessage({
           {mediaUrl && <MediaContent record={record} mediaUrl={mediaUrl} />}
         </div>
         <div className="mt-0.5 flex items-center gap-2">
-          <span className="text-[10px] text-gray-400">
-            {formatTime(record.postedAt)}
-          </span>
+            <span className="text-[10px] text-gray-400">
+            {formatTimeJst(record.postedAt)}
+            </span>
           <div className="hidden gap-1 group-hover:flex">
             {record.recordType === "text" && (
               <button

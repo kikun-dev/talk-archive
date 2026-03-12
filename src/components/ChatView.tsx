@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { formatDateHeaderJst, getDateKeyJst } from "@/lib/dateTime";
 import type { ConversationParticipant, Record } from "@/types/domain";
 import type { ConversationWithRecords } from "@/usecases/conversationUseCases";
 import type { MediaUrl } from "@/usecases/recordUseCases";
@@ -23,21 +24,6 @@ function buildParticipantMap(
   return map;
 }
 
-function formatDateHeader(dateString: string): string {
-  const date = new Date(dateString);
-  return date.toLocaleDateString("ja-JP", {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-    weekday: "short",
-  });
-}
-
-function getDateKey(postedAt: string): string {
-  const date = new Date(postedAt);
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
-}
-
 function groupRecordsByDate(
   records: Record[],
 ): Array<{ dateKey: string; dateLabel: string; records: Record[] }> {
@@ -49,12 +35,12 @@ function groupRecordsByDate(
   let currentDateKey = "";
 
   for (const record of records) {
-    const dateKey = getDateKey(record.postedAt);
+    const dateKey = getDateKeyJst(record.postedAt);
     if (dateKey !== currentDateKey) {
       currentDateKey = dateKey;
       groups.push({
         dateKey,
-        dateLabel: formatDateHeader(record.postedAt),
+        dateLabel: formatDateHeaderJst(record.postedAt),
         records: [],
       });
     }
