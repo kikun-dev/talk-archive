@@ -58,6 +58,20 @@ attachments
 
 ---
 
+## records が持つ主な属性
+
+- `record_type`: text / image / video / audio
+- `title`: text / image のみ任意入力、video / audio では使用しない
+- `content`: text は必須、image は任意、video / audio は基本使わない
+- `speaker_participant_id`: 発言者 participant を参照する
+- `posted_at`: 実際の投稿日時
+- `created_at`: システム作成日時
+- 表示順は `posted_at` を基準にし、同一日時の安定順序は `position` で担保する
+
+`speaker_participant_id` は `conversation_participants` を参照し、トーク詳細画面の吹き出し表示や日付検索の基準になる。
+
+---
+
 ## ストレージ設計
 
 メタデータ
