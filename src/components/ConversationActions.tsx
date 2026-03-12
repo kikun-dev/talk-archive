@@ -8,12 +8,14 @@ import type { ConversationWithMetadata } from "@/usecases/conversationUseCases";
 
 type ConversationActionsProps = {
   conversation: ConversationWithMetadata;
+  defaultEditing?: boolean;
 };
 
 export function ConversationActions({
   conversation,
+  defaultEditing = false,
 }: ConversationActionsProps) {
-  const [isEditing, setIsEditing] = useState(false);
+  const [isEditing, setIsEditing] = useState(defaultEditing);
 
   if (isEditing) {
     return (

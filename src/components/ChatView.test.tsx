@@ -145,8 +145,21 @@ describe("ChatView", () => {
 
     fireEvent.click(screen.getByLabelText("メニュー"));
 
-    expect(screen.getByText("概要")).toBeInTheDocument();
-    expect(screen.getByText("会話編集")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "概要" })).toHaveAttribute(
+      "href",
+      "/conversations/conv-1/overview",
+    );
+    expect(screen.getByRole("link", { name: "日付検索" })).toHaveAttribute(
+      "href",
+      "/conversations/conv-1/dates",
+    );
+    expect(
+      screen.getByRole("link", { name: "会話内メディア一覧" }),
+    ).toHaveAttribute("href", "/conversations/conv-1/media");
+    expect(screen.getByRole("link", { name: "会話編集" })).toHaveAttribute(
+      "href",
+      "/conversations/conv-1/edit",
+    );
   });
 
   it("renders back link", () => {

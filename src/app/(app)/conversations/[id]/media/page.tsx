@@ -1,16 +1,15 @@
 import { notFound, redirect } from "next/navigation";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { getConversationWithRecords } from "@/usecases/conversationUseCases";
-import { ConversationActions } from "@/components/ConversationActions";
 import { ConversationSubpageLayout } from "@/components/ConversationSubpageLayout";
 
-type ConversationOverviewPageProps = {
+type ConversationMediaPageProps = {
   params: Promise<{ id: string }>;
 };
 
-export default async function ConversationOverviewPage({
+export default async function ConversationMediaPage({
   params,
-}: ConversationOverviewPageProps) {
+}: ConversationMediaPageProps) {
   const { id } = await params;
 
   const supabase = await createSupabaseServerClient();
@@ -31,9 +30,8 @@ export default async function ConversationOverviewPage({
   return (
     <ConversationSubpageLayout
       conversationId={conversation.id}
-      title="概要"
-    >
-      <ConversationActions conversation={conversation} />
-    </ConversationSubpageLayout>
+      title="会話内メディア一覧"
+      description="会話内メディア一覧ページは #76 で実装予定です。現時点では導線のみ用意しています。"
+    />
   );
 }

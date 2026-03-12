@@ -4,13 +4,13 @@ import { getConversationWithRecords } from "@/usecases/conversationUseCases";
 import { ConversationActions } from "@/components/ConversationActions";
 import { ConversationSubpageLayout } from "@/components/ConversationSubpageLayout";
 
-type ConversationOverviewPageProps = {
+type ConversationEditPageProps = {
   params: Promise<{ id: string }>;
 };
 
-export default async function ConversationOverviewPage({
+export default async function ConversationEditPage({
   params,
-}: ConversationOverviewPageProps) {
+}: ConversationEditPageProps) {
   const { id } = await params;
 
   const supabase = await createSupabaseServerClient();
@@ -31,9 +31,9 @@ export default async function ConversationOverviewPage({
   return (
     <ConversationSubpageLayout
       conversationId={conversation.id}
-      title="概要"
+      title="会話編集"
     >
-      <ConversationActions conversation={conversation} />
+      <ConversationActions conversation={conversation} defaultEditing />
     </ConversationSubpageLayout>
   );
 }

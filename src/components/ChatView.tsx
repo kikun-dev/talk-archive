@@ -216,7 +216,21 @@ export function ChatView({ conversation, mediaUrls }: ChatViewProps) {
                   概要
                 </Link>
                 <Link
-                  href={`/conversations/${conversation.id}/overview`}
+                  href={`/conversations/${conversation.id}/dates`}
+                  className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                  onClick={() => setIsMenuOpen(false)}
+                >
+                  日付検索
+                </Link>
+                <Link
+                  href={`/conversations/${conversation.id}/media`}
+                  className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                  onClick={() => setIsMenuOpen(false)}
+                >
+                  会話内メディア一覧
+                </Link>
+                <Link
+                  href={`/conversations/${conversation.id}/edit`}
                   className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
                   onClick={() => setIsMenuOpen(false)}
                 >
