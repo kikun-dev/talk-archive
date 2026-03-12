@@ -26,6 +26,16 @@ export type AddTextRecordInput = {
   postedAt: string;
 };
 
+function isValidUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+    value,
+  );
+}
+
+function isValidPostedAt(value: string): boolean {
+  return value.trim().length > 0 && !Number.isNaN(Date.parse(value));
+}
+
 export function validateAddTextRecordInput(
   input: AddTextRecordInput,
 ): string | null {
@@ -39,6 +49,14 @@ export function validateAddTextRecordInput(
     if (trimmedTitle.length > 200) {
       return "タイトルは200文字以内で入力してください";
     }
+  }
+
+  if (!isValidUuid(input.speakerParticipantId.trim())) {
+    return "発言者を正しく選択してください";
+  }
+
+  if (!isValidPostedAt(input.postedAt.trim())) {
+    return "投稿日時が不正です";
   }
 
   return null;
@@ -57,8 +75,8 @@ export async function addTextRecord(
     conversationId: input.conversationId,
     title: input.title?.trim() ?? null,
     content: input.content.trim(),
-    speakerParticipantId: input.speakerParticipantId,
-    postedAt: input.postedAt,
+    speakerParticipantId: input.speakerParticipantId.trim(),
+    postedAt: input.postedAt.trim(),
   });
 }
 
@@ -98,6 +116,20 @@ export function validateUpdateRecordInput(
     return "テキストを入力してください";
   }
 
+  if (
+    input.speakerParticipantId !== undefined &&
+    !isValidUuid(input.speakerParticipantId.trim())
+  ) {
+    return "発言者を正しく選択してください";
+  }
+
+  if (
+    input.postedAt !== undefined &&
+    !isValidPostedAt(input.postedAt.trim())
+  ) {
+    return "投稿日時が不正です";
+  }
+
   return null;
 }
 
@@ -117,8 +149,11 @@ export async function updateExistingRecord(
       input.content !== undefined
         ? (input.content?.trim() ?? null)
         : undefined,
-    speakerParticipantId: input.speakerParticipantId,
-    postedAt: input.postedAt,
+    speakerParticipantId:
+      input.speakerParticipantId !== undefined
+        ? input.speakerParticipantId.trim()
+        : undefined,
+    postedAt: input.postedAt !== undefined ? input.postedAt.trim() : undefined,
   });
 }
 
@@ -170,6 +205,14 @@ export function validateAddMediaRecordInput(
     return "コンテンツタイプを指定してください";
   }
 
+  if (!isValidUuid(input.speakerParticipantId.trim())) {
+    return "発言者を正しく選択してください";
+  }
+
+  if (!isValidPostedAt(input.postedAt.trim())) {
+    return "投稿日時が不正です";
+  }
+
   return null;
 }
 
@@ -198,8 +241,8 @@ async function createMediaRecord(
     title: input.title?.trim() ?? null,
     content: input.content?.trim() ?? null,
     hasAudio: options?.hasAudio ?? false,
-    speakerParticipantId: input.speakerParticipantId,
-    postedAt: input.postedAt,
+    speakerParticipantId: input.speakerParticipantId.trim(),
+    postedAt: input.postedAt.trim(),
   });
 
   const storagePath = buildStoragePath({

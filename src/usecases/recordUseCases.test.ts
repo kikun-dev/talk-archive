@@ -52,6 +52,7 @@ const mockGetFileUrl = vi.mocked(getFileUrl);
 const mockDeleteFile = vi.mocked(deleteFile);
 
 const client = {} as SupabaseClient<Database>;
+const participantId = "11111111-1111-1111-1111-111111111111";
 
 const baseRecord: Record = {
   id: "rec-1",
@@ -60,7 +61,7 @@ const baseRecord: Record = {
   title: null,
   content: "テスト内容",
   hasAudio: false,
-  speakerParticipantId: "part-1",
+  speakerParticipantId: participantId,
   postedAt: "2026-01-01T12:00:00Z",
   position: 0,
   createdAt: "2026-01-01T00:00:00Z",
@@ -75,7 +76,7 @@ describe("recordUseCases", () => {
   const baseTextInput = {
     conversationId: "conv-1",
     content: "テスト",
-    speakerParticipantId: "part-1",
+    speakerParticipantId: participantId,
     postedAt: "2026-01-01T12:00:00Z",
   };
 
@@ -128,6 +129,24 @@ describe("recordUseCases", () => {
         }),
       ).toBeNull();
     });
+
+    it("rejects invalid speakerParticipantId", () => {
+      expect(
+        validateAddTextRecordInput({
+          ...baseTextInput,
+          speakerParticipantId: "",
+        }),
+      ).toBe("発言者を正しく選択してください");
+    });
+
+    it("rejects invalid postedAt", () => {
+      expect(
+        validateAddTextRecordInput({
+          ...baseTextInput,
+          postedAt: "invalid-date",
+        }),
+      ).toBe("投稿日時が不正です");
+    });
   });
 
   describe("addTextRecord", () => {
@@ -148,7 +167,7 @@ describe("recordUseCases", () => {
         conversationId: "conv-1",
         title: null,
         content: "新しいテキスト",
-        speakerParticipantId: "part-1",
+        speakerParticipantId: participantId,
         postedAt: "2026-01-01T12:00:00Z",
       });
     });
@@ -166,7 +185,7 @@ describe("recordUseCases", () => {
         conversationId: "conv-1",
         title: "タイトル",
         content: "テスト内容",
-        speakerParticipantId: "part-1",
+        speakerParticipantId: participantId,
         postedAt: "2026-01-01T12:00:00Z",
       });
     });
@@ -231,6 +250,18 @@ describe("recordUseCases", () => {
       expect(
         validateUpdateRecordInput({ title: "あ".repeat(201) }),
       ).toBe("タイトルは200文字以内で入力してください");
+    });
+
+    it("rejects invalid speakerParticipantId", () => {
+      expect(
+        validateUpdateRecordInput({ speakerParticipantId: "" }),
+      ).toBe("発言者を正しく選択してください");
+    });
+
+    it("rejects invalid postedAt", () => {
+      expect(
+        validateUpdateRecordInput({ postedAt: "invalid-date" }),
+      ).toBe("投稿日時が不正です");
     });
   });
 
@@ -313,7 +344,7 @@ describe("recordUseCases", () => {
     title: null,
     content: null,
     hasAudio: false,
-    speakerParticipantId: "part-1",
+    speakerParticipantId: participantId,
     postedAt: "2026-01-01T12:00:00Z",
     position: 3,
     createdAt: "2026-01-01T00:00:00Z",
@@ -335,7 +366,7 @@ describe("recordUseCases", () => {
     file: new Blob(["test-data"], { type: "image/jpeg" }),
     filename: "photo.jpg",
     contentType: "image/jpeg",
-    speakerParticipantId: "part-1",
+    speakerParticipantId: participantId,
     postedAt: "2026-01-01T12:00:00Z",
   };
 
@@ -384,6 +415,24 @@ describe("recordUseCases", () => {
         }),
       ).toBe("コンテンツタイプを指定してください");
     });
+
+    it("rejects invalid speakerParticipantId", () => {
+      expect(
+        validateAddMediaRecordInput({
+          ...baseMediaInput,
+          speakerParticipantId: "",
+        }),
+      ).toBe("発言者を正しく選択してください");
+    });
+
+    it("rejects invalid postedAt", () => {
+      expect(
+        validateAddMediaRecordInput({
+          ...baseMediaInput,
+          postedAt: "invalid-date",
+        }),
+      ).toBe("投稿日時が不正です");
+    });
   });
 
   describe("addImageRecord", () => {
@@ -402,7 +451,7 @@ describe("recordUseCases", () => {
         title: null,
         content: null,
         hasAudio: false,
-        speakerParticipantId: "part-1",
+        speakerParticipantId: participantId,
         postedAt: "2026-01-01T12:00:00Z",
       });
       expect(mockUploadFile).toHaveBeenCalledWith(client, {

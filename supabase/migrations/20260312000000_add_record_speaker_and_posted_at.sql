@@ -16,8 +16,35 @@ create index records_posted_at_idx on records(conversation_id, posted_at);
 -- Index for speaker lookup
 create index records_speaker_participant_id_idx on records(speaker_participant_id);
 
--- Update ordering: replace position-based unique index with posted_at + position
--- position は同一 posted_at 内の安定順序として残す
+create or replace function validate_record_speaker_participant()
+returns trigger
+language plpgsql
+security invoker
+set search_path = public
+as $$
+begin
+  if not exists (
+    select 1
+    from conversation_participants
+    where conversation_participants.id = new.speaker_participant_id
+      and conversation_participants.conversation_id = new.conversation_id
+  ) then
+    raise exception 'speaker participant must belong to the same conversation';
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists records_validate_speaker_participant on records;
+create trigger records_validate_speaker_participant
+  before insert or update of conversation_id, speaker_participant_id
+  on records
+  for each row
+  execute function validate_record_speaker_participant();
+
+-- Keep the unique position index.
+-- Ordering itself is handled by posted_at ASC, position ASC in queries.
 drop index if exists records_conversation_position_unique_idx;
 create unique index records_conversation_position_unique_idx
   on records(conversation_id, position);
