@@ -78,6 +78,8 @@ describe("domain types", () => {
       title: null,
       content: "テスト内容",
       hasAudio: false,
+      speakerParticipantId: "part-1",
+      postedAt: "2026-01-01T12:00:00Z",
       position: 0,
       createdAt: "2026-01-01T00:00:00Z",
       updatedAt: "2026-01-01T00:00:00Z",

@@ -60,6 +60,8 @@ const baseRecord: Record = {
   title: null,
   content: "テスト内容",
   hasAudio: false,
+  speakerParticipantId: "part-1",
+  postedAt: "2026-01-01T12:00:00Z",
   position: 0,
   createdAt: "2026-01-01T00:00:00Z",
   updatedAt: "2026-01-01T00:00:00Z",
@@ -70,21 +72,22 @@ describe("recordUseCases", () => {
     vi.resetAllMocks();
   });
 
+  const baseTextInput = {
+    conversationId: "conv-1",
+    content: "テスト",
+    speakerParticipantId: "part-1",
+    postedAt: "2026-01-01T12:00:00Z",
+  };
+
   describe("validateAddTextRecordInput", () => {
     it("returns null for valid input", () => {
-      expect(
-        validateAddTextRecordInput({
-          conversationId: "conv-1",
-          content: "テスト",
-        }),
-      ).toBeNull();
+      expect(validateAddTextRecordInput(baseTextInput)).toBeNull();
     });
 
     it("returns null with valid title", () => {
       expect(
         validateAddTextRecordInput({
-          conversationId: "conv-1",
-          content: "テスト",
+          ...baseTextInput,
           title: "タイトル",
         }),
       ).toBeNull();
@@ -93,7 +96,7 @@ describe("recordUseCases", () => {
     it("rejects empty content", () => {
       expect(
         validateAddTextRecordInput({
-          conversationId: "conv-1",
+          ...baseTextInput,
           content: "",
         }),
       ).toBe("テキストを入力してください");
@@ -102,7 +105,7 @@ describe("recordUseCases", () => {
     it("rejects whitespace-only content", () => {
       expect(
         validateAddTextRecordInput({
-          conversationId: "conv-1",
+          ...baseTextInput,
           content: "   ",
         }),
       ).toBe("テキストを入力してください");
@@ -111,8 +114,7 @@ describe("recordUseCases", () => {
     it("rejects title over 200 characters", () => {
       expect(
         validateAddTextRecordInput({
-          conversationId: "conv-1",
-          content: "テスト",
+          ...baseTextInput,
           title: "あ".repeat(201),
         }),
       ).toBe("タイトルは200文字以内で入力してください");
@@ -121,8 +123,7 @@ describe("recordUseCases", () => {
     it("accepts null title", () => {
       expect(
         validateAddTextRecordInput({
-          conversationId: "conv-1",
-          content: "テスト",
+          ...baseTextInput,
           title: null,
         }),
       ).toBeNull();
@@ -138,7 +139,7 @@ describe("recordUseCases", () => {
       });
 
       const result = await addTextRecord(client, {
-        conversationId: "conv-1",
+        ...baseTextInput,
         content: "新しいテキスト",
       });
 
@@ -147,6 +148,8 @@ describe("recordUseCases", () => {
         conversationId: "conv-1",
         title: null,
         content: "新しいテキスト",
+        speakerParticipantId: "part-1",
+        postedAt: "2026-01-01T12:00:00Z",
       });
     });
 
@@ -154,7 +157,7 @@ describe("recordUseCases", () => {
       mockCreateTextRecordAtNextPosition.mockResolvedValue(baseRecord);
 
       await addTextRecord(client, {
-        conversationId: "conv-1",
+        ...baseTextInput,
         content: "  テスト内容  ",
         title: "  タイトル  ",
       });
@@ -163,13 +166,15 @@ describe("recordUseCases", () => {
         conversationId: "conv-1",
         title: "タイトル",
         content: "テスト内容",
+        speakerParticipantId: "part-1",
+        postedAt: "2026-01-01T12:00:00Z",
       });
     });
 
     it("throws on invalid input", async () => {
       await expect(
         addTextRecord(client, {
-          conversationId: "conv-1",
+          ...baseTextInput,
           content: "",
         }),
       ).rejects.toThrow("テキストを入力してください");
@@ -243,6 +248,8 @@ describe("recordUseCases", () => {
       expect(mockUpdateRecord).toHaveBeenCalledWith(client, "rec-1", {
         title: undefined,
         content: "更新後",
+        speakerParticipantId: undefined,
+        postedAt: undefined,
       });
     });
 
@@ -257,6 +264,8 @@ describe("recordUseCases", () => {
       expect(mockUpdateRecord).toHaveBeenCalledWith(client, "rec-1", {
         title: null,
         content: undefined,
+        speakerParticipantId: undefined,
+        postedAt: undefined,
       });
     });
 
@@ -304,6 +313,8 @@ describe("recordUseCases", () => {
     title: null,
     content: null,
     hasAudio: false,
+    speakerParticipantId: "part-1",
+    postedAt: "2026-01-01T12:00:00Z",
     position: 3,
     createdAt: "2026-01-01T00:00:00Z",
     updatedAt: "2026-01-01T00:00:00Z",
@@ -324,6 +335,8 @@ describe("recordUseCases", () => {
     file: new Blob(["test-data"], { type: "image/jpeg" }),
     filename: "photo.jpg",
     contentType: "image/jpeg",
+    speakerParticipantId: "part-1",
+    postedAt: "2026-01-01T12:00:00Z",
   };
 
   function setupMediaMocks(record: Record = imageRecord) {
@@ -389,6 +402,8 @@ describe("recordUseCases", () => {
         title: null,
         content: null,
         hasAudio: false,
+        speakerParticipantId: "part-1",
+        postedAt: "2026-01-01T12:00:00Z",
       });
       expect(mockUploadFile).toHaveBeenCalledWith(client, {
         path: "user-1/conv-1/rec-img-1/photo.jpg",

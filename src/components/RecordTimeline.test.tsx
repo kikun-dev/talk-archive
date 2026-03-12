@@ -15,6 +15,8 @@ const baseRecord: Record = {
   title: "最初のトーク",
   content: "こんにちは",
   hasAudio: false,
+  speakerParticipantId: "part-1",
+  postedAt: "2026-01-15T10:00:00Z",
   position: 0,
   createdAt: "2026-01-15T10:00:00Z",
   updatedAt: "2026-01-15T10:00:00Z",

@@ -12,6 +12,8 @@ function toRecord(row: RecordRow): Record {
     title: row.title,
     content: row.content,
     hasAudio: row.has_audio,
+    speakerParticipantId: row.speaker_participant_id,
+    postedAt: row.posted_at,
     position: row.position,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -26,6 +28,7 @@ export async function getRecordsByConversation(
     .from("records")
     .select("*")
     .eq("conversation_id", conversationId)
+    .order("posted_at", { ascending: true })
     .order("position", { ascending: true });
 
   if (error) {
@@ -60,6 +63,8 @@ export async function createRecord(
     title?: string | null;
     content?: string | null;
     hasAudio?: boolean;
+    speakerParticipantId: string;
+    postedAt: string;
     position?: number;
   },
 ): Promise<Record> {
@@ -71,6 +76,8 @@ export async function createRecord(
       title: params.title ?? null,
       content: params.content ?? null,
       has_audio: params.hasAudio ?? false,
+      speaker_participant_id: params.speakerParticipantId,
+      posted_at: params.postedAt,
       position: params.position ?? 0,
     })
     .select()
@@ -89,6 +96,8 @@ export async function createTextRecordAtNextPosition(
     conversationId: string;
     title: string | null;
     content: string;
+    speakerParticipantId: string;
+    postedAt: string;
   },
 ): Promise<Record> {
   const { data, error } = await client
@@ -96,6 +105,8 @@ export async function createTextRecordAtNextPosition(
       p_conversation_id: params.conversationId,
       p_title: params.title,
       p_content: params.content,
+      p_speaker_participant_id: params.speakerParticipantId,
+      p_posted_at: params.postedAt,
     })
     .single();
 
@@ -114,6 +125,8 @@ export async function createMediaRecordAtNextPosition(
     title?: string | null;
     content?: string | null;
     hasAudio?: boolean;
+    speakerParticipantId: string;
+    postedAt: string;
   },
 ): Promise<Record> {
   const { data, error } = await client
@@ -123,6 +136,8 @@ export async function createMediaRecordAtNextPosition(
       p_title: params.title ?? null,
       p_content: params.content ?? null,
       p_has_audio: params.hasAudio ?? false,
+      p_speaker_participant_id: params.speakerParticipantId,
+      p_posted_at: params.postedAt,
     })
     .single();
 
@@ -140,6 +155,8 @@ export async function updateRecord(
     title?: string | null;
     content?: string | null;
     hasAudio?: boolean;
+    speakerParticipantId?: string;
+    postedAt?: string;
     position?: number;
   },
 ): Promise<Record> {
@@ -152,6 +169,12 @@ export async function updateRecord(
   }
   if (params.hasAudio !== undefined) {
     updateData.has_audio = params.hasAudio;
+  }
+  if (params.speakerParticipantId !== undefined) {
+    updateData.speaker_participant_id = params.speakerParticipantId;
+  }
+  if (params.postedAt !== undefined) {
+    updateData.posted_at = params.postedAt;
   }
   if (params.position !== undefined) {
     updateData.position = params.position;
@@ -214,7 +237,7 @@ export async function searchRecords(
     .select("*, conversations!inner(user_id)")
     .eq("conversations.user_id", userId)
     .ilike("content", `%${query}%`)
-    .order("created_at", { ascending: false });
+    .order("posted_at", { ascending: false });
 
   if (error) {
     throw error;

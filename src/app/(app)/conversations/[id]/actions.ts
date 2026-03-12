@@ -156,10 +156,25 @@ export async function addTextRecordAction(
     return { error: "テキストのデータが不正です" };
   }
 
+  const speakerParticipantId = getRequiredStringField(
+    formData,
+    "speakerParticipantId",
+  );
+  if (speakerParticipantId === null) {
+    return { error: "発言者のデータが不正です" };
+  }
+
+  const postedAt = getRequiredStringField(formData, "postedAt");
+  if (postedAt === null) {
+    return { error: "投稿日時のデータが不正です" };
+  }
+
   const input = {
     conversationId,
     title: titleValue || null,
     content,
+    speakerParticipantId,
+    postedAt,
   };
 
   const validationError = validateAddTextRecordInput(input);
@@ -213,6 +228,19 @@ export async function addImageRecordAction(
     return { error: "テキストのデータが不正です" };
   }
 
+  const speakerParticipantId = getRequiredStringField(
+    formData,
+    "speakerParticipantId",
+  );
+  if (speakerParticipantId === null) {
+    return { error: "発言者のデータが不正です" };
+  }
+
+  const postedAt = getRequiredStringField(formData, "postedAt");
+  if (postedAt === null) {
+    return { error: "投稿日時のデータが不正です" };
+  }
+
   const input = {
     userId: user.id,
     conversationId,
@@ -221,6 +249,8 @@ export async function addImageRecordAction(
     file,
     filename: file.name,
     contentType: file.type,
+    speakerParticipantId,
+    postedAt,
   };
 
   const validationError = validateAddMediaRecordInput(input);
@@ -272,6 +302,19 @@ export async function addVideoRecordAction(
     return { error: "タイトルのデータが不正です" };
   }
 
+  const speakerParticipantId = getRequiredStringField(
+    formData,
+    "speakerParticipantId",
+  );
+  if (speakerParticipantId === null) {
+    return { error: "発言者のデータが不正です" };
+  }
+
+  const postedAt = getRequiredStringField(formData, "postedAt");
+  if (postedAt === null) {
+    return { error: "投稿日時のデータが不正です" };
+  }
+
   const input = {
     userId: user.id,
     conversationId,
@@ -281,6 +324,8 @@ export async function addVideoRecordAction(
     filename: file.name,
     contentType: file.type,
     hasAudio,
+    speakerParticipantId,
+    postedAt,
   };
 
   const validationError = validateAddMediaRecordInput(input);
@@ -329,6 +374,19 @@ export async function addAudioRecordAction(
     return { error: "タイトルのデータが不正です" };
   }
 
+  const speakerParticipantId = getRequiredStringField(
+    formData,
+    "speakerParticipantId",
+  );
+  if (speakerParticipantId === null) {
+    return { error: "発言者のデータが不正です" };
+  }
+
+  const postedAt = getRequiredStringField(formData, "postedAt");
+  if (postedAt === null) {
+    return { error: "投稿日時のデータが不正です" };
+  }
+
   const input = {
     userId: user.id,
     conversationId,
@@ -337,6 +395,8 @@ export async function addAudioRecordAction(
     file,
     filename: file.name,
     contentType: file.type,
+    speakerParticipantId,
+    postedAt,
   };
 
   const validationError = validateAddMediaRecordInput(input);

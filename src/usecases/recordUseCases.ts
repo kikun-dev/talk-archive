@@ -22,6 +22,8 @@ export type AddTextRecordInput = {
   conversationId: string;
   title?: string | null;
   content: string;
+  speakerParticipantId: string;
+  postedAt: string;
 };
 
 export function validateAddTextRecordInput(
@@ -55,18 +57,27 @@ export async function addTextRecord(
     conversationId: input.conversationId,
     title: input.title?.trim() ?? null,
     content: input.content.trim(),
+    speakerParticipantId: input.speakerParticipantId,
+    postedAt: input.postedAt,
   });
 }
 
 export type UpdateRecordInput = {
   title?: string | null;
   content?: string | null;
+  speakerParticipantId?: string;
+  postedAt?: string;
 };
 
 export function validateUpdateRecordInput(
   input: UpdateRecordInput,
 ): string | null {
-  if (input.title === undefined && input.content === undefined) {
+  if (
+    input.title === undefined &&
+    input.content === undefined &&
+    input.speakerParticipantId === undefined &&
+    input.postedAt === undefined
+  ) {
     return "更新項目を指定してください";
   }
 
@@ -106,6 +117,8 @@ export async function updateExistingRecord(
       input.content !== undefined
         ? (input.content?.trim() ?? null)
         : undefined,
+    speakerParticipantId: input.speakerParticipantId,
+    postedAt: input.postedAt,
   });
 }
 
@@ -126,6 +139,8 @@ export type AddMediaRecordInput = {
   file: File | Blob;
   filename: string;
   contentType: string;
+  speakerParticipantId: string;
+  postedAt: string;
 };
 
 export type AddVideoRecordInput = AddMediaRecordInput & {
@@ -183,6 +198,8 @@ async function createMediaRecord(
     title: input.title?.trim() ?? null,
     content: input.content?.trim() ?? null,
     hasAudio: options?.hasAudio ?? false,
+    speakerParticipantId: input.speakerParticipantId,
+    postedAt: input.postedAt,
   });
 
   const storagePath = buildStoragePath({

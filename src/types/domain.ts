@@ -71,6 +71,8 @@ export type Record = {
   title: string | null;
   content: string | null;
   hasAudio: boolean;
+  speakerParticipantId: string;
+  postedAt: string;
   position: number;
   createdAt: string;
   updatedAt: string;

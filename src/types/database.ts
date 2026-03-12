@@ -182,7 +182,9 @@ export type Database = {
           has_audio: boolean
           id: string
           position: number
+          posted_at: string
           record_type: Database["public"]["Enums"]["record_type"]
+          speaker_participant_id: string
           title: string | null
           updated_at: string
         }
@@ -193,7 +195,9 @@ export type Database = {
           has_audio?: boolean
           id?: string
           position?: number
+          posted_at: string
           record_type: Database["public"]["Enums"]["record_type"]
+          speaker_participant_id: string
           title?: string | null
           updated_at?: string
         }
@@ -204,7 +208,9 @@ export type Database = {
           has_audio?: boolean
           id?: string
           position?: number
+          posted_at?: string
           record_type?: Database["public"]["Enums"]["record_type"]
+          speaker_participant_id?: string
           title?: string | null
           updated_at?: string
         }
@@ -214,6 +220,13 @@ export type Database = {
             columns: ["conversation_id"]
             isOneToOne: false
             referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "records_speaker_participant_id_fkey"
+            columns: ["speaker_participant_id"]
+            isOneToOne: false
+            referencedRelation: "conversation_participants"
             referencedColumns: ["id"]
           },
         ]
@@ -252,7 +265,9 @@ export type Database = {
           p_content: string | null
           p_conversation_id: string
           p_has_audio: boolean
+          p_posted_at: string
           p_record_type: Database["public"]["Enums"]["record_type"]
+          p_speaker_participant_id: string
           p_title: string | null
         }
         Returns: {
@@ -262,7 +277,9 @@ export type Database = {
           has_audio: boolean
           id: string
           position: number
+          posted_at: string
           record_type: Database["public"]["Enums"]["record_type"]
+          speaker_participant_id: string
           title: string | null
           updated_at: string
         }[]
@@ -271,6 +288,8 @@ export type Database = {
         Args: {
           p_content: string
           p_conversation_id: string
+          p_posted_at: string
+          p_speaker_participant_id: string
           p_title: string | null
         }
         Returns: {
@@ -280,7 +299,9 @@ export type Database = {
           has_audio: boolean
           id: string
           position: number
+          posted_at: string
           record_type: Database["public"]["Enums"]["record_type"]
+          speaker_participant_id: string
           title: string | null
           updated_at: string
         }[]
