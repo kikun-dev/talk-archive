@@ -19,6 +19,7 @@ import {
   validateConversationParticipants,
   validateCreateConversationInput,
   validateUpdateConversationInput,
+  validateParticipantsPreserveExisting,
 } from "./conversationUseCases";
 
 vi.mock("@/repositories/conversationRepository");
@@ -85,9 +86,12 @@ const activePeriods: ConversationActivePeriod[] = [
   },
 ];
 
+const participantId1 = "a0000000-0000-0000-0000-000000000001";
+const participantId2 = "a0000000-0000-0000-0000-000000000002";
+
 const participants: ConversationParticipant[] = [
   {
-    id: "participant-1",
+    id: participantId1,
     conversationId: "conv-1",
     name: "メンバーA",
     sortOrder: 0,
@@ -206,6 +210,54 @@ describe("conversationUseCases", () => {
           { name: "メンバーA" },
         ]),
       ).toBe("参加者名が重複しています");
+    });
+
+    it("accepts participants with valid UUID id", () => {
+      expect(
+        validateConversationParticipants([
+          { id: participantId1, name: "メンバーA" },
+        ]),
+      ).toBeNull();
+    });
+
+    it("rejects participants with invalid id format", () => {
+      expect(
+        validateConversationParticipants([
+          { id: "not-a-uuid", name: "メンバーA" },
+        ]),
+      ).toBe("参加者IDが不正です");
+    });
+  });
+
+  describe("validateParticipantsPreserveExisting", () => {
+    it("accepts when all existing participants are present", () => {
+      expect(
+        validateParticipantsPreserveExisting(
+          [
+            { id: participantId1, name: "メンバーA" },
+            { name: "メンバーC" },
+          ],
+          [participantId1],
+        ),
+      ).toBeNull();
+    });
+
+    it("rejects when an existing participant is missing", () => {
+      expect(
+        validateParticipantsPreserveExisting(
+          [{ name: "メンバーC" }],
+          [participantId1],
+        ),
+      ).toBe("既存の参加者を削除することはできません");
+    });
+
+    it("accepts when there are no existing participants", () => {
+      expect(
+        validateParticipantsPreserveExisting(
+          [{ name: "メンバーA" }],
+          [],
+        ),
+      ).toBeNull();
     });
   });
 
@@ -375,22 +427,26 @@ describe("conversationUseCases", () => {
   });
 
   describe("updateExistingConversation", () => {
-    it("updates conversation with participants", async () => {
-      mockUpdateConversationWithMetadata.mockResolvedValue(baseConversation);
-      mockGetConversationActivePeriods.mockResolvedValue(activePeriods);
-      mockGetConversationParticipants.mockResolvedValue([
+    it("updates conversation with participants preserving existing IDs", async () => {
+      const existingParticipants: ConversationParticipant[] = [
         ...participants,
         {
-          id: "participant-2",
+          id: participantId2,
           conversationId: "conv-1",
           name: "メンバーB",
           sortOrder: 1,
           createdAt: "2026-01-01T00:00:00Z",
         },
-      ]);
+      ];
+      mockGetConversationParticipants.mockResolvedValue(existingParticipants);
+      mockUpdateConversationWithMetadata.mockResolvedValue(baseConversation);
+      mockGetConversationActivePeriods.mockResolvedValue(activePeriods);
 
       const result = await updateExistingConversation(client, "conv-1", {
-        participants: [{ name: "メンバーA" }, { name: " メンバーB " }],
+        participants: [
+          { id: participantId1, name: "メンバーA" },
+          { id: participantId2, name: " メンバーB " },
+        ],
       });
 
       expect(result.participants).toHaveLength(2);
@@ -403,10 +459,55 @@ describe("conversationUseCases", () => {
           sourceId: undefined,
           coverImagePath: undefined,
           activePeriods: undefined,
-          participants: [{ name: "メンバーA" }, { name: "メンバーB" }],
+          participants: [
+            { id: participantId1, name: "メンバーA" },
+            { id: participantId2, name: "メンバーB" },
+          ],
         },
       );
       expect(mockUpdateConversation).not.toHaveBeenCalled();
+    });
+
+    it("rejects removing existing participants", async () => {
+      mockGetConversationParticipants.mockResolvedValue(participants);
+
+      await expect(
+        updateExistingConversation(client, "conv-1", {
+          participants: [{ name: "メンバーC" }],
+        }),
+      ).rejects.toThrow("既存の参加者を削除することはできません");
+
+      expect(mockUpdateConversationWithMetadata).not.toHaveBeenCalled();
+    });
+
+    it("allows adding new participants alongside existing ones", async () => {
+      mockGetConversationParticipants.mockResolvedValue(participants);
+      mockUpdateConversationWithMetadata.mockResolvedValue(baseConversation);
+      mockGetConversationActivePeriods.mockResolvedValue(activePeriods);
+
+      const result = await updateExistingConversation(client, "conv-1", {
+        participants: [
+          { id: participantId1, name: "メンバーA" },
+          { name: "メンバーC" },
+        ],
+      });
+
+      expect(result.participants).toHaveLength(1);
+      expect(mockUpdateConversationWithMetadata).toHaveBeenCalledWith(
+        client,
+        "conv-1",
+        {
+          title: undefined,
+          idolGroup: undefined,
+          sourceId: undefined,
+          coverImagePath: undefined,
+          activePeriods: undefined,
+          participants: [
+            { id: participantId1, name: "メンバーA" },
+            { name: "メンバーC" },
+          ],
+        },
+      );
     });
 
     it("uses plain conversation update when metadata only", async () => {

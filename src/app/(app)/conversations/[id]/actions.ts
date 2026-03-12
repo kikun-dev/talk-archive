@@ -77,7 +77,9 @@ function parseActivePeriods(
   return activePeriods;
 }
 
-function parseParticipants(value: string): Array<{ name: string }> | null {
+function parseParticipants(
+  value: string,
+): Array<{ id?: string; name: string }> | null {
   let parsed: unknown;
 
   try {
@@ -90,14 +92,26 @@ function parseParticipants(value: string): Array<{ name: string }> | null {
     return null;
   }
 
-  const participants: Array<{ name: string }> = [];
+  const participants: Array<{ id?: string; name: string }> = [];
 
   for (const participant of parsed) {
     if (!isRecord(participant) || typeof participant.name !== "string") {
       return null;
     }
 
-    participants.push({ name: participant.name });
+    if (
+      participant.id !== undefined &&
+      participant.id !== null &&
+      typeof participant.id !== "string"
+    ) {
+      return null;
+    }
+
+    participants.push({
+      id:
+        typeof participant.id === "string" ? participant.id : undefined,
+      name: participant.name,
+    });
   }
 
   return participants;

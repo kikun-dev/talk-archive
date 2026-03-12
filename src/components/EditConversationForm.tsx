@@ -32,7 +32,7 @@ export function EditConversationForm({
   );
   const [participants, setParticipants] = useState<
     ConversationParticipantInput[]
-  >(conversation.participants.map((p) => ({ name: p.name })));
+  >(conversation.participants.map((p) => ({ id: p.id, name: p.name })));
 
   const [state, formAction, isPending] = useActionState<ActionState, FormData>(
     async (_prevState, formData) => {

@@ -193,7 +193,7 @@ describe("conversationRepository", () => {
         p_has_cover_image_path: false,
         p_active_periods: [],
         p_has_active_periods: false,
-        p_participants: [{ name: "メンバーA", sort_order: 0 }],
+        p_participants: [{ id: null, name: "メンバーA", sort_order: 0 }],
         p_has_participants: true,
       },
     );

@@ -22,7 +22,7 @@ export function ParticipantFields({
   function updateParticipant(index: number, value: string) {
     onChange(
       participants.map((participant, i) =>
-        i === index ? { name: value } : participant,
+        i === index ? { ...participant, name: value } : participant,
       ),
     );
   }
@@ -45,7 +45,7 @@ export function ParticipantFields({
       )}
 
       {participants.map((participant, index) => (
-        <div key={index} className="flex items-center gap-2">
+        <div key={participant.id ?? `new-${index}`} className="flex items-center gap-2">
           <input
             type="text"
             value={participant.name}
@@ -54,13 +54,15 @@ export function ParticipantFields({
             placeholder="参加者名"
             required
           />
-          <button
-            type="button"
-            onClick={() => removeParticipant(index)}
-            className="text-xs text-red-500 hover:text-red-700"
-          >
-            削除
-          </button>
+          {!participant.id && (
+            <button
+              type="button"
+              onClick={() => removeParticipant(index)}
+              className="text-xs text-red-500 hover:text-red-700"
+            >
+              削除
+            </button>
+          )}
         </div>
       ))}
     </div>
