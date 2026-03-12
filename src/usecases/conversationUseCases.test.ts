@@ -11,6 +11,7 @@ import {
   calculateConversationActiveDays,
   createNewConversation,
   deleteExistingConversation,
+  getConversationWithParticipants,
   getConversationWithRecords,
   listConversationsWithMetadata,
   listConversations,
@@ -349,6 +350,35 @@ describe("conversationUseCases", () => {
       expect(result).toBeNull();
       expect(mockGetConversationActivePeriods).not.toHaveBeenCalled();
       expect(mockGetConversationParticipants).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("getConversationWithParticipants", () => {
+    it("returns conversation with participants without loading records", async () => {
+      mockGetConversation.mockResolvedValue(baseConversation);
+      mockGetConversationParticipants.mockResolvedValue(participants);
+
+      const result = await getConversationWithParticipants(client, "conv-1");
+
+      expect(result).toEqual({
+        ...baseConversation,
+        participants,
+      });
+      expect(mockGetConversationParticipants).toHaveBeenCalledWith(
+        client,
+        "conv-1",
+      );
+      expect(mockGetRecordsByConversation).not.toHaveBeenCalled();
+    });
+
+    it("returns null when conversation not found", async () => {
+      mockGetConversation.mockResolvedValue(null);
+
+      const result = await getConversationWithParticipants(client, "missing");
+
+      expect(result).toBeNull();
+      expect(mockGetConversationParticipants).not.toHaveBeenCalled();
+      expect(mockGetRecordsByConversation).not.toHaveBeenCalled();
     });
   });
 

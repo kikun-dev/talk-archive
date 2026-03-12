@@ -1,7 +1,10 @@
 import { notFound, redirect } from "next/navigation";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { getConversationWithRecords } from "@/usecases/conversationUseCases";
-import { getRecordsByDate } from "@/usecases/recordUseCases";
+import { getConversationWithParticipants } from "@/usecases/conversationUseCases";
+import {
+  getRecordsByDate,
+  validateDateSearchInput,
+} from "@/usecases/recordUseCases";
 import { ConversationSubpageLayout } from "@/components/ConversationSubpageLayout";
 import { DateSearchResults } from "@/components/DateSearchResults";
 
@@ -26,15 +29,20 @@ export default async function ConversationDateSearchPage({
     redirect("/login");
   }
 
-  const conversation = await getConversationWithRecords(supabase, id);
+  const conversation = await getConversationWithParticipants(supabase, id);
 
   if (!conversation) {
     notFound();
   }
 
+  const normalizedDate = date?.trim() ?? "";
+  const validationError =
+    normalizedDate.length > 0
+      ? validateDateSearchInput(normalizedDate)
+      : null;
   const records =
-    date && /^\d{4}-\d{2}-\d{2}$/.test(date)
-      ? await getRecordsByDate(supabase, id, date)
+    normalizedDate.length > 0 && validationError === null
+      ? await getRecordsByDate(supabase, id, normalizedDate)
       : null;
 
   return (
@@ -54,7 +62,7 @@ export default async function ConversationDateSearchPage({
             id="date-search-input"
             name="date"
             type="date"
-            defaultValue={date ?? ""}
+            defaultValue={normalizedDate}
             required
             className="mt-1 block rounded border border-gray-300 px-3 py-2 text-sm"
           />
@@ -67,12 +75,16 @@ export default async function ConversationDateSearchPage({
         </button>
       </form>
 
-      {date && records && (
+      {validationError && (
+        <p className="mt-4 text-sm text-red-600">{validationError}</p>
+      )}
+
+      {normalizedDate.length > 0 && records && (
         <DateSearchResults
           conversationId={conversation.id}
           records={records}
           participants={conversation.participants}
-          selectedDate={date}
+          selectedDate={normalizedDate}
         />
       )}
     </ConversationSubpageLayout>

@@ -14,6 +14,7 @@ import {
   validateAddMediaRecordInput,
   getMediaUrlsForRecords,
   getRecordsByDate,
+  validateDateSearchInput,
 } from "./recordUseCases";
 
 vi.mock("@/repositories/recordRepository");
@@ -760,6 +761,16 @@ describe("recordUseCases", () => {
   // --- 日付検索 ---
 
   describe("getRecordsByDate", () => {
+    it("validates date search input", () => {
+      expect(validateDateSearchInput("2026-03-10")).toBeNull();
+      expect(validateDateSearchInput("2026/03/10")).toBe(
+        "日付の形式が不正です",
+      );
+      expect(validateDateSearchInput("2026-02-30")).toBe(
+        "日付の形式が不正です",
+      );
+    });
+
     it("converts date to JST range and calls repository", async () => {
       mockGetRecordsByConversationAndDateRange.mockResolvedValue([baseRecord]);
 

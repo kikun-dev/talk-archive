@@ -388,13 +388,22 @@ function getNextDate(dateString: string): string {
   return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(date.getUTCDate()).padStart(2, "0")}`;
 }
 
+export function validateDateSearchInput(date: string): string | null {
+  if (!isValidDateString(date)) {
+    return "日付の形式が不正です";
+  }
+
+  return null;
+}
+
 export async function getRecordsByDate(
   client: SupabaseClient<Database>,
   conversationId: string,
   date: string,
 ): Promise<Record[]> {
-  if (!isValidDateString(date)) {
-    throw new Error("日付の形式が不正です");
+  const validationError = validateDateSearchInput(date);
+  if (validationError) {
+    throw new Error(validationError);
   }
 
   const startJst = `${date}T00:00:00+09:00`;
