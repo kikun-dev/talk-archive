@@ -100,14 +100,6 @@ describe("ChatView", () => {
     ).toBeInTheDocument();
   });
 
-  it("renders date separators", () => {
-    render(<ChatView conversation={conversation} mediaUrls={{}} />);
-
-    // Two different dates should produce two date headers
-    const dateHeaders = screen.getAllByText(/2026年/);
-    expect(dateHeaders.length).toBe(2);
-  });
-
   it("shows search bar when search button is clicked", () => {
     render(<ChatView conversation={conversation} mediaUrls={{}} />);
 

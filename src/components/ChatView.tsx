@@ -278,11 +278,6 @@ export function ChatView({ conversation, mediaUrls }: ChatViewProps) {
         ) : (
           dateGroups.map((group) => (
             <div key={group.dateKey}>
-              <div className="my-3 flex justify-center">
-                <span className="rounded-full bg-gray-300/60 px-3 py-0.5 text-[10px] text-gray-600">
-                  {group.dateLabel}
-                </span>
-              </div>
               <div className="space-y-3">
                 {group.records.map((record) => (
                   <ChatMessage
