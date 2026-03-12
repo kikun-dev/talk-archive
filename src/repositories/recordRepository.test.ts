@@ -29,6 +29,15 @@ const baseRow: RecordRow = {
   updated_at: "2026-01-01T00:00:00Z",
 };
 
+const baseSearchRow = {
+  ...baseRow,
+  conversations: {
+    id: "conv-1",
+    title: "会話タイトル",
+    user_id: "user-1",
+  },
+};
+
 function createMockQueryBuilder(overrides: Record<string, unknown> = {}) {
   const builder: Record<string, ReturnType<typeof vi.fn>> = {};
   const methods = [
@@ -39,6 +48,7 @@ function createMockQueryBuilder(overrides: Record<string, unknown> = {}) {
     "rpc",
     "eq",
     "ilike",
+    "or",
     "order",
     "limit",
     "single",
@@ -497,50 +507,116 @@ describe("recordRepository", () => {
   });
 
   describe("searchRecords", () => {
-    it("searches records by content with ILIKE", async () => {
-      builder = createMockQueryBuilder({
-        order: vi.fn().mockResolvedValue({ data: [baseRow], error: null }),
-      });
+    it("searches records by title and content with conversation context", async () => {
+      builder = createMockQueryBuilder();
+      builder.order = vi
+        .fn()
+        .mockResolvedValueOnce({ data: [baseSearchRow], error: null })
+        .mockResolvedValueOnce({ data: [], error: null });
       client = createMockClient(builder);
 
-      const result = await searchRecords(client, "user-1", "テスト");
+      const result = await searchRecords(client, {
+        userId: "user-1",
+        query: "テスト",
+      });
 
       expect(result).toHaveLength(1);
       expect(result[0].content).toBe("テスト内容");
+      expect(result[0].conversationTitle).toBe("会話タイトル");
       expect(builder.select).toHaveBeenCalledWith(
-        "*, conversations!inner(user_id)",
+        "*, conversations!inner(id, title, user_id)",
       );
       expect(builder.eq).toHaveBeenCalledWith(
         "conversations.user_id",
         "user-1",
       );
-      expect(builder.ilike).toHaveBeenCalledWith("content", "%テスト%");
+      expect(builder.ilike).toHaveBeenNthCalledWith(
+        1,
+        "content",
+        "%テスト%",
+      );
+      expect(builder.ilike).toHaveBeenNthCalledWith(
+        2,
+        "title",
+        "%テスト%",
+      );
       expect(builder.order).toHaveBeenCalledWith("posted_at", {
         ascending: false,
       });
     });
 
-    it("returns empty array when no matches", async () => {
-      builder = createMockQueryBuilder({
-        order: vi.fn().mockResolvedValue({ data: [], error: null }),
-      });
+    it("filters by conversationId when provided", async () => {
+      builder = createMockQueryBuilder();
+      builder.order = vi
+        .fn()
+        .mockResolvedValueOnce({ data: [baseSearchRow], error: null })
+        .mockResolvedValueOnce({ data: [], error: null });
       client = createMockClient(builder);
 
-      const result = await searchRecords(client, "user-1", "存在しない");
+      await searchRecords(client, {
+        userId: "user-1",
+        query: "テスト",
+        conversationId: "conv-1",
+      });
+
+      expect(builder.eq).toHaveBeenNthCalledWith(
+        2,
+        "conversation_id",
+        "conv-1",
+      );
+      expect(builder.eq).toHaveBeenNthCalledWith(
+        4,
+        "conversation_id",
+        "conv-1",
+      );
+    });
+
+    it("returns empty array when no matches", async () => {
+      builder = createMockQueryBuilder();
+      builder.order = vi
+        .fn()
+        .mockResolvedValueOnce({ data: [], error: null })
+        .mockResolvedValueOnce({ data: [], error: null });
+      client = createMockClient(builder);
+
+      const result = await searchRecords(client, {
+        userId: "user-1",
+        query: "存在しない",
+      });
 
       expect(result).toEqual([]);
     });
 
     it("throws on error", async () => {
       const dbError = { message: "Search error", code: "42000" };
-      builder = createMockQueryBuilder({
-        order: vi.fn().mockResolvedValue({ data: null, error: dbError }),
-      });
+      builder = createMockQueryBuilder();
+      builder.order = vi
+        .fn()
+        .mockResolvedValueOnce({ data: null, error: dbError });
       client = createMockClient(builder);
 
       await expect(
-        searchRecords(client, "user-1", "テスト"),
+        searchRecords(client, {
+          userId: "user-1",
+          query: "テスト",
+        }),
       ).rejects.toEqual(dbError);
+    });
+
+    it("deduplicates records matched by both title and content", async () => {
+      builder = createMockQueryBuilder();
+      builder.order = vi
+        .fn()
+        .mockResolvedValueOnce({ data: [baseSearchRow], error: null })
+        .mockResolvedValueOnce({ data: [baseSearchRow], error: null });
+      client = createMockClient(builder);
+
+      const result = await searchRecords(client, {
+        userId: "user-1",
+        query: "テスト",
+      });
+
+      expect(result).toHaveLength(1);
     });
   });
 });

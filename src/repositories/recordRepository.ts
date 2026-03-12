@@ -1,8 +1,19 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
-import type { Record, RecordType } from "@/types/domain";
+import type {
+  Record,
+  RecordType,
+  SearchRecordResult,
+} from "@/types/domain";
 
 type RecordRow = Database["public"]["Tables"]["records"]["Row"];
+type SearchRecordRow = RecordRow & {
+  conversations: {
+    id: string;
+    title: string;
+    user_id: string;
+  };
+};
 
 function toRecord(row: RecordRow): Record {
   return {
@@ -17,6 +28,13 @@ function toRecord(row: RecordRow): Record {
     position: row.position,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+  };
+}
+
+function toSearchRecordResult(row: SearchRecordRow): SearchRecordResult {
+  return {
+    ...toRecord(row),
+    conversationTitle: row.conversations.title,
   };
 }
 
@@ -229,19 +247,47 @@ export async function getNextRecordPosition(
 
 export async function searchRecords(
   client: SupabaseClient<Database>,
-  userId: string,
-  query: string,
-): Promise<Record[]> {
-  const { data, error } = await client
-    .from("records")
-    .select("*, conversations!inner(user_id)")
-    .eq("conversations.user_id", userId)
-    .ilike("content", `%${query}%`)
-    .order("posted_at", { ascending: false });
+  params: {
+    userId: string;
+    query: string;
+    conversationId?: string;
+  },
+): Promise<SearchRecordResult[]> {
+  async function searchByColumn(
+    column: "content" | "title",
+  ): Promise<SearchRecordRow[]> {
+    let queryBuilder = client
+      .from("records")
+      .select("*, conversations!inner(id, title, user_id)")
+      .eq("conversations.user_id", params.userId);
 
-  if (error) {
-    throw error;
+    if (params.conversationId !== undefined) {
+      queryBuilder = queryBuilder.eq("conversation_id", params.conversationId);
+    }
+
+    const { data, error } = await queryBuilder
+      .ilike(column, `%${params.query}%`)
+      .order("posted_at", { ascending: false });
+
+    if (error) {
+      throw error;
+    }
+
+    return data as unknown as SearchRecordRow[];
   }
 
-  return data.map((row) => toRecord(row as unknown as RecordRow));
+  const [contentMatches, titleMatches] = await Promise.all([
+    searchByColumn("content"),
+    searchByColumn("title"),
+  ]);
+
+  const uniqueRows = new Map<string, SearchRecordRow>();
+
+  for (const row of [...contentMatches, ...titleMatches]) {
+    uniqueRows.set(row.id, row);
+  }
+
+  return Array.from(uniqueRows.values())
+    .sort((a, b) => b.posted_at.localeCompare(a.posted_at))
+    .map(toSearchRecordResult);
 }
