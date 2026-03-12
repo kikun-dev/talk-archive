@@ -170,7 +170,7 @@ export function ChatComposer({
               value={participants[0].id}
             />
           )}
-          <div className={isSingleParticipant ? "flex-1" : ""}>
+          <div className="flex-1">
             <input
               name="postedAt"
               type="datetime-local"

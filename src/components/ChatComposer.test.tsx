@@ -57,6 +57,23 @@ describe("ChatComposer", () => {
     expect(screen.getByText("メンバーB")).toBeInTheDocument();
   });
 
+  it("uses equal width fields for speaker and postedAt when multiple participants", () => {
+    const { container } = render(
+      <ChatComposer
+        conversationId="conv-1"
+        participants={twoParticipants}
+      />,
+    );
+
+    const select = screen.getByRole("combobox");
+    const datetimeInput = container.querySelector(
+      'input[name="postedAt"]',
+    );
+
+    expect(select.parentElement).toHaveClass("flex-1");
+    expect(datetimeInput?.parentElement).toHaveClass("flex-1");
+  });
+
   it("hides speaker selector when single participant", () => {
     render(
       <ChatComposer
