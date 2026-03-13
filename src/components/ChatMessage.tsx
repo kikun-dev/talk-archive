@@ -217,7 +217,7 @@ export function ChatMessage({
             aria-label="操作"
             aria-expanded={isActionMenuOpen}
             onClick={() => setIsActionMenuOpen((prev) => !prev)}
-            className="ml-auto rounded-full p-1 text-gray-400 hover:bg-gray-200 hover:text-gray-600 sm:hidden"
+            className="ml-auto rounded-full p-1 text-gray-400 hover:bg-gray-200 hover:text-gray-600"
           >
             <svg
               xmlns="http://www.w3.org/2000/svg"
@@ -233,7 +233,7 @@ export function ChatMessage({
           <div
             role="menu"
             aria-label="レコード操作"
-            className="mt-2 flex gap-2 sm:hidden"
+            className="mt-2 flex gap-2"
           >
             {record.recordType === "text" && (
               <button

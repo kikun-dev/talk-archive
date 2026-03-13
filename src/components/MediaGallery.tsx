@@ -131,13 +131,13 @@ function MediaPreview({
           unoptimized
           width={480}
           height={360}
-          className="mt-2 aspect-[4/3] w-full rounded bg-gray-100 object-cover"
+          className="mt-2 aspect-[4/3] w-full rounded bg-gray-100 object-contain"
         />
       );
     case "video":
       return (
         <video
-          className="mt-2 aspect-[4/3] w-full rounded bg-black object-cover"
+          className="mt-2 aspect-[4/3] w-full rounded bg-black object-contain"
           preload="metadata"
         >
           <source src={mediaUrl.url} type={mediaUrl.mimeType} />

@@ -263,4 +263,21 @@ describe("MediaGallery", () => {
       "xl:grid-cols-3",
     );
   });
+
+  it("uses contain fit for image and video previews to avoid cropping", () => {
+    const { container } = render(
+      <MediaGallery
+        conversationId="conv-1"
+        records={[imageRecord, videoRecord]}
+        participants={participants}
+        mediaUrls={mediaUrls}
+      />,
+    );
+
+    const image = screen.getByAltText("写真タイトル");
+    const video = container.querySelector("video");
+
+    expect(image).toHaveClass("object-contain");
+    expect(video).toHaveClass("object-contain");
+  });
 });

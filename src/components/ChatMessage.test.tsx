@@ -140,7 +140,7 @@ describe("ChatMessage", () => {
     ).toBeInTheDocument();
   });
 
-  it("opens mobile action menu without relying on hover", () => {
+  it("keeps action menu available without relying on hover", () => {
     render(
       <ToastProvider><ChatMessage
         record={textRecord}
