@@ -76,6 +76,7 @@ export function ChatView({ conversation, mediaUrls }: ChatViewProps) {
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isDateSearchOpen, setIsDateSearchOpen] = useState(false);
+  const [isEditMode, setIsEditMode] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [matchIndex, setMatchIndex] = useState(0);
 
@@ -225,18 +226,34 @@ export function ChatView({ conversation, mediaUrls }: ChatViewProps) {
                 >
                   会話内メディア一覧
                 </Link>
-                <Link
-                  href={`/conversations/${conversation.id}/edit`}
-                  className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
-                  onClick={() => setIsMenuOpen(false)}
+                <button
+                  type="button"
+                  className="block w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
+                  onClick={() => {
+                    setIsMenuOpen(false);
+                    setIsEditMode((prev) => !prev);
+                  }}
                 >
-                  会話編集
-                </Link>
+                  {isEditMode ? "編集モードを終了" : "会話編集"}
+                </button>
               </div>
             </>
           )}
         </div>
       </div>
+
+      {isEditMode && (
+        <div className="flex items-center justify-between gap-3 border-b border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 sm:px-4">
+          <span>編集モード中です。各レコードの操作メニューから編集・削除できます。</span>
+          <button
+            type="button"
+            onClick={() => setIsEditMode(false)}
+            className="shrink-0 rounded border border-amber-300 px-2 py-1 text-xs hover:bg-amber-100"
+          >
+            終了
+          </button>
+        </div>
+      )}
 
       {/* Search Bar */}
       {isSearchOpen && (
@@ -298,6 +315,7 @@ export function ChatView({ conversation, mediaUrls }: ChatViewProps) {
                     }
                     conversationId={conversation.id}
                     mediaUrl={mediaUrls[record.id]}
+                    isEditMode={isEditMode}
                   />
                 ))}
               </div>

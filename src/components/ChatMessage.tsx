@@ -18,6 +18,7 @@ type ChatMessageProps = {
   participantName: string;
   conversationId: string;
   mediaUrl?: MediaUrl;
+  isEditMode?: boolean;
 };
 
 function getInitial(name: string): string {
@@ -65,6 +66,7 @@ export function ChatMessage({
   participantName,
   conversationId,
   mediaUrl,
+  isEditMode = false,
 }: ChatMessageProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [isActionMenuOpen, setIsActionMenuOpen] = useState(false);
@@ -190,46 +192,50 @@ export function ChatMessage({
           <span className="text-[10px] text-gray-400">
             {formatTimeJst(record.postedAt)}
           </span>
-          <div className="hidden gap-1 sm:group-hover:flex sm:group-focus-within:flex">
-            {record.recordType === "text" && (
+          {isEditMode && (
+            <>
+              <div className="hidden gap-1 sm:group-hover:flex sm:group-focus-within:flex">
+                {record.recordType === "text" && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsActionMenuOpen(false);
+                      setIsEditing(true);
+                    }}
+                    className="text-[10px] text-blue-500 hover:text-blue-700"
+                  >
+                    編集
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={handleDelete}
+                  disabled={isDeleting}
+                  className="text-[10px] text-red-400 hover:text-red-600 disabled:opacity-50"
+                >
+                  {isDeleting ? "..." : "削除"}
+                </button>
+              </div>
               <button
                 type="button"
-                onClick={() => {
-                  setIsActionMenuOpen(false);
-                  setIsEditing(true);
-                }}
-                className="text-[10px] text-blue-500 hover:text-blue-700"
+                aria-label="操作"
+                aria-expanded={isActionMenuOpen}
+                onClick={() => setIsActionMenuOpen((prev) => !prev)}
+                className="ml-auto rounded-full p-1 text-gray-400 hover:bg-gray-200 hover:text-gray-600"
               >
-                編集
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 20 20"
+                  fill="currentColor"
+                  className="h-4 w-4"
+                >
+                  <path d="M10 3a1.5 1.5 0 110 3 1.5 1.5 0 010-3zM10 8.5a1.5 1.5 0 110 3 1.5 1.5 0 010-3zM11.5 15.5a1.5 1.5 0 10-3 0 1.5 1.5 0 003 0z" />
+                </svg>
               </button>
-            )}
-            <button
-              type="button"
-              onClick={handleDelete}
-              disabled={isDeleting}
-              className="text-[10px] text-red-400 hover:text-red-600 disabled:opacity-50"
-            >
-              {isDeleting ? "..." : "削除"}
-            </button>
-          </div>
-          <button
-            type="button"
-            aria-label="操作"
-            aria-expanded={isActionMenuOpen}
-            onClick={() => setIsActionMenuOpen((prev) => !prev)}
-            className="ml-auto rounded-full p-1 text-gray-400 hover:bg-gray-200 hover:text-gray-600"
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              viewBox="0 0 20 20"
-              fill="currentColor"
-              className="h-4 w-4"
-            >
-              <path d="M10 3a1.5 1.5 0 110 3 1.5 1.5 0 010-3zM10 8.5a1.5 1.5 0 110 3 1.5 1.5 0 010-3zM11.5 15.5a1.5 1.5 0 10-3 0 1.5 1.5 0 003 0z" />
-            </svg>
-          </button>
+            </>
+          )}
         </div>
-        {isActionMenuOpen && (
+        {isEditMode && isActionMenuOpen && (
           <div
             role="menu"
             aria-label="レコード操作"

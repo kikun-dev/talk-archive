@@ -152,10 +152,9 @@ describe("ChatView", () => {
     expect(
       screen.getByRole("link", { name: "会話内メディア一覧" }),
     ).toHaveAttribute("href", "/conversations/conv-1/media");
-    expect(screen.getByRole("link", { name: "会話編集" })).toHaveAttribute(
-      "href",
-      "/conversations/conv-1/edit",
-    );
+    expect(
+      screen.getByRole("button", { name: "会話編集" }),
+    ).toBeInTheDocument();
   });
 
   it("renders back link", () => {
@@ -197,5 +196,17 @@ describe("ChatView", () => {
     expect(
       within(dialog).queryByText("二番目のメッセージ"),
     ).not.toBeInTheDocument();
+  });
+
+  it("enters edit mode from overflow menu", () => {
+    render(<ToastProvider><ChatView conversation={conversation} mediaUrls={{}} /></ToastProvider>);
+
+    fireEvent.click(screen.getByLabelText("メニュー"));
+    fireEvent.click(screen.getByRole("button", { name: "会話編集" }));
+
+    expect(
+      screen.getByText("編集モード中です。各レコードの操作メニューから編集・削除できます。"),
+    ).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "操作" }).length).toBeGreaterThan(0);
   });
 });
