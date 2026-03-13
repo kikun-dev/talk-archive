@@ -1,5 +1,7 @@
+import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { getConversation } from "@/repositories/conversationRepository";
 import { getConversationWithParticipants } from "@/usecases/conversationUseCases";
 import {
   getMediaUrlsForRecords,
@@ -11,6 +13,19 @@ import { MediaGallery } from "@/components/MediaGallery";
 type ConversationMediaPageProps = {
   params: Promise<{ id: string }>;
 };
+
+export async function generateMetadata({
+  params,
+}: ConversationMediaPageProps): Promise<Metadata> {
+  const { id } = await params;
+  const supabase = await createSupabaseServerClient();
+  const conversation = await getConversation(supabase, id);
+  return {
+    title: conversation
+      ? `メディア一覧 - ${conversation.title} | トークアーカイブ`
+      : "トークアーカイブ",
+  };
+}
 
 export default async function ConversationMediaPage({
   params,

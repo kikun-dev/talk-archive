@@ -5,6 +5,7 @@ import {
   buildStoragePath,
   uploadFile,
   getFileUrl,
+  getFileUrls,
   deleteFile,
   deleteFiles,
 } from "./storageService";
@@ -12,6 +13,7 @@ import {
 function createMockStorageClient(overrides: {
   upload?: ReturnType<typeof vi.fn>;
   createSignedUrl?: ReturnType<typeof vi.fn>;
+  createSignedUrls?: ReturnType<typeof vi.fn>;
   remove?: ReturnType<typeof vi.fn>;
 }): SupabaseClient<Database> {
   return {
@@ -19,6 +21,7 @@ function createMockStorageClient(overrides: {
       from: vi.fn().mockReturnValue({
         upload: overrides.upload ?? vi.fn(),
         createSignedUrl: overrides.createSignedUrl ?? vi.fn(),
+        createSignedUrls: overrides.createSignedUrls ?? vi.fn(),
         remove: overrides.remove ?? vi.fn(),
       }),
     },
@@ -114,6 +117,52 @@ describe("storageService", () => {
 
       await expect(
         getFileUrl(client, "user-1/conv-1/rec-1/photo.jpg"),
+      ).rejects.toEqual(storageError);
+    });
+  });
+
+  describe("getFileUrls", () => {
+    it("returns a map of paths to signed URLs", async () => {
+      const createSignedUrls = vi.fn().mockResolvedValue({
+        data: [
+          { path: "path/a.jpg", signedUrl: "https://example.com/a" },
+          { path: "path/b.mp4", signedUrl: "https://example.com/b" },
+        ],
+        error: null,
+      });
+      const client = createMockStorageClient({ createSignedUrls });
+
+      const result = await getFileUrls(client, ["path/a.jpg", "path/b.mp4"]);
+
+      expect(result.size).toBe(2);
+      expect(result.get("path/a.jpg")).toBe("https://example.com/a");
+      expect(result.get("path/b.mp4")).toBe("https://example.com/b");
+      expect(client.storage.from).toHaveBeenCalledWith("media");
+      expect(createSignedUrls).toHaveBeenCalledWith(
+        ["path/a.jpg", "path/b.mp4"],
+        3600,
+      );
+    });
+
+    it("returns empty map for empty paths array", async () => {
+      const createSignedUrls = vi.fn();
+      const client = createMockStorageClient({ createSignedUrls });
+
+      const result = await getFileUrls(client, []);
+
+      expect(result.size).toBe(0);
+      expect(createSignedUrls).not.toHaveBeenCalled();
+    });
+
+    it("throws on error", async () => {
+      const storageError = { message: "Batch failed", statusCode: "500" };
+      const createSignedUrls = vi
+        .fn()
+        .mockResolvedValue({ data: null, error: storageError });
+      const client = createMockStorageClient({ createSignedUrls });
+
+      await expect(
+        getFileUrls(client, ["path/a.jpg"]),
       ).rejects.toEqual(storageError);
     });
   });

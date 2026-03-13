@@ -63,6 +63,34 @@ export async function getFileUrl(
 }
 
 /**
+ * 複数ファイルの Signed URL を一括取得する
+ */
+export async function getFileUrls(
+  client: SupabaseClient<Database>,
+  paths: string[],
+): Promise<Map<string, string>> {
+  if (paths.length === 0) {
+    return new Map();
+  }
+
+  const { data, error } = await client.storage
+    .from(BUCKET_NAME)
+    .createSignedUrls(paths, SIGNED_URL_EXPIRY_SECONDS);
+
+  if (error) {
+    throw error;
+  }
+
+  const map = new Map<string, string>();
+  for (const item of data) {
+    if (item.signedUrl && item.path) {
+      map.set(item.path, item.signedUrl);
+    }
+  }
+  return map;
+}
+
+/**
  * ファイルを Storage から削除する
  */
 export async function deleteFile(

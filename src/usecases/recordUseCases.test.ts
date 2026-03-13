@@ -38,7 +38,7 @@ import {
 import {
   buildStoragePath,
   uploadFile,
-  getFileUrl,
+  getFileUrls,
   deleteFile,
 } from "@/repositories/storageService";
 
@@ -57,7 +57,7 @@ const mockCreateAttachment = vi.mocked(createAttachment);
 const mockGetAttachmentsByRecordIds = vi.mocked(getAttachmentsByRecordIds);
 const mockBuildStoragePath = vi.mocked(buildStoragePath);
 const mockUploadFile = vi.mocked(uploadFile);
-const mockGetFileUrl = vi.mocked(getFileUrl);
+const mockGetFileUrls = vi.mocked(getFileUrls);
 const mockDeleteFile = vi.mocked(deleteFile);
 const mockGetRecordsByConversationAndDateRange = vi.mocked(
   getRecordsByConversationAndDateRange,
@@ -688,7 +688,7 @@ describe("recordUseCases", () => {
       expect(result.size).toBe(0);
     });
 
-    it("fetches signed URLs for media records", async () => {
+    it("fetches signed URLs for media records using batch API", async () => {
       mockGetAttachmentsByRecordIds.mockResolvedValue([
         {
           ...baseAttachment,
@@ -697,7 +697,9 @@ describe("recordUseCases", () => {
           mimeType: "image/jpeg",
         },
       ]);
-      mockGetFileUrl.mockResolvedValue("https://example.supabase.co/signed-url");
+      mockGetFileUrls.mockResolvedValue(
+        new Map([["user-1/conv-1/rec-img-1/photo.jpg", "https://example.supabase.co/signed-url"]]),
+      );
 
       const result = await getMediaUrlsForRecords(client, [
         textRecord,
@@ -711,6 +713,9 @@ describe("recordUseCases", () => {
       });
       expect(mockGetAttachmentsByRecordIds).toHaveBeenCalledWith(client, [
         "rec-img-1",
+      ]);
+      expect(mockGetFileUrls).toHaveBeenCalledWith(client, [
+        "user-1/conv-1/rec-img-1/photo.jpg",
       ]);
     });
 
@@ -737,10 +742,13 @@ describe("recordUseCases", () => {
           mimeType: "audio/mpeg",
         },
       ]);
-      mockGetFileUrl
-        .mockResolvedValueOnce("https://example.supabase.co/img-url")
-        .mockResolvedValueOnce("https://example.supabase.co/vid-url")
-        .mockResolvedValueOnce("https://example.supabase.co/aud-url");
+      mockGetFileUrls.mockResolvedValue(
+        new Map([
+          ["path/photo.jpg", "https://example.supabase.co/img-url"],
+          ["path/video.mp4", "https://example.supabase.co/vid-url"],
+          ["path/audio.mp3", "https://example.supabase.co/aud-url"],
+        ]),
+      );
 
       const result = await getMediaUrlsForRecords(client, [
         imgRecord,
@@ -760,7 +768,7 @@ describe("recordUseCases", () => {
       const result = await getMediaUrlsForRecords(client, [imgRecord]);
 
       expect(result.size).toBe(0);
-      expect(mockGetFileUrl).not.toHaveBeenCalled();
+      expect(mockGetFileUrls).not.toHaveBeenCalled();
     });
   });
 
