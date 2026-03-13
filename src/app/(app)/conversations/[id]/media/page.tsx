@@ -1,7 +1,12 @@
 import { notFound, redirect } from "next/navigation";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { getConversationWithRecords } from "@/usecases/conversationUseCases";
+import {
+  filterMediaRecords,
+  getMediaUrlsForRecords,
+} from "@/usecases/recordUseCases";
 import { ConversationSubpageLayout } from "@/components/ConversationSubpageLayout";
+import { MediaGallery } from "@/components/MediaGallery";
 
 type ConversationMediaPageProps = {
   params: Promise<{ id: string }>;
@@ -27,11 +32,25 @@ export default async function ConversationMediaPage({
     notFound();
   }
 
+  const mediaRecords = filterMediaRecords(conversation.records);
+  const mediaUrlMap = await getMediaUrlsForRecords(supabase, mediaRecords);
+  const mediaUrls: { [recordId: string]: { url: string; mimeType: string } } =
+    {};
+  for (const [recordId, mediaUrl] of mediaUrlMap) {
+    mediaUrls[recordId] = mediaUrl;
+  }
+
   return (
     <ConversationSubpageLayout
       conversationId={conversation.id}
       title="会話内メディア一覧"
-      description="会話内メディア一覧ページは #76 で実装予定です。現時点では導線のみ用意しています。"
-    />
+    >
+      <MediaGallery
+        conversationId={conversation.id}
+        records={mediaRecords}
+        participants={conversation.participants}
+        mediaUrls={mediaUrls}
+      />
+    </ConversationSubpageLayout>
   );
 }

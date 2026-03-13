@@ -368,6 +368,10 @@ export async function getMediaUrlsForRecords(
   return map;
 }
 
+export function filterMediaRecords(records: Record[]): Record[] {
+  return records.filter((r) => MEDIA_RECORD_TYPES.has(r.recordType));
+}
+
 function isValidDateString(value: string): boolean {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
   if (!match) return false;

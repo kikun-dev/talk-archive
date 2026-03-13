@@ -15,6 +15,7 @@ import {
   getMediaUrlsForRecords,
   getRecordsByDate,
   validateDateSearchInput,
+  filterMediaRecords,
 } from "./recordUseCases";
 
 vi.mock("@/repositories/recordRepository");
@@ -833,6 +834,30 @@ describe("recordUseCases", () => {
       ).rejects.toThrow("日付の形式が不正です");
 
       expect(mockGetRecordsByConversationAndDateRange).not.toHaveBeenCalled();
+    });
+  });
+
+  // --- メディアフィルタ ---
+
+  describe("filterMediaRecords", () => {
+    const textRecord: Record = { ...baseRecord, recordType: "text" };
+    const imgRecord: Record = { ...baseRecord, id: "img-1", recordType: "image" };
+    const vidRecord: Record = { ...baseRecord, id: "vid-1", recordType: "video" };
+    const audRecord: Record = { ...baseRecord, id: "aud-1", recordType: "audio" };
+
+    it("filters only media records", () => {
+      const result = filterMediaRecords([textRecord, imgRecord, vidRecord, audRecord]);
+
+      expect(result).toHaveLength(3);
+      expect(result.map((r) => r.id)).toEqual(["img-1", "vid-1", "aud-1"]);
+    });
+
+    it("returns empty array when no media records", () => {
+      expect(filterMediaRecords([textRecord])).toHaveLength(0);
+    });
+
+    it("returns empty array for empty input", () => {
+      expect(filterMediaRecords([])).toHaveLength(0);
     });
   });
 });
