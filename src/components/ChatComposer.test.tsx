@@ -172,4 +172,18 @@ describe("ChatComposer", () => {
 
     expect(screen.getByRole("button", { name: "追加" })).toBeInTheDocument();
   });
+
+  it("stacks primary fields on mobile and switches to row layout on larger screens", () => {
+    render(
+      <ChatComposer
+        conversationId="conv-1"
+        participants={twoParticipants}
+      />,
+    );
+
+    expect(screen.getByTestId("composer-primary-fields")).toHaveClass(
+      "flex-col",
+      "sm:flex-row",
+    );
+  });
 });

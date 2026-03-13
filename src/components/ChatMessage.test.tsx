@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, within } from "@testing-library/react";
 import { ChatMessage } from "./ChatMessage";
 import { ToastProvider } from "./ToastProvider";
 import type { Record } from "@/types/domain";
@@ -74,6 +74,7 @@ describe("ChatMessage", () => {
         record={textRecord}
         participantName="メンバーA"
         conversationId="conv-1"
+        isEditMode
       /></ToastProvider>,
     );
 
@@ -93,6 +94,7 @@ describe("ChatMessage", () => {
         record={textRecord}
         participantName="メンバーA"
         conversationId="conv-1"
+        isEditMode
       /></ToastProvider>,
     );
 
@@ -114,16 +116,17 @@ describe("ChatMessage", () => {
     expect(screen.queryByText("編集")).not.toBeInTheDocument();
   });
 
-  it("shows delete button for all record types", () => {
+  it("shows action trigger for all record types in edit mode", () => {
     render(
       <ToastProvider><ChatMessage
         record={imageRecord}
         participantName="メンバーA"
         conversationId="conv-1"
+        isEditMode
       /></ToastProvider>,
     );
 
-    expect(screen.getByText("削除")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "操作" })).toBeInTheDocument();
   });
 
   it("has data-record-id attribute", () => {
@@ -138,5 +141,38 @@ describe("ChatMessage", () => {
     expect(
       container.querySelector('[data-record-id="rec-1"]'),
     ).toBeInTheDocument();
+  });
+
+  it("keeps action menu available in edit mode without relying on hover", () => {
+    render(
+      <ToastProvider><ChatMessage
+        record={textRecord}
+        participantName="メンバーA"
+        conversationId="conv-1"
+        isEditMode
+      /></ToastProvider>,
+    );
+
+    const actionButton = screen.getByRole("button", { name: "操作" });
+    expect(actionButton).toHaveAttribute("aria-expanded", "false");
+
+    fireEvent.click(actionButton);
+
+    const menu = screen.getByRole("menu", { name: "レコード操作" });
+    expect(actionButton).toHaveAttribute("aria-expanded", "true");
+    expect(within(menu).getByText("編集")).toBeInTheDocument();
+    expect(within(menu).getByText("削除")).toBeInTheDocument();
+  });
+
+  it("hides action menu trigger outside edit mode", () => {
+    render(
+      <ToastProvider><ChatMessage
+        record={textRecord}
+        participantName="メンバーA"
+        conversationId="conv-1"
+      /></ToastProvider>,
+    );
+
+    expect(screen.queryByRole("button", { name: "操作" })).toBeNull();
   });
 });

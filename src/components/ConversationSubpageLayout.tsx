@@ -16,14 +16,14 @@ export function ConversationSubpageLayout({
 }: ConversationSubpageLayoutProps) {
   return (
     <div className="mx-auto max-w-3xl px-4 py-6">
-      <div className="mb-5 flex items-center gap-3">
+      <div className="mb-5 flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:gap-3">
         <Link
           href={`/conversations/${conversationId}`}
           className="text-sm text-gray-500 hover:text-gray-700"
         >
           戻る
         </Link>
-        <h1 className="text-xl font-bold">{title}</h1>
+        <h1 className="text-xl font-bold leading-tight">{title}</h1>
       </div>
 
       {description && (

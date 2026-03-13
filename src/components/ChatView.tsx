@@ -76,6 +76,7 @@ export function ChatView({ conversation, mediaUrls }: ChatViewProps) {
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isDateSearchOpen, setIsDateSearchOpen] = useState(false);
+  const [isEditMode, setIsEditMode] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [matchIndex, setMatchIndex] = useState(0);
 
@@ -131,9 +132,9 @@ export function ChatView({ conversation, mediaUrls }: ChatViewProps) {
   }, [targetRecordId, scrollToRecord]);
 
   return (
-    <div className="-m-6 flex h-[100vh] flex-col bg-gray-100">
+    <div className="-m-4 flex min-h-[calc(100dvh-4rem)] flex-col bg-gray-100 sm:-m-6 lg:h-[100dvh] lg:min-h-0">
       {/* Header */}
-      <div className="flex items-center gap-2 border-b border-gray-300 bg-white px-4 py-3">
+      <div className="flex items-center gap-2 border-b border-gray-300 bg-white px-3 py-3 sm:px-4">
         <Link
           href="/"
           className="text-gray-500 hover:text-gray-700"
@@ -225,22 +226,38 @@ export function ChatView({ conversation, mediaUrls }: ChatViewProps) {
                 >
                   会話内メディア一覧
                 </Link>
-                <Link
-                  href={`/conversations/${conversation.id}/edit`}
-                  className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
-                  onClick={() => setIsMenuOpen(false)}
+                <button
+                  type="button"
+                  className="block w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
+                  onClick={() => {
+                    setIsMenuOpen(false);
+                    setIsEditMode((prev) => !prev);
+                  }}
                 >
-                  会話編集
-                </Link>
+                  {isEditMode ? "編集モードを終了" : "会話編集"}
+                </button>
               </div>
             </>
           )}
         </div>
       </div>
 
+      {isEditMode && (
+        <div className="flex items-center justify-between gap-3 border-b border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 sm:px-4">
+          <span>編集モード中です。各レコードの操作メニューから編集・削除できます。</span>
+          <button
+            type="button"
+            onClick={() => setIsEditMode(false)}
+            className="shrink-0 rounded border border-amber-300 px-2 py-1 text-xs hover:bg-amber-100"
+          >
+            終了
+          </button>
+        </div>
+      )}
+
       {/* Search Bar */}
       {isSearchOpen && (
-        <div className="flex items-center gap-2 border-b border-gray-200 bg-white px-4 py-2">
+        <div className="flex flex-wrap items-center gap-2 border-b border-gray-200 bg-white px-3 py-2 sm:px-4">
           <input
             ref={searchInputRef}
             type="text"
@@ -250,7 +267,7 @@ export function ChatView({ conversation, mediaUrls }: ChatViewProps) {
               setMatchIndex(0);
             }}
             placeholder="会話内を検索"
-            className="flex-1 rounded border border-gray-300 px-2 py-1 text-sm"
+            className="min-w-0 flex-1 rounded border border-gray-300 px-2 py-1 text-sm"
           />
           {matchedIds.length > 0 && (
             <>
@@ -298,6 +315,7 @@ export function ChatView({ conversation, mediaUrls }: ChatViewProps) {
                     }
                     conversationId={conversation.id}
                     mediaUrl={mediaUrls[record.id]}
+                    isEditMode={isEditMode}
                   />
                 ))}
               </div>
