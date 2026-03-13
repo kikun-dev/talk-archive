@@ -21,6 +21,13 @@ describe("Sidebar", () => {
     expect(navLink).toHaveAttribute("href", "/");
   });
 
+  it("renders navigation link for search", () => {
+    render(<Sidebar userEmail="test@example.com" />);
+
+    const navLink = screen.getByRole("link", { name: "検索" });
+    expect(navLink).toHaveAttribute("href", "/search");
+  });
+
   it("displays user email", () => {
     render(<Sidebar userEmail="test@example.com" />);
 

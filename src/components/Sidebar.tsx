@@ -24,6 +24,14 @@ export function Sidebar({ userEmail }: SidebarProps) {
               会話一覧
             </Link>
           </li>
+          <li>
+            <Link
+              href="/search"
+              className="block rounded px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-200"
+            >
+              検索
+            </Link>
+          </li>
         </ul>
       </nav>
 
