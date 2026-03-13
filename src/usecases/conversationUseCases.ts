@@ -32,6 +32,10 @@ export type ConversationWithMetadata = Conversation & {
   activeDays: number;
 };
 
+export type ConversationWithParticipants = Conversation & {
+  participants: ConversationParticipant[];
+};
+
 export type ConversationWithRecords = ConversationWithMetadata & {
   records: Record[];
 };
@@ -271,6 +275,23 @@ export async function getConversationWithRecords(
     participants,
     activeDays: calculateConversationActiveDays(activePeriods),
     records,
+  };
+}
+
+export async function getConversationWithParticipants(
+  client: SupabaseClient<Database>,
+  id: string,
+): Promise<ConversationWithParticipants | null> {
+  const conversation = await getConversation(client, id);
+  if (!conversation) {
+    return null;
+  }
+
+  const participants = await getConversationParticipants(client, id);
+
+  return {
+    ...conversation,
+    participants,
   };
 }
 

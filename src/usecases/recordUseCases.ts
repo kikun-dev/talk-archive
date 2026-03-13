@@ -4,6 +4,7 @@ import type { Record, Attachment, RecordType } from "@/types/domain";
 import {
   createTextRecordAtNextPosition,
   createMediaRecordAtNextPosition,
+  getRecordsByConversationAndDateRange,
   updateRecord,
   deleteRecord,
 } from "@/repositories/recordRepository";
@@ -365,4 +366,53 @@ export async function getMediaUrlsForRecords(
     }
   }
   return map;
+}
+
+function isValidDateString(value: string): boolean {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return false;
+  const [, year, month, day] = match;
+  const date = new Date(
+    Date.UTC(Number(year), Number(month) - 1, Number(day)),
+  );
+  return (
+    date.getUTCFullYear() === Number(year) &&
+    date.getUTCMonth() === Number(month) - 1 &&
+    date.getUTCDate() === Number(day)
+  );
+}
+
+function getNextDate(dateString: string): string {
+  const [year, month, day] = dateString.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day + 1));
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(date.getUTCDate()).padStart(2, "0")}`;
+}
+
+export function validateDateSearchInput(date: string): string | null {
+  if (!isValidDateString(date)) {
+    return "日付の形式が不正です";
+  }
+
+  return null;
+}
+
+export async function getRecordsByDate(
+  client: SupabaseClient<Database>,
+  conversationId: string,
+  date: string,
+): Promise<Record[]> {
+  const validationError = validateDateSearchInput(date);
+  if (validationError) {
+    throw new Error(validationError);
+  }
+
+  const startJst = `${date}T00:00:00+09:00`;
+  const endJst = `${getNextDate(date)}T00:00:00+09:00`;
+
+  return getRecordsByConversationAndDateRange(
+    client,
+    conversationId,
+    startJst,
+    endJst,
+  );
 }

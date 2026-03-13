@@ -13,6 +13,8 @@ import {
   addAudioRecord,
   validateAddMediaRecordInput,
   getMediaUrlsForRecords,
+  getRecordsByDate,
+  validateDateSearchInput,
 } from "./recordUseCases";
 
 vi.mock("@/repositories/recordRepository");
@@ -24,6 +26,7 @@ import {
   createMediaRecordAtNextPosition,
   updateRecord,
   deleteRecord,
+  getRecordsByConversationAndDateRange,
 } from "@/repositories/recordRepository";
 import {
   createAttachment,
@@ -50,6 +53,9 @@ const mockBuildStoragePath = vi.mocked(buildStoragePath);
 const mockUploadFile = vi.mocked(uploadFile);
 const mockGetFileUrl = vi.mocked(getFileUrl);
 const mockDeleteFile = vi.mocked(deleteFile);
+const mockGetRecordsByConversationAndDateRange = vi.mocked(
+  getRecordsByConversationAndDateRange,
+);
 
 const client = {} as SupabaseClient<Database>;
 const participantId = "11111111-1111-1111-1111-111111111111";
@@ -749,6 +755,84 @@ describe("recordUseCases", () => {
 
       expect(result.size).toBe(0);
       expect(mockGetFileUrl).not.toHaveBeenCalled();
+    });
+  });
+
+  // --- 日付検索 ---
+
+  describe("getRecordsByDate", () => {
+    it("validates date search input", () => {
+      expect(validateDateSearchInput("2026-03-10")).toBeNull();
+      expect(validateDateSearchInput("2026/03/10")).toBe(
+        "日付の形式が不正です",
+      );
+      expect(validateDateSearchInput("2026-02-30")).toBe(
+        "日付の形式が不正です",
+      );
+    });
+
+    it("converts date to JST range and calls repository", async () => {
+      mockGetRecordsByConversationAndDateRange.mockResolvedValue([baseRecord]);
+
+      const result = await getRecordsByDate(client, "conv-1", "2026-03-10");
+
+      expect(result).toEqual([baseRecord]);
+      expect(mockGetRecordsByConversationAndDateRange).toHaveBeenCalledWith(
+        client,
+        "conv-1",
+        "2026-03-10T00:00:00+09:00",
+        "2026-03-11T00:00:00+09:00",
+      );
+    });
+
+    it("handles month boundary (end of month)", async () => {
+      mockGetRecordsByConversationAndDateRange.mockResolvedValue([]);
+
+      await getRecordsByDate(client, "conv-1", "2026-01-31");
+
+      expect(mockGetRecordsByConversationAndDateRange).toHaveBeenCalledWith(
+        client,
+        "conv-1",
+        "2026-01-31T00:00:00+09:00",
+        "2026-02-01T00:00:00+09:00",
+      );
+    });
+
+    it("handles year boundary (Dec 31)", async () => {
+      mockGetRecordsByConversationAndDateRange.mockResolvedValue([]);
+
+      await getRecordsByDate(client, "conv-1", "2025-12-31");
+
+      expect(mockGetRecordsByConversationAndDateRange).toHaveBeenCalledWith(
+        client,
+        "conv-1",
+        "2025-12-31T00:00:00+09:00",
+        "2026-01-01T00:00:00+09:00",
+      );
+    });
+
+    it("throws on invalid date format", async () => {
+      await expect(
+        getRecordsByDate(client, "conv-1", "2026/03/10"),
+      ).rejects.toThrow("日付の形式が不正です");
+
+      expect(mockGetRecordsByConversationAndDateRange).not.toHaveBeenCalled();
+    });
+
+    it("throws on non-existent date", async () => {
+      await expect(
+        getRecordsByDate(client, "conv-1", "2026-02-30"),
+      ).rejects.toThrow("日付の形式が不正です");
+
+      expect(mockGetRecordsByConversationAndDateRange).not.toHaveBeenCalled();
+    });
+
+    it("throws on empty string", async () => {
+      await expect(
+        getRecordsByDate(client, "conv-1", ""),
+      ).rejects.toThrow("日付の形式が不正です");
+
+      expect(mockGetRecordsByConversationAndDateRange).not.toHaveBeenCalled();
     });
   });
 });
