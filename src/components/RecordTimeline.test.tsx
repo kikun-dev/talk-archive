@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { RecordTimeline } from "./RecordTimeline";
+import { ToastProvider } from "./ToastProvider";
 import type { Record } from "@/types/domain";
 
 vi.mock("@/app/(app)/conversations/[id]/actions", () => ({
@@ -24,7 +25,7 @@ const baseRecord: Record = {
 
 describe("RecordTimeline", () => {
   it("renders empty state when no records", () => {
-    render(<RecordTimeline records={[]} conversationId="conv-1" />);
+    render(<ToastProvider><RecordTimeline records={[]} conversationId="conv-1" /></ToastProvider>);
 
     expect(
       screen.getByText("トークレコードがまだありません。"),
@@ -42,7 +43,7 @@ describe("RecordTimeline", () => {
         position: 1,
       },
     ];
-    render(<RecordTimeline records={records} conversationId="conv-1" />);
+    render(<ToastProvider><RecordTimeline records={records} conversationId="conv-1" /></ToastProvider>);
 
     expect(screen.getByText("最初のトーク")).toBeInTheDocument();
     expect(screen.getByText("こんにちは")).toBeInTheDocument();

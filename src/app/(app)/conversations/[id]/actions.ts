@@ -243,7 +243,12 @@ export async function addTextRecordAction(
     return { error: validationError };
   }
 
-  await addTextRecord(supabase, input);
+  try {
+    await addTextRecord(supabase, input);
+  } catch (error) {
+    console.error("Failed to add text record:", error);
+    return { error: "テキストレコードの追加に失敗しました。時間をおいて再度お試しください。" };
+  }
 
   revalidatePath(`/conversations/${conversationId}`);
 
@@ -323,7 +328,12 @@ export async function addImageRecordAction(
     return { error: validationError };
   }
 
-  await addImageRecord(supabase, input);
+  try {
+    await addImageRecord(supabase, input);
+  } catch (error) {
+    console.error("Failed to add image record:", error);
+    return { error: "画像レコードの追加に失敗しました。時間をおいて再度お試しください。" };
+  }
 
   revalidatePath(`/conversations/${conversationId}`);
 
@@ -402,7 +412,12 @@ export async function addVideoRecordAction(
     return { error: validationError };
   }
 
-  await addVideoRecord(supabase, input);
+  try {
+    await addVideoRecord(supabase, input);
+  } catch (error) {
+    console.error("Failed to add video record:", error);
+    return { error: "動画レコードの追加に失敗しました。時間をおいて再度お試しください。" };
+  }
 
   revalidatePath(`/conversations/${conversationId}`);
 
@@ -477,7 +492,12 @@ export async function addAudioRecordAction(
     return { error: validationError };
   }
 
-  await addAudioRecord(supabase, input);
+  try {
+    await addAudioRecord(supabase, input);
+  } catch (error) {
+    console.error("Failed to add audio record:", error);
+    return { error: "音声レコードの追加に失敗しました。時間をおいて再度お試しください。" };
+  }
 
   revalidatePath(`/conversations/${conversationId}`);
 
@@ -540,7 +560,12 @@ export async function updateConversationAction(
     return { error: validationError };
   }
 
-  await updateExistingConversation(supabase, conversationId, input);
+  try {
+    await updateExistingConversation(supabase, conversationId, input);
+  } catch (error) {
+    console.error("Failed to update conversation:", error);
+    return { error: "会話の更新に失敗しました。時間をおいて再度お試しください。" };
+  }
 
   revalidatePath(`/conversations/${conversationId}`);
 
@@ -549,7 +574,7 @@ export async function updateConversationAction(
 
 export async function deleteConversationAction(
   conversationId: string,
-): Promise<void> {
+): Promise<{ error: string } | void> {
   const supabase = await createSupabaseServerClient();
   const {
     data: { user },
@@ -559,7 +584,12 @@ export async function deleteConversationAction(
     redirect("/login");
   }
 
-  await deleteExistingConversation(supabase, conversationId);
+  try {
+    await deleteExistingConversation(supabase, conversationId);
+  } catch (error) {
+    console.error("Failed to delete conversation:", error);
+    return { error: "会話の削除に失敗しました。時間をおいて再度お試しください。" };
+  }
 
   redirect("/");
 }
@@ -599,7 +629,12 @@ export async function updateRecordAction(
     return { error: validationError };
   }
 
-  await updateExistingRecord(supabase, recordId, input);
+  try {
+    await updateExistingRecord(supabase, recordId, input);
+  } catch (error) {
+    console.error("Failed to update record:", error);
+    return { error: "レコードの更新に失敗しました。時間をおいて再度お試しください。" };
+  }
 
   revalidatePath(`/conversations/${conversationId}`);
 
@@ -609,7 +644,7 @@ export async function updateRecordAction(
 export async function deleteRecordAction(
   conversationId: string,
   recordId: string,
-): Promise<void> {
+): Promise<{ error: string } | void> {
   const supabase = await createSupabaseServerClient();
   const {
     data: { user },
@@ -619,7 +654,12 @@ export async function deleteRecordAction(
     redirect("/login");
   }
 
-  await deleteExistingRecord(supabase, recordId);
+  try {
+    await deleteExistingRecord(supabase, recordId);
+  } catch (error) {
+    console.error("Failed to delete record:", error);
+    return { error: "レコードの削除に失敗しました。時間をおいて再度お試しください。" };
+  }
 
   revalidatePath(`/conversations/${conversationId}`);
 }

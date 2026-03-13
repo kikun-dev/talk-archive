@@ -29,7 +29,22 @@ export async function login(formData: FormData) {
 
 export async function logout() {
   const supabase = await createSupabaseServerClient();
-  await supabase.auth.signOut();
+
+  try {
+    const { error } = await supabase.auth.signOut();
+    if (error) {
+      console.error("Failed to sign out:", error);
+      return {
+        error: "ログアウトに失敗しました。時間をおいて再度お試しください。",
+      };
+    }
+  } catch (error) {
+    console.error("Failed to sign out:", error);
+    return {
+      error: "ログアウトに失敗しました。時間をおいて再度お試しください。",
+    };
+  }
+
   revalidatePath("/", "layout");
   redirect("/login");
 }

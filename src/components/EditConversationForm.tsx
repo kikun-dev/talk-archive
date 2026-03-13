@@ -6,6 +6,7 @@ import {
   type ActionState,
 } from "@/app/(app)/conversations/[id]/actions";
 import { ActivePeriodFields } from "@/components/ActivePeriodFields";
+import { FormError } from "@/components/FormError";
 import { ParticipantFields } from "@/components/ParticipantFields";
 import type { ConversationWithMetadata } from "@/usecases/conversationUseCases";
 import type {
@@ -103,9 +104,7 @@ export function EditConversationForm({
         value={JSON.stringify(participants)}
       />
 
-      {state?.error && (
-        <p className="text-sm text-red-600">{state.error}</p>
-      )}
+      <FormError message={state?.error} />
 
       <div className="flex gap-2">
         <button
