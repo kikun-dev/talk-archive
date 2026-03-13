@@ -170,21 +170,23 @@ describe("ChatView", () => {
     expect(screen.getByRole("button", { name: "追加" })).toBeInTheDocument();
   });
 
-  it("opens date search modal from overflow menu", () => {
+  it("opens date search modal from overflow menu", async () => {
     render(<ToastProvider><ChatView conversation={conversation} mediaUrls={{}} /></ToastProvider>);
 
     fireEvent.click(screen.getByLabelText("メニュー"));
     fireEvent.click(screen.getByRole("button", { name: "日付検索" }));
 
-    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
     expect(screen.getByLabelText("日付を選択")).toBeInTheDocument();
   });
 
-  it("filters records by selected date in the modal", () => {
+  it("filters records by selected date in the modal", async () => {
     render(<ToastProvider><ChatView conversation={conversation} mediaUrls={{}} /></ToastProvider>);
 
     fireEvent.click(screen.getByLabelText("メニュー"));
     fireEvent.click(screen.getByRole("button", { name: "日付検索" }));
+
+    await screen.findByRole("dialog");
     fireEvent.change(screen.getByLabelText("日付を選択"), {
       target: { value: "2026-01-01" },
     });

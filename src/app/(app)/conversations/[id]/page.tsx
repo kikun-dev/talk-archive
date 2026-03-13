@@ -1,4 +1,6 @@
+import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
+import { cache } from "react";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { getConversationWithRecords } from "@/usecases/conversationUseCases";
 import { getMediaUrlsForRecords } from "@/usecases/recordUseCases";
@@ -8,6 +10,23 @@ import type { MediaUrl } from "@/usecases/recordUseCases";
 type ConversationDetailPageProps = {
   params: Promise<{ id: string }>;
 };
+
+const getCachedConversationWithRecords = cache(async (id: string) => {
+  const supabase = await createSupabaseServerClient();
+  return getConversationWithRecords(supabase, id);
+});
+
+export async function generateMetadata({
+  params,
+}: ConversationDetailPageProps): Promise<Metadata> {
+  const { id } = await params;
+  const conversation = await getCachedConversationWithRecords(id);
+  return {
+    title: conversation
+      ? `${conversation.title} | トークアーカイブ`
+      : "トークアーカイブ",
+  };
+}
 
 export default async function ConversationDetailPage({
   params,
@@ -23,7 +42,7 @@ export default async function ConversationDetailPage({
     redirect("/login");
   }
 
-  const conversation = await getConversationWithRecords(supabase, id);
+  const conversation = await getCachedConversationWithRecords(id);
 
   if (!conversation) {
     notFound();

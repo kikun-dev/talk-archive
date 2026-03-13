@@ -6,6 +6,12 @@ const BUCKET_NAME = "media";
 /** Signed URL の有効期限（秒） */
 const SIGNED_URL_EXPIRY_SECONDS = 3600;
 
+type SignedUrlBatchItem = {
+  error: string | null;
+  path: string | null;
+  signedUrl: string | null;
+};
+
 /**
  * Storage パスを生成する
  * 規約: {userId}/{conversationId}/{recordId}/{filename}
@@ -60,6 +66,42 @@ export async function getFileUrl(
   }
 
   return data.signedUrl;
+}
+
+/**
+ * 複数ファイルの Signed URL を一括取得する
+ */
+export async function getFileUrls(
+  client: SupabaseClient<Database>,
+  paths: string[],
+): Promise<Map<string, string>> {
+  if (paths.length === 0) {
+    return new Map();
+  }
+
+  const { data, error } = await client.storage
+    .from(BUCKET_NAME)
+    .createSignedUrls(paths, SIGNED_URL_EXPIRY_SECONDS);
+
+  if (error) {
+    throw error;
+  }
+
+  const map = new Map<string, string>();
+  for (const item of data as SignedUrlBatchItem[]) {
+    const path = item.path ?? "unknown";
+
+    if (item.error) {
+      throw new Error(`Signed URL generation failed for ${path}: ${item.error}`);
+    }
+
+    if (!item.path || !item.signedUrl) {
+      throw new Error(`Signed URL response was incomplete for ${path}`);
+    }
+
+    map.set(item.path, item.signedUrl);
+  }
+  return map;
 }
 
 /**
