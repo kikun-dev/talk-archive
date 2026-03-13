@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
 import {
   getRecordsByConversation,
+  getMediaRecordsByConversation,
   getRecord,
   createRecord,
   createTextRecordAtNextPosition,
@@ -47,6 +48,7 @@ function createMockQueryBuilder(overrides: Record<string, unknown> = {}) {
     "delete",
     "rpc",
     "eq",
+    "in",
     "ilike",
     "or",
     "order",
@@ -117,6 +119,50 @@ describe("recordRepository", () => {
 
       await expect(
         getRecordsByConversation(client, "conv-1"),
+      ).rejects.toEqual(dbError);
+    });
+  });
+
+  describe("getMediaRecordsByConversation", () => {
+    it("returns only media records ordered by posted_at then position", async () => {
+      const rows = [
+        { ...baseRow, id: "rec-img-1", record_type: "image" },
+        { ...baseRow, id: "rec-vid-1", record_type: "video", position: 1 },
+      ];
+      builder = createMockQueryBuilder();
+      const orderMock = vi.fn()
+        .mockReturnValueOnce(builder)
+        .mockResolvedValueOnce({ data: rows, error: null });
+      builder.order = orderMock;
+      client = createMockClient(builder);
+
+      const result = await getMediaRecordsByConversation(client, "conv-1");
+
+      expect(result).toHaveLength(2);
+      expect(builder.eq).toHaveBeenCalledWith("conversation_id", "conv-1");
+      expect(builder.in).toHaveBeenCalledWith("record_type", [
+        "image",
+        "video",
+        "audio",
+      ]);
+      expect(orderMock).toHaveBeenCalledWith("posted_at", {
+        ascending: true,
+      });
+      expect(orderMock).toHaveBeenCalledWith("position", {
+        ascending: true,
+      });
+    });
+
+    it("throws on error", async () => {
+      const dbError = { message: "DB error", code: "42000" };
+      builder = createMockQueryBuilder();
+      builder.order = vi.fn()
+        .mockReturnValueOnce(builder)
+        .mockResolvedValueOnce({ data: null, error: dbError });
+      client = createMockClient(builder);
+
+      await expect(
+        getMediaRecordsByConversation(client, "conv-1"),
       ).rejects.toEqual(dbError);
     });
   });
