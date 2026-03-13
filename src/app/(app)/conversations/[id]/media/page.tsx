@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
+import { cache } from "react";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { getConversation } from "@/repositories/conversationRepository";
 import { getConversationWithParticipants } from "@/usecases/conversationUseCases";
 import {
   getMediaUrlsForRecords,
@@ -14,12 +14,16 @@ type ConversationMediaPageProps = {
   params: Promise<{ id: string }>;
 };
 
+const getCachedConversationWithParticipants = cache(async (id: string) => {
+  const supabase = await createSupabaseServerClient();
+  return getConversationWithParticipants(supabase, id);
+});
+
 export async function generateMetadata({
   params,
 }: ConversationMediaPageProps): Promise<Metadata> {
   const { id } = await params;
-  const supabase = await createSupabaseServerClient();
-  const conversation = await getConversation(supabase, id);
+  const conversation = await getCachedConversationWithParticipants(id);
   return {
     title: conversation
       ? `メディア一覧 - ${conversation.title} | トークアーカイブ`
@@ -41,7 +45,7 @@ export default async function ConversationMediaPage({
     redirect("/login");
   }
 
-  const conversation = await getConversationWithParticipants(supabase, id);
+  const conversation = await getCachedConversationWithParticipants(id);
 
   if (!conversation) {
     notFound();

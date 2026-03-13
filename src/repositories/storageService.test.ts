@@ -165,6 +165,42 @@ describe("storageService", () => {
         getFileUrls(client, ["path/a.jpg"]),
       ).rejects.toEqual(storageError);
     });
+
+    it("throws when a batch item contains an error", async () => {
+      const createSignedUrls = vi.fn().mockResolvedValue({
+        data: [
+          {
+            path: "path/a.jpg",
+            signedUrl: null,
+            error: "not found",
+          },
+        ],
+        error: null,
+      });
+      const client = createMockStorageClient({ createSignedUrls });
+
+      await expect(
+        getFileUrls(client, ["path/a.jpg"]),
+      ).rejects.toThrow("Signed URL generation failed for path/a.jpg: not found");
+    });
+
+    it("throws when a batch item is incomplete", async () => {
+      const createSignedUrls = vi.fn().mockResolvedValue({
+        data: [
+          {
+            path: "path/a.jpg",
+            signedUrl: null,
+            error: null,
+          },
+        ],
+        error: null,
+      });
+      const client = createMockStorageClient({ createSignedUrls });
+
+      await expect(
+        getFileUrls(client, ["path/a.jpg"]),
+      ).rejects.toThrow("Signed URL response was incomplete for path/a.jpg");
+    });
   });
 
   describe("deleteFile", () => {

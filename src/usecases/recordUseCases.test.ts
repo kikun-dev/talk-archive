@@ -770,6 +770,26 @@ describe("recordUseCases", () => {
       expect(result.size).toBe(0);
       expect(mockGetFileUrls).not.toHaveBeenCalled();
     });
+
+    it("propagates batch signed URL failures", async () => {
+      mockGetAttachmentsByRecordIds.mockResolvedValue([
+        {
+          ...baseAttachment,
+          recordId: "rec-img-1",
+          filePath: "path/photo.jpg",
+          mimeType: "image/jpeg",
+        },
+      ]);
+      mockGetFileUrls.mockRejectedValue(
+        new Error("Signed URL generation failed for path/photo.jpg: not found"),
+      );
+
+      await expect(
+        getMediaUrlsForRecords(client, [imgRecord]),
+      ).rejects.toThrow(
+        "Signed URL generation failed for path/photo.jpg: not found",
+      );
+    });
   });
 
   // --- 日付検索 ---
