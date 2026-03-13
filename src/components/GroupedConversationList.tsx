@@ -26,13 +26,12 @@ export function GroupedConversationList({
 
   return (
     <div>
-      <div role="tablist" className="flex gap-1 border-b border-gray-200">
+      <div className="flex gap-1 border-b border-gray-200">
         {groups.map((group) => (
           <button
             key={group.value}
             type="button"
-            role="tab"
-            aria-selected={selectedGroup === group.value}
+            aria-pressed={selectedGroup === group.value}
             onClick={() => setSelectedGroup(group.value)}
             className={`px-4 py-2 text-sm font-medium ${
               selectedGroup === group.value

@@ -48,13 +48,12 @@ export function MediaGallery({
     <div>
       {/* Tabs */}
       <div className="overflow-x-auto border-b border-gray-200">
-        <div role="tablist" className="flex min-w-max gap-1">
+        <div className="flex min-w-max gap-1">
           {tabs.map((tab) => (
             <button
               key={tab.key}
               type="button"
-              role="tab"
-              aria-selected={activeTab === tab.key}
+              aria-pressed={activeTab === tab.key}
               onClick={() => setActiveTab(tab.key)}
               className={`px-4 py-2 text-sm font-medium whitespace-nowrap transition-colors ${
                 activeTab === tab.key

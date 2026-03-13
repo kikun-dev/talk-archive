@@ -131,13 +131,12 @@ export function ChatComposer({
         data-testid="composer-tabs"
         className="overflow-x-auto border-b border-gray-200"
       >
-        <div role="tablist" className="flex min-w-max">
+        <div className="flex min-w-max">
           {tabs.map((tab) => (
             <button
               key={tab.type}
               type="button"
-              role="tab"
-              aria-selected={activeTab === tab.type}
+              aria-pressed={activeTab === tab.type}
               onClick={() => handleTabChange(tab.type)}
               className={`min-w-16 flex-1 px-3 py-2 text-xs font-medium whitespace-nowrap transition-colors ${
                 activeTab === tab.type

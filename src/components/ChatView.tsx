@@ -184,6 +184,7 @@ export function ChatView({ conversation, mediaUrls }: ChatViewProps) {
             onClick={() => setIsMenuOpen((prev) => !prev)}
             className="text-gray-500 hover:text-gray-700"
             aria-label="メニュー"
+            aria-expanded={isMenuOpen}
           >
             <svg
               xmlns="http://www.w3.org/2000/svg"
@@ -202,14 +203,12 @@ export function ChatView({ conversation, mediaUrls }: ChatViewProps) {
                 onClick={() => setIsMenuOpen(false)}
               />
               <div
-                role="menu"
                 className="absolute right-0 z-20 mt-1 w-40 rounded-lg border border-gray-200 bg-white py-1 shadow-lg"
                 onKeyDown={(e) => {
                   if (e.key === "Escape") setIsMenuOpen(false);
                 }}
               >
                 <Link
-                  role="menuitem"
                   href={`/conversations/${conversation.id}/overview`}
                   className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
                   onClick={() => setIsMenuOpen(false)}
@@ -218,7 +217,6 @@ export function ChatView({ conversation, mediaUrls }: ChatViewProps) {
                 </Link>
                 <button
                   type="button"
-                  role="menuitem"
                   className="block w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
                   onClick={() => {
                     setIsMenuOpen(false);
@@ -228,7 +226,6 @@ export function ChatView({ conversation, mediaUrls }: ChatViewProps) {
                   日付検索
                 </button>
                 <Link
-                  role="menuitem"
                   href={`/conversations/${conversation.id}/media`}
                   className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
                   onClick={() => setIsMenuOpen(false)}
@@ -237,7 +234,6 @@ export function ChatView({ conversation, mediaUrls }: ChatViewProps) {
                 </Link>
                 <button
                   type="button"
-                  role="menuitem"
                   className="block w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
                   onClick={() => {
                     setIsMenuOpen(false);
