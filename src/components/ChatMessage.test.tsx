@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, within } from "@testing-library/react";
 import { ChatMessage } from "./ChatMessage";
 import { ToastProvider } from "./ToastProvider";
 import type { Record } from "@/types/domain";
@@ -138,5 +138,25 @@ describe("ChatMessage", () => {
     expect(
       container.querySelector('[data-record-id="rec-1"]'),
     ).toBeInTheDocument();
+  });
+
+  it("opens mobile action menu without relying on hover", () => {
+    render(
+      <ToastProvider><ChatMessage
+        record={textRecord}
+        participantName="メンバーA"
+        conversationId="conv-1"
+      /></ToastProvider>,
+    );
+
+    const actionButton = screen.getByRole("button", { name: "操作" });
+    expect(actionButton).toHaveAttribute("aria-expanded", "false");
+
+    fireEvent.click(actionButton);
+
+    const menu = screen.getByRole("menu", { name: "レコード操作" });
+    expect(actionButton).toHaveAttribute("aria-expanded", "true");
+    expect(within(menu).getByText("編集")).toBeInTheDocument();
+    expect(within(menu).getByText("削除")).toBeInTheDocument();
   });
 });

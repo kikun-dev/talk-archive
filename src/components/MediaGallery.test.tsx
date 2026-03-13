@@ -245,4 +245,22 @@ describe("MediaGallery", () => {
 
     expect(screen.getByText("写真タイトル")).toBeInTheDocument();
   });
+
+  it("uses responsive grid layout for media cards", () => {
+    render(
+      <MediaGallery
+        conversationId="conv-1"
+        records={allRecords}
+        participants={participants}
+        mediaUrls={mediaUrls}
+      />,
+    );
+
+    expect(screen.getByTestId("media-gallery-grid")).toHaveClass(
+      "grid",
+      "grid-cols-1",
+      "sm:grid-cols-2",
+      "xl:grid-cols-3",
+    );
+  });
 });

@@ -2,7 +2,7 @@ import { Skeleton } from "@/components/Skeleton";
 
 export default function ConversationLoading() {
   return (
-    <div className="-m-6 flex h-[100vh] flex-col bg-gray-100">
+    <div className="-m-4 flex min-h-[calc(100dvh-4rem)] flex-col bg-gray-100 sm:-m-6 lg:h-[100dvh] lg:min-h-0">
       {/* Header */}
       <div className="flex items-center gap-2 border-b border-gray-300 bg-white px-4 py-3">
         <Skeleton className="h-5 w-5" />

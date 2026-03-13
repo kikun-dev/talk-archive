@@ -67,6 +67,7 @@ export function ChatMessage({
   mediaUrl,
 }: ChatMessageProps) {
   const [isEditing, setIsEditing] = useState(false);
+  const [isActionMenuOpen, setIsActionMenuOpen] = useState(false);
   const [isDeleting, startDeleteTransition] = useTransition();
   const { addToast } = useToast();
 
@@ -87,6 +88,7 @@ export function ChatMessage({
   );
 
   function handleDelete() {
+    setIsActionMenuOpen(false);
     if (!window.confirm("このレコードを削除しますか？")) return;
     startDeleteTransition(async () => {
       const result = await deleteRecordAction(conversationId, record.id);
@@ -169,7 +171,7 @@ export function ChatMessage({
       <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gray-400 text-sm font-bold text-white">
         {initial}
       </div>
-      <div className="min-w-0 max-w-[75%]">
+      <div className="min-w-0 max-w-[85%] sm:max-w-[75%]">
         <p className="text-xs font-medium text-gray-600">{participantName}</p>
         <div className="mt-0.5 rounded-lg rounded-tl-none bg-white px-3 py-2 shadow-sm">
           {record.title && (
@@ -185,14 +187,17 @@ export function ChatMessage({
           {mediaUrl && <MediaContent record={record} mediaUrl={mediaUrl} />}
         </div>
         <div className="mt-0.5 flex items-center gap-2">
-            <span className="text-[10px] text-gray-400">
+          <span className="text-[10px] text-gray-400">
             {formatTimeJst(record.postedAt)}
-            </span>
-          <div className="hidden gap-1 group-hover:flex">
+          </span>
+          <div className="hidden gap-1 sm:group-hover:flex sm:group-focus-within:flex">
             {record.recordType === "text" && (
               <button
                 type="button"
-                onClick={() => setIsEditing(true)}
+                onClick={() => {
+                  setIsActionMenuOpen(false);
+                  setIsEditing(true);
+                }}
                 className="text-[10px] text-blue-500 hover:text-blue-700"
               >
                 編集
@@ -207,7 +212,51 @@ export function ChatMessage({
               {isDeleting ? "..." : "削除"}
             </button>
           </div>
+          <button
+            type="button"
+            aria-label="操作"
+            aria-expanded={isActionMenuOpen}
+            onClick={() => setIsActionMenuOpen((prev) => !prev)}
+            className="ml-auto rounded-full p-1 text-gray-400 hover:bg-gray-200 hover:text-gray-600 sm:hidden"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 20 20"
+              fill="currentColor"
+              className="h-4 w-4"
+            >
+              <path d="M10 3a1.5 1.5 0 110 3 1.5 1.5 0 010-3zM10 8.5a1.5 1.5 0 110 3 1.5 1.5 0 010-3zM11.5 15.5a1.5 1.5 0 10-3 0 1.5 1.5 0 003 0z" />
+            </svg>
+          </button>
         </div>
+        {isActionMenuOpen && (
+          <div
+            role="menu"
+            aria-label="レコード操作"
+            className="mt-2 flex gap-2 sm:hidden"
+          >
+            {record.recordType === "text" && (
+              <button
+                type="button"
+                onClick={() => {
+                  setIsActionMenuOpen(false);
+                  setIsEditing(true);
+                }}
+                className="rounded border border-blue-200 px-3 py-1 text-xs text-blue-600 hover:bg-blue-50"
+              >
+                編集
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={handleDelete}
+              disabled={isDeleting}
+              className="rounded border border-red-200 px-3 py-1 text-xs text-red-600 hover:bg-red-50 disabled:opacity-50"
+            >
+              {isDeleting ? "削除中..." : "削除"}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { Sidebar } from "./Sidebar";
 
 vi.mock("@/app/login/actions", () => ({
@@ -10,8 +10,11 @@ describe("Sidebar", () => {
   it("renders app title as link to home", () => {
     render(<Sidebar userEmail="test@example.com" />);
 
-    const titleLink = screen.getByRole("link", { name: "トークアーカイブ" });
-    expect(titleLink).toHaveAttribute("href", "/");
+    const titleLinks = screen.getAllByRole("link", { name: "トークアーカイブ" });
+    expect(titleLinks).toHaveLength(2);
+    for (const titleLink of titleLinks) {
+      expect(titleLink).toHaveAttribute("href", "/");
+    }
   });
 
   it("renders navigation link for conversations", () => {
@@ -40,5 +43,23 @@ describe("Sidebar", () => {
     expect(
       screen.getByRole("button", { name: "ログアウト" }),
     ).toBeInTheDocument();
+  });
+
+  it("toggles mobile navigation drawer", () => {
+    render(<Sidebar userEmail="test@example.com" />);
+
+    const toggleButton = screen.getByRole("button", {
+      name: "ナビゲーションを開く",
+    });
+    expect(toggleButton).toHaveAttribute("aria-expanded", "false");
+
+    fireEvent.click(toggleButton);
+
+    const dialog = screen.getByRole("dialog", { name: "ナビゲーション" });
+    expect(toggleButton).toHaveAttribute("aria-expanded", "true");
+    expect(within(dialog).getByText("メニュー")).toBeInTheDocument();
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "閉じる" }));
+    expect(screen.queryByRole("dialog", { name: "ナビゲーション" })).toBeNull();
   });
 });

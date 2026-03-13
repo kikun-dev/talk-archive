@@ -131,9 +131,9 @@ export function ChatView({ conversation, mediaUrls }: ChatViewProps) {
   }, [targetRecordId, scrollToRecord]);
 
   return (
-    <div className="-m-6 flex h-[100vh] flex-col bg-gray-100">
+    <div className="-m-4 flex min-h-[calc(100dvh-4rem)] flex-col bg-gray-100 sm:-m-6 lg:h-[100dvh] lg:min-h-0">
       {/* Header */}
-      <div className="flex items-center gap-2 border-b border-gray-300 bg-white px-4 py-3">
+      <div className="flex items-center gap-2 border-b border-gray-300 bg-white px-3 py-3 sm:px-4">
         <Link
           href="/"
           className="text-gray-500 hover:text-gray-700"
@@ -240,7 +240,7 @@ export function ChatView({ conversation, mediaUrls }: ChatViewProps) {
 
       {/* Search Bar */}
       {isSearchOpen && (
-        <div className="flex items-center gap-2 border-b border-gray-200 bg-white px-4 py-2">
+        <div className="flex flex-wrap items-center gap-2 border-b border-gray-200 bg-white px-3 py-2 sm:px-4">
           <input
             ref={searchInputRef}
             type="text"
@@ -250,7 +250,7 @@ export function ChatView({ conversation, mediaUrls }: ChatViewProps) {
               setMatchIndex(0);
             }}
             placeholder="会話内を検索"
-            className="flex-1 rounded border border-gray-300 px-2 py-1 text-sm"
+            className="min-w-0 flex-1 rounded border border-gray-300 px-2 py-1 text-sm"
           />
           {matchedIds.length > 0 && (
             <>
