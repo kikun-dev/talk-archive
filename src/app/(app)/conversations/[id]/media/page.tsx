@@ -1,9 +1,9 @@
 import { notFound, redirect } from "next/navigation";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { getConversationWithRecords } from "@/usecases/conversationUseCases";
+import { getConversationWithParticipants } from "@/usecases/conversationUseCases";
 import {
-  filterMediaRecords,
   getMediaUrlsForRecords,
+  listMediaRecordsByConversation,
 } from "@/usecases/recordUseCases";
 import { ConversationSubpageLayout } from "@/components/ConversationSubpageLayout";
 import { MediaGallery } from "@/components/MediaGallery";
@@ -26,13 +26,13 @@ export default async function ConversationMediaPage({
     redirect("/login");
   }
 
-  const conversation = await getConversationWithRecords(supabase, id);
+  const conversation = await getConversationWithParticipants(supabase, id);
 
   if (!conversation) {
     notFound();
   }
 
-  const mediaRecords = filterMediaRecords(conversation.records);
+  const mediaRecords = await listMediaRecordsByConversation(supabase, id);
   const mediaUrlMap = await getMediaUrlsForRecords(supabase, mediaRecords);
   const mediaUrls: { [recordId: string]: { url: string; mimeType: string } } =
     {};

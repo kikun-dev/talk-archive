@@ -16,6 +16,7 @@ import {
   getRecordsByDate,
   validateDateSearchInput,
   filterMediaRecords,
+  listMediaRecordsByConversation,
 } from "./recordUseCases";
 
 vi.mock("@/repositories/recordRepository");
@@ -25,6 +26,7 @@ vi.mock("@/repositories/storageService");
 import {
   createTextRecordAtNextPosition,
   createMediaRecordAtNextPosition,
+  getMediaRecordsByConversation,
   updateRecord,
   deleteRecord,
   getRecordsByConversationAndDateRange,
@@ -45,6 +47,9 @@ const mockCreateTextRecordAtNextPosition = vi.mocked(
 );
 const mockCreateMediaRecordAtNextPosition = vi.mocked(
   createMediaRecordAtNextPosition,
+);
+const mockGetMediaRecordsByConversation = vi.mocked(
+  getMediaRecordsByConversation,
 );
 const mockUpdateRecord = vi.mocked(updateRecord);
 const mockDeleteRecord = vi.mocked(deleteRecord);
@@ -858,6 +863,21 @@ describe("recordUseCases", () => {
 
     it("returns empty array for empty input", () => {
       expect(filterMediaRecords([])).toHaveLength(0);
+    });
+  });
+
+  describe("listMediaRecordsByConversation", () => {
+    it("delegates to repository media-only query", async () => {
+      const imageRecord: Record = { ...baseRecord, id: "img-1", recordType: "image" };
+      mockGetMediaRecordsByConversation.mockResolvedValue([imageRecord]);
+
+      const result = await listMediaRecordsByConversation(client, "conv-1");
+
+      expect(result).toEqual([imageRecord]);
+      expect(mockGetMediaRecordsByConversation).toHaveBeenCalledWith(
+        client,
+        "conv-1",
+      );
     });
   });
 });

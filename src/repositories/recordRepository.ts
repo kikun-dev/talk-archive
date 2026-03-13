@@ -56,6 +56,25 @@ export async function getRecordsByConversation(
   return data.map(toRecord);
 }
 
+export async function getMediaRecordsByConversation(
+  client: SupabaseClient<Database>,
+  conversationId: string,
+): Promise<Record[]> {
+  const { data, error } = await client
+    .from("records")
+    .select("*")
+    .eq("conversation_id", conversationId)
+    .in("record_type", ["image", "video", "audio"])
+    .order("posted_at", { ascending: true })
+    .order("position", { ascending: true });
+
+  if (error) {
+    throw error;
+  }
+
+  return data.map(toRecord);
+}
+
 export async function getRecord(
   client: SupabaseClient<Database>,
   id: string,

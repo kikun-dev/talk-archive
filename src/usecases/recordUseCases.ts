@@ -4,6 +4,7 @@ import type { Record, Attachment, RecordType } from "@/types/domain";
 import {
   createTextRecordAtNextPosition,
   createMediaRecordAtNextPosition,
+  getMediaRecordsByConversation,
   getRecordsByConversationAndDateRange,
   updateRecord,
   deleteRecord,
@@ -370,6 +371,13 @@ export async function getMediaUrlsForRecords(
 
 export function filterMediaRecords(records: Record[]): Record[] {
   return records.filter((r) => MEDIA_RECORD_TYPES.has(r.recordType));
+}
+
+export async function listMediaRecordsByConversation(
+  client: SupabaseClient<Database>,
+  conversationId: string,
+): Promise<Record[]> {
+  return getMediaRecordsByConversation(client, conversationId);
 }
 
 function isValidDateString(value: string): boolean {
