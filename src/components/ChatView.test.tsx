@@ -142,18 +142,18 @@ describe("ChatView", () => {
 
     fireEvent.click(screen.getByLabelText("メニュー"));
 
-    expect(screen.getByRole("link", { name: "概要" })).toHaveAttribute(
+    expect(screen.getByRole("menuitem", { name: "概要" })).toHaveAttribute(
       "href",
       "/conversations/conv-1/overview",
     );
     expect(
-      screen.getByRole("button", { name: "日付検索" }),
+      screen.getByRole("menuitem", { name: "日付検索" }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("link", { name: "会話内メディア一覧" }),
+      screen.getByRole("menuitem", { name: "会話内メディア一覧" }),
     ).toHaveAttribute("href", "/conversations/conv-1/media");
     expect(
-      screen.getByRole("button", { name: "会話編集" }),
+      screen.getByRole("menuitem", { name: "会話編集" }),
     ).toBeInTheDocument();
   });
 
@@ -174,7 +174,7 @@ describe("ChatView", () => {
     render(<ToastProvider><ChatView conversation={conversation} mediaUrls={{}} /></ToastProvider>);
 
     fireEvent.click(screen.getByLabelText("メニュー"));
-    fireEvent.click(screen.getByRole("button", { name: "日付検索" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "日付検索" }));
 
     expect(screen.getByRole("dialog")).toBeInTheDocument();
     expect(screen.getByLabelText("日付を選択")).toBeInTheDocument();
@@ -184,7 +184,7 @@ describe("ChatView", () => {
     render(<ToastProvider><ChatView conversation={conversation} mediaUrls={{}} /></ToastProvider>);
 
     fireEvent.click(screen.getByLabelText("メニュー"));
-    fireEvent.click(screen.getByRole("button", { name: "日付検索" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "日付検索" }));
     fireEvent.change(screen.getByLabelText("日付を選択"), {
       target: { value: "2026-01-01" },
     });
@@ -202,7 +202,7 @@ describe("ChatView", () => {
     render(<ToastProvider><ChatView conversation={conversation} mediaUrls={{}} /></ToastProvider>);
 
     fireEvent.click(screen.getByLabelText("メニュー"));
-    fireEvent.click(screen.getByRole("button", { name: "会話編集" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "会話編集" }));
 
     expect(
       screen.getByText("編集モード中です。各レコードの操作メニューから編集・削除できます。"),

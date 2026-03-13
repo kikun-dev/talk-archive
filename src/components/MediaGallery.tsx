@@ -48,11 +48,13 @@ export function MediaGallery({
     <div>
       {/* Tabs */}
       <div className="overflow-x-auto border-b border-gray-200">
-        <div className="flex min-w-max gap-1">
+        <div role="tablist" className="flex min-w-max gap-1">
           {tabs.map((tab) => (
             <button
               key={tab.key}
               type="button"
+              role="tab"
+              aria-selected={activeTab === tab.key}
               onClick={() => setActiveTab(tab.key)}
               className={`px-4 py-2 text-sm font-medium whitespace-nowrap transition-colors ${
                 activeTab === tab.key
@@ -137,6 +139,7 @@ function MediaPreview({
     case "video":
       return (
         <video
+          aria-label={record.title ?? "動画"}
           className="mt-2 aspect-[4/3] w-full rounded bg-black object-contain"
           preload="metadata"
         >
@@ -145,7 +148,7 @@ function MediaPreview({
       );
     case "audio":
       return (
-        <audio controls className="mt-2 w-full" preload="metadata">
+        <audio controls aria-label={record.title ?? "音声"} className="mt-2 w-full" preload="metadata">
           <source src={mediaUrl.url} type={mediaUrl.mimeType} />
         </audio>
       );

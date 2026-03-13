@@ -75,10 +75,10 @@ describe("MediaGallery", () => {
       />,
     );
 
-    expect(screen.getByRole("button", { name: "すべて" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "画像" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "動画" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "音声" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "すべて" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "画像" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "動画" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "音声" })).toBeInTheDocument();
   });
 
   it("shows all media records by default", () => {
@@ -104,7 +104,7 @@ describe("MediaGallery", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "画像" }));
+    fireEvent.click(screen.getByRole("tab", { name: "画像" }));
 
     expect(screen.getAllByRole("link")).toHaveLength(1);
     expect(screen.getByText("写真タイトル")).toBeInTheDocument();
@@ -120,7 +120,7 @@ describe("MediaGallery", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "動画" }));
+    fireEvent.click(screen.getByRole("tab", { name: "動画" }));
 
     expect(screen.getAllByRole("link")).toHaveLength(1);
   });
@@ -135,7 +135,7 @@ describe("MediaGallery", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "音声" }));
+    fireEvent.click(screen.getByRole("tab", { name: "音声" }));
 
     expect(screen.getAllByRole("link")).toHaveLength(1);
     expect(screen.getByText("音声メモ")).toBeInTheDocument();
@@ -166,7 +166,7 @@ describe("MediaGallery", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "動画" }));
+    fireEvent.click(screen.getByRole("tab", { name: "動画" }));
 
     expect(
       screen.getByText("動画レコードがありません。"),

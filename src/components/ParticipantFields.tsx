@@ -41,7 +41,7 @@ export function ParticipantFields({
       </div>
 
       {participants.length === 0 && (
-        <p className="text-xs text-gray-400">参加者を追加してください</p>
+        <p className="text-xs text-gray-500">参加者を追加してください</p>
       )}
 
       {participants.map((participant, index) => (
@@ -49,6 +49,7 @@ export function ParticipantFields({
           <input
             type="text"
             value={participant.name}
+            aria-label={`参加者${index + 1}の名前`}
             onChange={(e) => updateParticipant(index, e.target.value)}
             className="flex-1 rounded border border-gray-300 px-3 py-2 text-sm"
             placeholder="参加者名"
@@ -57,6 +58,7 @@ export function ParticipantFields({
           {!participant.id && (
             <button
               type="button"
+              aria-label={`参加者${index + 1}を削除`}
               onClick={() => removeParticipant(index)}
               className="text-xs text-red-500 hover:text-red-700"
             >

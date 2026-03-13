@@ -46,13 +46,13 @@ function MediaContent({
       );
     case "video":
       return (
-        <video controls className="mt-1 max-h-60 w-full rounded">
+        <video controls aria-label={record.title ?? "動画"} className="mt-1 max-h-60 w-full rounded">
           <source src={mediaUrl.url} type={mediaUrl.mimeType} />
         </video>
       );
     case "audio":
       return (
-        <audio controls className="mt-1 w-full">
+        <audio controls aria-label={record.title ?? "音声"} className="mt-1 w-full">
           <source src={mediaUrl.url} type={mediaUrl.mimeType} />
         </audio>
       );
@@ -189,7 +189,7 @@ export function ChatMessage({
           {mediaUrl && <MediaContent record={record} mediaUrl={mediaUrl} />}
         </div>
         <div className="mt-0.5 flex items-center gap-2">
-          <span className="text-[10px] text-gray-400">
+          <span className="text-[10px] text-gray-500">
             {formatTimeJst(record.postedAt)}
           </span>
           {isEditMode && (
@@ -240,6 +240,9 @@ export function ChatMessage({
             role="menu"
             aria-label="レコード操作"
             className="mt-2 flex gap-2"
+            onKeyDown={(e) => {
+              if (e.key === "Escape") setIsActionMenuOpen(false);
+            }}
           >
             {record.recordType === "text" && (
               <button

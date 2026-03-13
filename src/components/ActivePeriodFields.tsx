@@ -48,7 +48,7 @@ export function ActivePeriodFields({
       </div>
 
       {periods.length === 0 && (
-        <p className="text-xs text-gray-400">
+        <p className="text-xs text-gray-500">
           期間を追加してください
         </p>
       )}
@@ -58,6 +58,7 @@ export function ActivePeriodFields({
           <input
             type="date"
             value={period.startDate}
+            aria-label={`期間${index + 1}の開始日`}
             onChange={(e) =>
               updatePeriod(index, "startDate", e.target.value)
             }
@@ -68,6 +69,7 @@ export function ActivePeriodFields({
           <input
             type="date"
             value={period.endDate ?? ""}
+            aria-label={`期間${index + 1}の終了日`}
             onChange={(e) =>
               updatePeriod(index, "endDate", e.target.value)
             }
@@ -76,6 +78,7 @@ export function ActivePeriodFields({
           />
           <button
             type="button"
+            aria-label={`期間${index + 1}を削除`}
             onClick={() => removePeriod(index)}
             className="text-xs text-red-500 hover:text-red-700"
           >

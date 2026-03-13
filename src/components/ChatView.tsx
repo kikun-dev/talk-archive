@@ -201,8 +201,15 @@ export function ChatView({ conversation, mediaUrls }: ChatViewProps) {
                 className="fixed inset-0 z-10"
                 onClick={() => setIsMenuOpen(false)}
               />
-              <div className="absolute right-0 z-20 mt-1 w-40 rounded-lg border border-gray-200 bg-white py-1 shadow-lg">
+              <div
+                role="menu"
+                className="absolute right-0 z-20 mt-1 w-40 rounded-lg border border-gray-200 bg-white py-1 shadow-lg"
+                onKeyDown={(e) => {
+                  if (e.key === "Escape") setIsMenuOpen(false);
+                }}
+              >
                 <Link
+                  role="menuitem"
                   href={`/conversations/${conversation.id}/overview`}
                   className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
                   onClick={() => setIsMenuOpen(false)}
@@ -211,6 +218,7 @@ export function ChatView({ conversation, mediaUrls }: ChatViewProps) {
                 </Link>
                 <button
                   type="button"
+                  role="menuitem"
                   className="block w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
                   onClick={() => {
                     setIsMenuOpen(false);
@@ -220,6 +228,7 @@ export function ChatView({ conversation, mediaUrls }: ChatViewProps) {
                   日付検索
                 </button>
                 <Link
+                  role="menuitem"
                   href={`/conversations/${conversation.id}/media`}
                   className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
                   onClick={() => setIsMenuOpen(false)}
@@ -228,6 +237,7 @@ export function ChatView({ conversation, mediaUrls }: ChatViewProps) {
                 </Link>
                 <button
                   type="button"
+                  role="menuitem"
                   className="block w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
                   onClick={() => {
                     setIsMenuOpen(false);
@@ -266,6 +276,9 @@ export function ChatView({ conversation, mediaUrls }: ChatViewProps) {
               setSearchQuery(e.target.value);
               setMatchIndex(0);
             }}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") handleSearchToggle();
+            }}
             placeholder="会話内を検索"
             className="min-w-0 flex-1 rounded border border-gray-300 px-2 py-1 text-sm"
           />
@@ -276,6 +289,7 @@ export function ChatView({ conversation, mediaUrls }: ChatViewProps) {
               </span>
               <button
                 type="button"
+                aria-label="前の検索結果"
                 onClick={() => handleSearchNav("prev")}
                 className="text-xs text-gray-500 hover:text-gray-700"
               >
@@ -283,6 +297,7 @@ export function ChatView({ conversation, mediaUrls }: ChatViewProps) {
               </button>
               <button
                 type="button"
+                aria-label="次の検索結果"
                 onClick={() => handleSearchNav("next")}
                 className="text-xs text-gray-500 hover:text-gray-700"
               >

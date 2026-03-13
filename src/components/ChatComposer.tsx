@@ -131,11 +131,13 @@ export function ChatComposer({
         data-testid="composer-tabs"
         className="overflow-x-auto border-b border-gray-200"
       >
-        <div className="flex min-w-max">
+        <div role="tablist" className="flex min-w-max">
           {tabs.map((tab) => (
             <button
               key={tab.type}
               type="button"
+              role="tab"
+              aria-selected={activeTab === tab.type}
               onClick={() => handleTabChange(tab.type)}
               className={`min-w-16 flex-1 px-3 py-2 text-xs font-medium whitespace-nowrap transition-colors ${
                 activeTab === tab.type
@@ -159,6 +161,7 @@ export function ChatComposer({
               <select
                 name="speakerParticipantId"
                 required
+                aria-label="発言者"
                 value={speakerParticipantId}
                 onChange={(e) => setSpeakerParticipantId(e.target.value)}
                 className="block w-full rounded border border-gray-300 px-2 py-2 text-sm"
@@ -184,6 +187,7 @@ export function ChatComposer({
               name="postedAt"
               type="datetime-local"
               required
+              aria-label="投稿日時"
               className="block w-full rounded border border-gray-300 px-2 py-2 text-sm"
             />
           </div>
@@ -222,6 +226,7 @@ export function ChatComposer({
               type="file"
               accept="image/*"
               required
+              aria-label="画像ファイル"
               onChange={handleFileChange}
               className="block w-full text-sm"
             />
@@ -245,6 +250,7 @@ export function ChatComposer({
               type="file"
               accept="video/*"
               required
+              aria-label="動画ファイル"
               onChange={handleFileChange}
               className="block w-full text-sm"
             />
@@ -267,6 +273,7 @@ export function ChatComposer({
             type="file"
             accept="audio/*"
             required
+            aria-label="音声ファイル"
             onChange={handleFileChange}
             className="block w-full text-sm"
           />

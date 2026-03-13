@@ -31,7 +31,7 @@ export function ConversationCard({ conversation }: ConversationCardProps) {
             className="object-cover"
           />
         ) : (
-          <div className="flex h-full items-center justify-center text-2xl text-gray-300">
+          <div className="flex h-full items-center justify-center text-2xl text-gray-400">
             No Image
           </div>
         )}
