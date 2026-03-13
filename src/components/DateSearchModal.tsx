@@ -77,9 +77,10 @@ export function DateSearchModal({
           <button
             type="button"
             onClick={onClose}
-            className="text-sm text-gray-500 hover:text-gray-700"
+            aria-label="閉じる"
+            className="flex h-8 w-8 items-center justify-center rounded-full text-lg leading-none text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700"
           >
-            閉じる
+            ×
           </button>
         </div>
 
