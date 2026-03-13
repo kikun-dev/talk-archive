@@ -6,7 +6,9 @@ import {
   deleteRecordAction,
   type ActionState,
 } from "@/app/(app)/conversations/[id]/actions";
+import { FormError } from "@/components/FormError";
 import { RecordCard } from "@/components/RecordCard";
+import { useToast } from "@/components/ToastProvider";
 import type { Record } from "@/types/domain";
 import type { MediaUrl } from "@/usecases/recordUseCases";
 
@@ -23,6 +25,7 @@ export function EditableRecordCard({
 }: EditableRecordCardProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [isDeleting, startDeleteTransition] = useTransition();
+  const { addToast } = useToast();
 
   const [state, formAction, isPending] = useActionState<ActionState, FormData>(
     async (_prevState, formData) => {
@@ -46,7 +49,10 @@ export function EditableRecordCard({
     }
 
     startDeleteTransition(async () => {
-      await deleteRecordAction(conversationId, record.id);
+      const result = await deleteRecordAction(conversationId, record.id);
+      if (result?.error) {
+        addToast(result.error, "error");
+      }
     });
   }
 
@@ -87,9 +93,7 @@ export function EditableRecordCard({
             />
           </div>
 
-          {state?.error && (
-            <p className="text-sm text-red-600">{state.error}</p>
-          )}
+          <FormError message={state?.error} />
 
           <div className="flex gap-2">
             <button

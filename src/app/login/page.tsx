@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
+import { FormError } from "@/components/FormError";
 import { login } from "./actions";
 
 type LoginState = { error: string } | undefined;
@@ -52,9 +53,7 @@ export default function LoginPage() {
               className="mt-1 block w-full rounded border border-gray-300 px-3 py-2 text-sm"
             />
           </div>
-          {state?.error && (
-            <p className="text-sm text-red-600">{state.error}</p>
-          )}
+          <FormError message={state?.error} />
           <button
             type="submit"
             disabled={isPending}

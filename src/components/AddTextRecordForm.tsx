@@ -5,6 +5,7 @@ import {
   addTextRecordAction,
   type AddTextRecordState,
 } from "@/app/(app)/conversations/[id]/actions";
+import { FormError } from "@/components/FormError";
 
 type AddTextRecordFormProps = {
   conversationId: string;
@@ -58,9 +59,7 @@ export function AddTextRecordForm({
         />
       </div>
 
-      {state?.error && (
-        <p className="text-sm text-red-600">{state.error}</p>
-      )}
+      <FormError message={state?.error} />
 
       <button
         type="submit"

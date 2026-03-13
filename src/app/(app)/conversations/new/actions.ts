@@ -126,7 +126,13 @@ export async function createConversationAction(
     return { error: validationError };
   }
 
-  const conversation = await createNewConversation(supabase, input);
+  let conversation;
+  try {
+    conversation = await createNewConversation(supabase, input);
+  } catch (error) {
+    console.error("Failed to create conversation:", error);
+    return { error: "会話の作成に失敗しました。時間をおいて再度お試しください。" };
+  }
 
   redirect(`/conversations/${conversation.id}`);
 }

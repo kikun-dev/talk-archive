@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { EditableRecordCard } from "./EditableRecordCard";
+import { ToastProvider } from "./ToastProvider";
 import type { Record } from "@/types/domain";
 
 vi.mock("@/app/(app)/conversations/[id]/actions", () => ({
@@ -31,7 +32,7 @@ const imageRecord: Record = {
 describe("EditableRecordCard", () => {
   it("renders record with edit and delete buttons for text records", () => {
     render(
-      <EditableRecordCard record={textRecord} conversationId="conv-1" />,
+      <ToastProvider><EditableRecordCard record={textRecord} conversationId="conv-1" /></ToastProvider>,
     );
 
     expect(screen.getByText("テストタイトル")).toBeInTheDocument();
@@ -42,7 +43,7 @@ describe("EditableRecordCard", () => {
 
   it("does not show edit button for non-text records", () => {
     render(
-      <EditableRecordCard record={imageRecord} conversationId="conv-1" />,
+      <ToastProvider><EditableRecordCard record={imageRecord} conversationId="conv-1" /></ToastProvider>,
     );
 
     expect(screen.queryByText("編集")).not.toBeInTheDocument();
@@ -51,7 +52,7 @@ describe("EditableRecordCard", () => {
 
   it("switches to edit form when edit button is clicked", () => {
     render(
-      <EditableRecordCard record={textRecord} conversationId="conv-1" />,
+      <ToastProvider><EditableRecordCard record={textRecord} conversationId="conv-1" /></ToastProvider>,
     );
 
     fireEvent.click(screen.getByText("編集"));
@@ -66,7 +67,7 @@ describe("EditableRecordCard", () => {
 
   it("populates edit form with current values", () => {
     render(
-      <EditableRecordCard record={textRecord} conversationId="conv-1" />,
+      <ToastProvider><EditableRecordCard record={textRecord} conversationId="conv-1" /></ToastProvider>,
     );
 
     fireEvent.click(screen.getByText("編集"));
@@ -77,7 +78,7 @@ describe("EditableRecordCard", () => {
 
   it("returns to view mode when cancel is clicked", () => {
     render(
-      <EditableRecordCard record={textRecord} conversationId="conv-1" />,
+      <ToastProvider><EditableRecordCard record={textRecord} conversationId="conv-1" /></ToastProvider>,
     );
 
     fireEvent.click(screen.getByText("編集"));

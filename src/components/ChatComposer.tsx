@@ -9,6 +9,7 @@ import {
   addAudioRecordAction,
   type ActionState,
 } from "@/app/(app)/conversations/[id]/actions";
+import { FormError } from "@/components/FormError";
 import type { ConversationParticipant, RecordType } from "@/types/domain";
 
 type ChatComposerProps = {
@@ -263,9 +264,7 @@ export function ChatComposer({
           />
         )}
 
-        {displayError && (
-          <p className="text-xs text-red-600">{displayError}</p>
-        )}
+        <FormError message={displayError} />
 
         <button
           type="submit"

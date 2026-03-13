@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { ConversationActions } from "./ConversationActions";
+import { ToastProvider } from "./ToastProvider";
 import type { ConversationWithMetadata } from "@/usecases/conversationUseCases";
 
 vi.mock("@/app/(app)/conversations/[id]/actions", () => ({
@@ -40,7 +41,7 @@ const conversation: ConversationWithMetadata = {
 
 describe("ConversationActions", () => {
   it("renders header with edit and delete buttons", () => {
-    render(<ConversationActions conversation={conversation} />);
+    render(<ToastProvider><ConversationActions conversation={conversation} /></ToastProvider>);
 
     expect(screen.getByText("テスト会話")).toBeInTheDocument();
     expect(screen.getByText("編集")).toBeInTheDocument();
@@ -48,7 +49,7 @@ describe("ConversationActions", () => {
   });
 
   it("switches to edit form when edit button is clicked", () => {
-    render(<ConversationActions conversation={conversation} />);
+    render(<ToastProvider><ConversationActions conversation={conversation} /></ToastProvider>);
 
     fireEvent.click(screen.getByText("編集"));
 
@@ -61,7 +62,7 @@ describe("ConversationActions", () => {
   });
 
   it("returns to header view when cancel is clicked", () => {
-    render(<ConversationActions conversation={conversation} />);
+    render(<ToastProvider><ConversationActions conversation={conversation} /></ToastProvider>);
 
     fireEvent.click(screen.getByText("編集"));
     fireEvent.click(screen.getByRole("button", { name: "キャンセル" }));

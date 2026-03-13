@@ -6,6 +6,7 @@ import {
   type CreateConversationState,
 } from "@/app/(app)/conversations/new/actions";
 import { ActivePeriodFields } from "@/components/ActivePeriodFields";
+import { FormError } from "@/components/FormError";
 import { ParticipantFields } from "@/components/ParticipantFields";
 import type {
   ConversationActivePeriodInput,
@@ -80,9 +81,7 @@ export function NewConversationForm() {
         value={JSON.stringify(participants)}
       />
 
-      {state?.error && (
-        <p className="text-sm text-red-600">{state.error}</p>
-      )}
+      <FormError message={state?.error} />
 
       <button
         type="submit"

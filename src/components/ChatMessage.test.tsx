@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { ChatMessage } from "./ChatMessage";
+import { ToastProvider } from "./ToastProvider";
 import type { Record } from "@/types/domain";
 
 vi.mock("@/app/(app)/conversations/[id]/actions", () => ({
@@ -31,11 +32,11 @@ const imageRecord: Record = {
 describe("ChatMessage", () => {
   it("renders participant name and initial", () => {
     render(
-      <ChatMessage
+      <ToastProvider><ChatMessage
         record={textRecord}
         participantName="メンバーA"
         conversationId="conv-1"
-      />,
+      /></ToastProvider>,
     );
 
     expect(screen.getByText("メンバーA")).toBeInTheDocument();
@@ -44,11 +45,11 @@ describe("ChatMessage", () => {
 
   it("renders record title and content", () => {
     render(
-      <ChatMessage
+      <ToastProvider><ChatMessage
         record={textRecord}
         participantName="メンバーA"
         conversationId="conv-1"
-      />,
+      /></ToastProvider>,
     );
 
     expect(screen.getByText("テストタイトル")).toBeInTheDocument();
@@ -57,11 +58,11 @@ describe("ChatMessage", () => {
 
   it("renders posted time", () => {
     render(
-      <ChatMessage
+      <ToastProvider><ChatMessage
         record={textRecord}
         participantName="メンバーA"
         conversationId="conv-1"
-      />,
+      /></ToastProvider>,
     );
 
     expect(screen.getByText("19:30")).toBeInTheDocument();
@@ -69,11 +70,11 @@ describe("ChatMessage", () => {
 
   it("switches to edit form when edit button is clicked", () => {
     render(
-      <ChatMessage
+      <ToastProvider><ChatMessage
         record={textRecord}
         participantName="メンバーA"
         conversationId="conv-1"
-      />,
+      /></ToastProvider>,
     );
 
     fireEvent.click(screen.getByText("編集"));
@@ -88,11 +89,11 @@ describe("ChatMessage", () => {
 
   it("returns to view mode when cancel is clicked", () => {
     render(
-      <ChatMessage
+      <ToastProvider><ChatMessage
         record={textRecord}
         participantName="メンバーA"
         conversationId="conv-1"
-      />,
+      /></ToastProvider>,
     );
 
     fireEvent.click(screen.getByText("編集"));
@@ -103,11 +104,11 @@ describe("ChatMessage", () => {
 
   it("does not show edit button for non-text records", () => {
     render(
-      <ChatMessage
+      <ToastProvider><ChatMessage
         record={imageRecord}
         participantName="メンバーA"
         conversationId="conv-1"
-      />,
+      /></ToastProvider>,
     );
 
     expect(screen.queryByText("編集")).not.toBeInTheDocument();
@@ -115,11 +116,11 @@ describe("ChatMessage", () => {
 
   it("shows delete button for all record types", () => {
     render(
-      <ChatMessage
+      <ToastProvider><ChatMessage
         record={imageRecord}
         participantName="メンバーA"
         conversationId="conv-1"
-      />,
+      /></ToastProvider>,
     );
 
     expect(screen.getByText("削除")).toBeInTheDocument();
@@ -127,11 +128,11 @@ describe("ChatMessage", () => {
 
   it("has data-record-id attribute", () => {
     const { container } = render(
-      <ChatMessage
+      <ToastProvider><ChatMessage
         record={textRecord}
         participantName="メンバーA"
         conversationId="conv-1"
-      />,
+      /></ToastProvider>,
     );
 
     expect(

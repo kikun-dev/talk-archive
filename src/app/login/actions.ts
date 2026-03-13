@@ -29,7 +29,11 @@ export async function login(formData: FormData) {
 
 export async function logout() {
   const supabase = await createSupabaseServerClient();
-  await supabase.auth.signOut();
+  try {
+    await supabase.auth.signOut();
+  } catch (error) {
+    console.error("Failed to sign out:", error);
+  }
   revalidatePath("/", "layout");
   redirect("/login");
 }

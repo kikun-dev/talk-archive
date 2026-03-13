@@ -8,6 +8,8 @@ import {
   type ActionState,
 } from "@/app/(app)/conversations/[id]/actions";
 import { formatTimeJst } from "@/lib/dateTime";
+import { FormError } from "@/components/FormError";
+import { useToast } from "@/components/ToastProvider";
 import type { Record } from "@/types/domain";
 import type { MediaUrl } from "@/usecases/recordUseCases";
 
@@ -66,6 +68,7 @@ export function ChatMessage({
 }: ChatMessageProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [isDeleting, startDeleteTransition] = useTransition();
+  const { addToast } = useToast();
 
   const [state, formAction, isPending] = useActionState<ActionState, FormData>(
     async (_prevState, formData) => {
@@ -86,7 +89,10 @@ export function ChatMessage({
   function handleDelete() {
     if (!window.confirm("このレコードを削除しますか？")) return;
     startDeleteTransition(async () => {
-      await deleteRecordAction(conversationId, record.id);
+      const result = await deleteRecordAction(conversationId, record.id);
+      if (result?.error) {
+        addToast(result.error, "error");
+      }
     });
   }
 
@@ -134,9 +140,7 @@ export function ChatMessage({
                   className="mt-1 block w-full rounded border border-gray-300 px-2 py-1 text-sm"
                 />
               </div>
-              {state?.error && (
-                <p className="text-xs text-red-600">{state.error}</p>
-              )}
+              <FormError message={state?.error} />
               <div className="flex gap-2">
                 <button
                   type="submit"

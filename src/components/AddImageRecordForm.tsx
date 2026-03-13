@@ -6,6 +6,7 @@ import {
   addImageRecordAction,
   type ActionState,
 } from "@/app/(app)/conversations/[id]/actions";
+import { FormError } from "@/components/FormError";
 
 type AddImageRecordFormProps = {
   conversationId: string;
@@ -137,9 +138,7 @@ export function AddImageRecordForm({
         </div>
       )}
 
-      {displayError && (
-        <p className="text-sm text-red-600">{displayError}</p>
-      )}
+      <FormError message={displayError} />
 
       <button
         type="submit"

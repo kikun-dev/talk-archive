@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent, within } from "@testing-library/react";
 import { ChatView } from "./ChatView";
+import { ToastProvider } from "./ToastProvider";
 import type { ConversationWithRecords } from "@/usecases/conversationUseCases";
 
 vi.mock("next/navigation", () => ({
@@ -76,20 +77,20 @@ const conversation: ConversationWithRecords = {
 
 describe("ChatView", () => {
   it("renders conversation title in header", () => {
-    render(<ChatView conversation={conversation} mediaUrls={{}} />);
+    render(<ToastProvider><ChatView conversation={conversation} mediaUrls={{}} /></ToastProvider>);
 
     expect(screen.getByText("テスト会話")).toBeInTheDocument();
   });
 
   it("renders record content", () => {
-    render(<ChatView conversation={conversation} mediaUrls={{}} />);
+    render(<ToastProvider><ChatView conversation={conversation} mediaUrls={{}} /></ToastProvider>);
 
     expect(screen.getByText("最初のメッセージ")).toBeInTheDocument();
     expect(screen.getByText("二番目のメッセージ")).toBeInTheDocument();
   });
 
   it("renders participant name with messages", () => {
-    render(<ChatView conversation={conversation} mediaUrls={{}} />);
+    render(<ToastProvider><ChatView conversation={conversation} mediaUrls={{}} /></ToastProvider>);
 
     const participantLabels = screen.getAllByText("メンバーA");
     expect(participantLabels.length).toBeGreaterThan(0);
@@ -97,7 +98,7 @@ describe("ChatView", () => {
 
   it("shows empty state when no records", () => {
     const emptyConversation = { ...conversation, records: [] };
-    render(<ChatView conversation={emptyConversation} mediaUrls={{}} />);
+    render(<ToastProvider><ChatView conversation={emptyConversation} mediaUrls={{}} /></ToastProvider>);
 
     expect(
       screen.getByText("トークレコードがまだありません。"),
@@ -105,7 +106,7 @@ describe("ChatView", () => {
   });
 
   it("shows search bar when search button is clicked", () => {
-    render(<ChatView conversation={conversation} mediaUrls={{}} />);
+    render(<ToastProvider><ChatView conversation={conversation} mediaUrls={{}} /></ToastProvider>);
 
     fireEvent.click(screen.getByLabelText("検索"));
 
@@ -115,7 +116,7 @@ describe("ChatView", () => {
   });
 
   it("shows search results count", () => {
-    render(<ChatView conversation={conversation} mediaUrls={{}} />);
+    render(<ToastProvider><ChatView conversation={conversation} mediaUrls={{}} /></ToastProvider>);
 
     fireEvent.click(screen.getByLabelText("検索"));
     fireEvent.change(screen.getByPlaceholderText("会話内を検索"), {
@@ -126,7 +127,7 @@ describe("ChatView", () => {
   });
 
   it("shows no match message", () => {
-    render(<ChatView conversation={conversation} mediaUrls={{}} />);
+    render(<ToastProvider><ChatView conversation={conversation} mediaUrls={{}} /></ToastProvider>);
 
     fireEvent.click(screen.getByLabelText("検索"));
     fireEvent.change(screen.getByPlaceholderText("会話内を検索"), {
@@ -137,7 +138,7 @@ describe("ChatView", () => {
   });
 
   it("shows overflow menu when menu button is clicked", () => {
-    render(<ChatView conversation={conversation} mediaUrls={{}} />);
+    render(<ToastProvider><ChatView conversation={conversation} mediaUrls={{}} /></ToastProvider>);
 
     fireEvent.click(screen.getByLabelText("メニュー"));
 
@@ -158,20 +159,20 @@ describe("ChatView", () => {
   });
 
   it("renders back link", () => {
-    render(<ChatView conversation={conversation} mediaUrls={{}} />);
+    render(<ToastProvider><ChatView conversation={conversation} mediaUrls={{}} /></ToastProvider>);
 
     expect(screen.getByLabelText("戻る")).toBeInTheDocument();
   });
 
   it("renders composer", () => {
-    render(<ChatView conversation={conversation} mediaUrls={{}} />);
+    render(<ToastProvider><ChatView conversation={conversation} mediaUrls={{}} /></ToastProvider>);
 
     expect(screen.getByText("テキスト")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "追加" })).toBeInTheDocument();
   });
 
   it("opens date search modal from overflow menu", () => {
-    render(<ChatView conversation={conversation} mediaUrls={{}} />);
+    render(<ToastProvider><ChatView conversation={conversation} mediaUrls={{}} /></ToastProvider>);
 
     fireEvent.click(screen.getByLabelText("メニュー"));
     fireEvent.click(screen.getByRole("button", { name: "日付検索" }));
@@ -181,7 +182,7 @@ describe("ChatView", () => {
   });
 
   it("filters records by selected date in the modal", () => {
-    render(<ChatView conversation={conversation} mediaUrls={{}} />);
+    render(<ToastProvider><ChatView conversation={conversation} mediaUrls={{}} /></ToastProvider>);
 
     fireEvent.click(screen.getByLabelText("メニュー"));
     fireEvent.click(screen.getByRole("button", { name: "日付検索" }));
