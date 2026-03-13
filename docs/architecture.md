@@ -56,6 +56,22 @@ GitHub Actions
 - test
 - build
 
+`pull_request` と `main` への `push` で実行する。
+
+---
+
+## デプロイ
+
+デプロイ先
+
+Vercel
+
+運用方針
+
+- `main` 更新時に自動デプロイする
+- リポジトリ内ではデプロイ workflow を持たず、GitHub Actions は CI のみを担当する
+- 本番反映の単位は `main` にマージされたコミットとする
+
 ---
 
 ## ローカル開発

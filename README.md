@@ -30,3 +30,8 @@ pnpm user:create-initial -- --email you@example.com --password 'your-password'
 - docs/architecture.md
 - docs/database.md
 - docs/development.md
+
+## Deployment
+
+- `main` への更新をトリガーに自動デプロイする運用
+- リポジトリ内の GitHub Actions は CI のみを担当し、デプロイ自体はデプロイ先プラットフォーム連携で実行する
