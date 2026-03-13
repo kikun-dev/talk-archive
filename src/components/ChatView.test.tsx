@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, within } from "@testing-library/react";
 import { ChatView } from "./ChatView";
 import type { ConversationWithRecords } from "@/usecases/conversationUseCases";
 
@@ -145,10 +145,9 @@ describe("ChatView", () => {
       "href",
       "/conversations/conv-1/overview",
     );
-    expect(screen.getByRole("link", { name: "日付検索" })).toHaveAttribute(
-      "href",
-      "/conversations/conv-1/dates",
-    );
+    expect(
+      screen.getByRole("button", { name: "日付検索" }),
+    ).toBeInTheDocument();
     expect(
       screen.getByRole("link", { name: "会話内メディア一覧" }),
     ).toHaveAttribute("href", "/conversations/conv-1/media");
@@ -169,5 +168,33 @@ describe("ChatView", () => {
 
     expect(screen.getByText("テキスト")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "追加" })).toBeInTheDocument();
+  });
+
+  it("opens date search modal from overflow menu", () => {
+    render(<ChatView conversation={conversation} mediaUrls={{}} />);
+
+    fireEvent.click(screen.getByLabelText("メニュー"));
+    fireEvent.click(screen.getByRole("button", { name: "日付検索" }));
+
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(screen.getByLabelText("日付を選択")).toBeInTheDocument();
+  });
+
+  it("filters records by selected date in the modal", () => {
+    render(<ChatView conversation={conversation} mediaUrls={{}} />);
+
+    fireEvent.click(screen.getByLabelText("メニュー"));
+    fireEvent.click(screen.getByRole("button", { name: "日付検索" }));
+    fireEvent.change(screen.getByLabelText("日付を選択"), {
+      target: { value: "2026-01-01" },
+    });
+
+    const dialog = screen.getByRole("dialog");
+
+    expect(within(dialog).getByText("1件のレコード")).toBeInTheDocument();
+    expect(within(dialog).getByText("最初のメッセージ")).toBeInTheDocument();
+    expect(
+      within(dialog).queryByText("二番目のメッセージ"),
+    ).not.toBeInTheDocument();
   });
 });

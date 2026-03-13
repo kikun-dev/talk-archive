@@ -9,6 +9,7 @@ type DateSearchResultsProps = {
   records: Record[];
   participants: ConversationParticipant[];
   selectedDate: string;
+  onRecordSelect?: () => void;
 };
 
 const recordTypeLabels: { [K in RecordType]: string } = {
@@ -28,6 +29,7 @@ export function DateSearchResults({
   records,
   participants,
   selectedDate,
+  onRecordSelect,
 }: DateSearchResultsProps) {
   const participantMap = new Map(participants.map((p) => [p.id, p.name]));
 
@@ -49,6 +51,7 @@ export function DateSearchResults({
           <li key={record.id}>
             <Link
               href={`/conversations/${conversationId}?recordId=${record.id}`}
+              onClick={onRecordSelect}
               className="block rounded-lg border border-gray-200 px-4 py-3 transition-colors hover:bg-gray-50"
             >
               <div className="flex items-center gap-2">

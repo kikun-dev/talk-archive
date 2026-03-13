@@ -9,6 +9,7 @@ import type { ConversationWithRecords } from "@/usecases/conversationUseCases";
 import type { MediaUrl } from "@/usecases/recordUseCases";
 import { ChatMessage } from "@/components/ChatMessage";
 import { ChatComposer } from "@/components/ChatComposer";
+import { DateSearchModal } from "@/components/DateSearchModal";
 
 type ChatViewProps = {
   conversation: ConversationWithRecords;
@@ -74,6 +75,7 @@ export function ChatView({ conversation, mediaUrls }: ChatViewProps) {
 
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isDateSearchOpen, setIsDateSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [matchIndex, setMatchIndex] = useState(0);
 
@@ -206,13 +208,16 @@ export function ChatView({ conversation, mediaUrls }: ChatViewProps) {
                 >
                   概要
                 </Link>
-                <Link
-                  href={`/conversations/${conversation.id}/dates`}
-                  className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
-                  onClick={() => setIsMenuOpen(false)}
+                <button
+                  type="button"
+                  className="block w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
+                  onClick={() => {
+                    setIsMenuOpen(false);
+                    setIsDateSearchOpen(true);
+                  }}
                 >
                   日付検索
-                </Link>
+                </button>
                 <Link
                   href={`/conversations/${conversation.id}/media`}
                   className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
@@ -305,6 +310,14 @@ export function ChatView({ conversation, mediaUrls }: ChatViewProps) {
       <ChatComposer
         conversationId={conversation.id}
         participants={conversation.participants}
+      />
+
+      <DateSearchModal
+        conversationId={conversation.id}
+        participants={conversation.participants}
+        records={conversation.records}
+        isOpen={isDateSearchOpen}
+        onClose={() => setIsDateSearchOpen(false)}
       />
     </div>
   );
