@@ -11,23 +11,30 @@ type SidebarProps = {
 type SidebarContentProps = {
   userEmail: string;
   onNavigate?: () => void;
+  showTitle?: boolean;
 };
 
-function SidebarContent({ userEmail, onNavigate }: SidebarContentProps) {
+function SidebarContent({
+  userEmail,
+  onNavigate,
+  showTitle = true,
+}: SidebarContentProps) {
   const linkClassName =
     "block rounded px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-200";
 
   return (
     <>
-      <div className="border-b border-gray-200 p-4">
-        <Link
-          href="/"
-          className="text-lg font-bold"
-          onClick={onNavigate}
-        >
-          トークアーカイブ
-        </Link>
-      </div>
+      {showTitle && (
+        <div className="border-b border-gray-200 p-4">
+          <Link
+            href="/"
+            className="text-lg font-bold"
+            onClick={onNavigate}
+          >
+            トークアーカイブ
+          </Link>
+        </div>
+      )}
 
       <nav className="flex-1 p-4">
         <ul className="space-y-1">
@@ -47,6 +54,15 @@ function SidebarContent({ userEmail, onNavigate }: SidebarContentProps) {
               onClick={onNavigate}
             >
               検索
+            </Link>
+          </li>
+          <li>
+            <Link
+              href="/conversations/new"
+              className={linkClassName}
+              onClick={onNavigate}
+            >
+              新規作成
             </Link>
           </li>
         </ul>
@@ -103,19 +119,13 @@ export function Sidebar({ userEmail }: SidebarProps) {
             aria-label="ナビゲーション"
             className="fixed inset-y-0 left-0 z-50 flex w-72 flex-col border-r border-gray-200 bg-gray-50 shadow-lg lg:hidden"
           >
-            <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
+            <div className="border-b border-gray-200 px-4 py-3">
               <span className="text-sm font-semibold text-gray-700">メニュー</span>
-              <button
-                type="button"
-                onClick={() => setIsMobileOpen(false)}
-                className="rounded border border-gray-300 px-2 py-1 text-xs text-gray-600 hover:bg-gray-100"
-              >
-                閉じる
-              </button>
             </div>
             <SidebarContent
               userEmail={userEmail}
               onNavigate={() => setIsMobileOpen(false)}
+              showTitle={false}
             />
           </aside>
         </>

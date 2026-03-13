@@ -69,12 +69,8 @@ describe("HomePage", () => {
       expect.anything(),
       "user-1",
     );
-    expect(
-      screen.getByRole("heading", { name: "会話一覧" }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("link", { name: "新規作成" }),
-    ).toHaveAttribute("href", "/conversations/new");
+    expect(screen.queryByRole("heading", { name: "会話一覧" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "新規作成" })).toBeNull();
     expect(
       screen.getByRole("link", { name: /テスト会話/ }),
     ).toHaveAttribute("href", "/conversations/conv-1");

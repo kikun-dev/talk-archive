@@ -31,6 +31,13 @@ describe("Sidebar", () => {
     expect(navLink).toHaveAttribute("href", "/search");
   });
 
+  it("renders navigation link for creating a conversation", () => {
+    render(<Sidebar userEmail="test@example.com" />);
+
+    const navLink = screen.getByRole("link", { name: "新規作成" });
+    expect(navLink).toHaveAttribute("href", "/conversations/new");
+  });
+
   it("displays user email", () => {
     render(<Sidebar userEmail="test@example.com" />);
 
@@ -46,7 +53,7 @@ describe("Sidebar", () => {
   });
 
   it("toggles mobile navigation drawer", () => {
-    render(<Sidebar userEmail="test@example.com" />);
+    const { container } = render(<Sidebar userEmail="test@example.com" />);
 
     const toggleButton = screen.getByRole("button", {
       name: "ナビゲーションを開く",
@@ -58,8 +65,13 @@ describe("Sidebar", () => {
     const dialog = screen.getByRole("dialog", { name: "ナビゲーション" });
     expect(toggleButton).toHaveAttribute("aria-expanded", "true");
     expect(within(dialog).getByText("メニュー")).toBeInTheDocument();
+    expect(within(dialog).queryByRole("button", { name: "閉じる" })).toBeNull();
 
-    fireEvent.click(within(dialog).getByRole("button", { name: "閉じる" }));
+    const overlay = container.querySelector(".fixed.inset-0.z-40");
+    if (!overlay) {
+      throw new Error("overlay not found");
+    }
+    fireEvent.click(overlay);
     expect(screen.queryByRole("dialog", { name: "ナビゲーション" })).toBeNull();
   });
 });
