@@ -53,6 +53,7 @@ export function MediaGallery({
             <button
               key={tab.key}
               type="button"
+              aria-pressed={activeTab === tab.key}
               onClick={() => setActiveTab(tab.key)}
               className={`px-4 py-2 text-sm font-medium whitespace-nowrap transition-colors ${
                 activeTab === tab.key
@@ -137,6 +138,7 @@ function MediaPreview({
     case "video":
       return (
         <video
+          aria-label={record.title ?? "動画"}
           className="mt-2 aspect-[4/3] w-full rounded bg-black object-contain"
           preload="metadata"
         >
@@ -145,7 +147,7 @@ function MediaPreview({
       );
     case "audio":
       return (
-        <audio controls className="mt-2 w-full" preload="metadata">
+        <audio controls aria-label={record.title ?? "音声"} className="mt-2 w-full" preload="metadata">
           <source src={mediaUrl.url} type={mediaUrl.mimeType} />
         </audio>
       );

@@ -31,6 +31,7 @@ export function GroupedConversationList({
           <button
             key={group.value}
             type="button"
+            aria-pressed={selectedGroup === group.value}
             onClick={() => setSelectedGroup(group.value)}
             className={`px-4 py-2 text-sm font-medium ${
               selectedGroup === group.value
