@@ -4,9 +4,10 @@ import {
   createContext,
   useCallback,
   useContext,
-  useSyncExternalStore,
+  useEffect,
   useRef,
   useState,
+  useSyncExternalStore,
 } from "react";
 import { createPortal } from "react-dom";
 import { Toast } from "@/components/Toast";
@@ -46,6 +47,17 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   const timersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(
     new Map(),
   );
+
+  useEffect(() => {
+    const timers = timersRef.current;
+
+    return () => {
+      for (const timer of timers.values()) {
+        clearTimeout(timer);
+      }
+      timers.clear();
+    };
+  }, []);
 
   const dismiss = useCallback((id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));

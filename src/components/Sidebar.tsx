@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { logout } from "@/app/login/actions";
+import { LogoutButton } from "@/components/LogoutButton";
 
 type SidebarProps = {
   userEmail: string;
@@ -37,14 +37,7 @@ export function Sidebar({ userEmail }: SidebarProps) {
 
       <div className="border-t border-gray-200 p-4">
         <p className="truncate text-xs text-gray-500">{userEmail}</p>
-        <form action={logout} className="mt-2">
-          <button
-            type="submit"
-            className="w-full rounded border border-gray-300 px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-100"
-          >
-            ログアウト
-          </button>
-        </form>
+        <LogoutButton />
       </div>
     </aside>
   );

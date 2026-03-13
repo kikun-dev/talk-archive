@@ -87,6 +87,24 @@ describe("ToastProvider", () => {
     vi.useRealTimers();
   });
 
+  it("clears pending timers on unmount", () => {
+    vi.useFakeTimers();
+
+    const { unmount } = render(
+      <ToastProvider>
+        <TestConsumer />
+      </ToastProvider>,
+    );
+
+    fireEvent.click(screen.getByText("success"));
+    expect(vi.getTimerCount()).toBe(1);
+
+    unmount();
+    expect(vi.getTimerCount()).toBe(0);
+
+    vi.useRealTimers();
+  });
+
   it("throws when useToast is used outside provider", () => {
     function Orphan() {
       useToast();

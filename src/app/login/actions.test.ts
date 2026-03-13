@@ -94,7 +94,7 @@ describe("logout", () => {
   });
 
   it("signs out, revalidates and redirects to login", async () => {
-    signOutMock.mockResolvedValue({});
+    signOutMock.mockResolvedValue({ error: null });
 
     const { logout } = await import("./actions");
     await logout();
@@ -102,5 +102,24 @@ describe("logout", () => {
     expect(signOutMock).toHaveBeenCalled();
     expect(revalidatePathMock).toHaveBeenCalledWith("/", "layout");
     expect(redirectMock).toHaveBeenCalledWith("/login");
+  });
+
+  it("returns error and does not redirect when signOut returns error", async () => {
+    const consoleErrorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+    signOutMock.mockResolvedValue({
+      error: new Error("network failure"),
+    });
+
+    const { logout } = await import("./actions");
+    const result = await logout();
+
+    expect(result).toEqual({
+      error: "ログアウトに失敗しました。時間をおいて再度お試しください。",
+    });
+    expect(consoleErrorSpy).toHaveBeenCalled();
+    expect(revalidatePathMock).not.toHaveBeenCalled();
+    expect(redirectMock).not.toHaveBeenCalled();
   });
 });
