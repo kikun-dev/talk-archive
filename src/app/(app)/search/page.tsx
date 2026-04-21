@@ -6,6 +6,7 @@ export const metadata: Metadata = {
 };
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { searchRecords } from "@/usecases/searchUseCases";
+import { getDisplayName } from "@/usecases/userSettingsUseCases";
 import { SearchResults } from "@/components/SearchResults";
 
 type SearchPageProps = {
@@ -25,10 +26,12 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
   }
 
   const query = q?.trim() ?? "";
-  const results =
+  const [results, displayName] = await Promise.all([
     query.length > 0
-      ? await searchRecords(supabase, { userId: user.id, query })
-      : null;
+      ? searchRecords(supabase, { userId: user.id, query })
+      : Promise.resolve(null),
+    getDisplayName(supabase, user.id),
+  ]);
 
   return (
     <div>
@@ -51,7 +54,7 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
       </form>
 
       {query.length > 0 && results && (
-        <SearchResults results={results} query={query} />
+        <SearchResults results={results} query={query} displayName={displayName} />
       )}
     </div>
   );

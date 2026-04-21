@@ -3,10 +3,12 @@
 import Link from "next/link";
 import { formatDateTimeJst } from "@/lib/dateTime";
 import type { RecordType, SearchRecordResult } from "@/types/domain";
+import { replaceMyNamePlaceholder } from "@/usecases/contentTransform";
 
 type SearchResultsProps = {
   results: SearchRecordResult[];
   query: string;
+  displayName: string;
 };
 
 const recordTypeLabels: { [K in RecordType]: string } = {
@@ -21,7 +23,7 @@ function truncate(text: string, maxLength: number): string {
   return text.slice(0, maxLength) + "…";
 }
 
-export function SearchResults({ results, query }: SearchResultsProps) {
+export function SearchResults({ results, query, displayName }: SearchResultsProps) {
   if (results.length === 0) {
     return (
       <p className="mt-6 text-sm text-gray-500">
@@ -55,12 +57,12 @@ export function SearchResults({ results, query }: SearchResultsProps) {
               </p>
               {result.content && (
                 <p className="mt-1 text-sm text-gray-700">
-                  {truncate(result.content, 150)}
+                  {truncate(replaceMyNamePlaceholder(result.content, displayName), 150)}
                 </p>
               )}
               {result.title && !result.content && (
                 <p className="mt-1 text-sm font-medium text-gray-700">
-                  {truncate(result.title, 150)}
+                  {truncate(replaceMyNamePlaceholder(result.title, displayName), 150)}
                 </p>
               )}
               {!result.content && !result.title && (

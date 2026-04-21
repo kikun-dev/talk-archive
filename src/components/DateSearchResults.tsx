@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { formatTimeJst } from "@/lib/dateTime";
 import type { ConversationParticipant, Record, RecordType } from "@/types/domain";
+import { replaceMyNamePlaceholder } from "@/usecases/contentTransform";
 
 type DateSearchResultsProps = {
   conversationId: string;
@@ -10,6 +11,7 @@ type DateSearchResultsProps = {
   participants: ConversationParticipant[];
   selectedDate: string;
   onRecordSelect?: () => void;
+  displayName: string;
 };
 
 const recordTypeLabels: { [K in RecordType]: string } = {
@@ -30,6 +32,7 @@ export function DateSearchResults({
   participants,
   selectedDate,
   onRecordSelect,
+  displayName,
 }: DateSearchResultsProps) {
   const participantMap = new Map(participants.map((p) => [p.id, p.name]));
 
@@ -67,12 +70,12 @@ export function DateSearchResults({
               </div>
               {record.content && (
                 <p className="mt-1 text-sm text-gray-700">
-                  {truncate(record.content, 100)}
+                  {truncate(replaceMyNamePlaceholder(record.content, displayName), 100)}
                 </p>
               )}
               {record.title && !record.content && (
                 <p className="mt-1 text-sm font-medium text-gray-700">
-                  {truncate(record.title, 100)}
+                  {truncate(replaceMyNamePlaceholder(record.title, displayName), 100)}
                 </p>
               )}
               {!record.content && !record.title && (

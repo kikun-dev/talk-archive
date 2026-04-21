@@ -8,6 +8,7 @@ import { formatDateHeaderJst, getDateKeyJst } from "@/lib/dateTime";
 import type { ConversationParticipant, Record } from "@/types/domain";
 import type { ConversationWithRecords } from "@/usecases/conversationUseCases";
 import type { MediaUrl } from "@/usecases/recordUseCases";
+import { replaceMyNamePlaceholder } from "@/usecases/contentTransform";
 import { ChatMessage } from "@/components/ChatMessage";
 import { ChatComposer } from "@/components/ChatComposer";
 const DateSearchModal = dynamic(
@@ -19,6 +20,7 @@ const DateSearchModal = dynamic(
 type ChatViewProps = {
   conversation: ConversationWithRecords;
   mediaUrls: { [recordId: string]: MediaUrl };
+  displayName: string;
 };
 
 function buildParticipantMap(
@@ -60,19 +62,27 @@ function groupRecordsByDate(
 function searchRecordsLocal(
   records: Record[],
   query: string,
+  displayName: string,
 ): string[] {
   if (query.trim().length === 0) return [];
   const lowerQuery = query.toLowerCase();
   return records
-    .filter(
-      (r) =>
-        r.content?.toLowerCase().includes(lowerQuery) ||
-        r.title?.toLowerCase().includes(lowerQuery),
-    )
+    .filter((r) => {
+      const content = r.content
+        ? replaceMyNamePlaceholder(r.content, displayName)
+        : null;
+      const title = r.title
+        ? replaceMyNamePlaceholder(r.title, displayName)
+        : null;
+      return (
+        content?.toLowerCase().includes(lowerQuery) ||
+        title?.toLowerCase().includes(lowerQuery)
+      );
+    })
     .map((r) => r.id);
 }
 
-export function ChatView({ conversation, mediaUrls }: ChatViewProps) {
+export function ChatView({ conversation, mediaUrls, displayName }: ChatViewProps) {
   const participantMap = useMemo(
     () => buildParticipantMap(conversation.participants),
     [conversation.participants],
@@ -95,8 +105,8 @@ export function ChatView({ conversation, mediaUrls }: ChatViewProps) {
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   const matchedIds = useMemo(
-    () => searchRecordsLocal(conversation.records, searchQuery),
-    [conversation.records, searchQuery],
+    () => searchRecordsLocal(conversation.records, searchQuery, displayName),
+    [conversation.records, searchQuery, displayName],
   );
 
   const scrollToRecord = useCallback((recordId: string) => {
@@ -341,6 +351,7 @@ export function ChatView({ conversation, mediaUrls }: ChatViewProps) {
                     conversationId={conversation.id}
                     mediaUrl={mediaUrls[record.id]}
                     isEditMode={isEditMode}
+                    displayName={displayName}
                   />
                 ))}
               </div>
@@ -361,6 +372,7 @@ export function ChatView({ conversation, mediaUrls }: ChatViewProps) {
         records={conversation.records}
         isOpen={isDateSearchOpen}
         onClose={() => setIsDateSearchOpen(false)}
+        displayName={displayName}
       />
     </div>
   );

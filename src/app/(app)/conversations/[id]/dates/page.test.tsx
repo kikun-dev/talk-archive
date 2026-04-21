@@ -7,6 +7,7 @@ const createSupabaseServerClientMock = vi.fn();
 const getConversationWithParticipantsMock = vi.fn();
 const getRecordsByDateMock = vi.fn();
 const validateDateSearchInputMock = vi.fn();
+const getDisplayNameMock = vi.fn();
 const redirectMock = vi.fn();
 const notFoundMock = vi.fn();
 
@@ -21,6 +22,10 @@ vi.mock("@/usecases/conversationUseCases", () => ({
 vi.mock("@/usecases/recordUseCases", () => ({
   getRecordsByDate: getRecordsByDateMock,
   validateDateSearchInput: validateDateSearchInputMock,
+}));
+
+vi.mock("@/usecases/userSettingsUseCases", () => ({
+  getDisplayName: getDisplayNameMock,
 }));
 
 vi.mock("next/navigation", () => ({
@@ -78,6 +83,7 @@ describe("ConversationDateSearchPage", () => {
     getConversationWithParticipantsMock.mockResolvedValue(baseConversation);
     getRecordsByDateMock.mockResolvedValue([baseRecord]);
     validateDateSearchInputMock.mockReturnValue(null);
+    getDisplayNameMock.mockResolvedValue("");
   });
 
   it("redirects to /login when user is not available", async () => {

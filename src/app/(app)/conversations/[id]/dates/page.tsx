@@ -5,6 +5,7 @@ import {
   getRecordsByDate,
   validateDateSearchInput,
 } from "@/usecases/recordUseCases";
+import { getDisplayName } from "@/usecases/userSettingsUseCases";
 import { ConversationSubpageLayout } from "@/components/ConversationSubpageLayout";
 import { DateSearchResults } from "@/components/DateSearchResults";
 
@@ -40,10 +41,12 @@ export default async function ConversationDateSearchPage({
     normalizedDate.length > 0
       ? validateDateSearchInput(normalizedDate)
       : null;
-  const records =
+  const [records, displayName] = await Promise.all([
     normalizedDate.length > 0 && validationError === null
-      ? await getRecordsByDate(supabase, id, normalizedDate)
-      : null;
+      ? getRecordsByDate(supabase, id, normalizedDate)
+      : Promise.resolve(null),
+    getDisplayName(supabase, user.id),
+  ]);
 
   return (
     <ConversationSubpageLayout
@@ -85,6 +88,7 @@ export default async function ConversationDateSearchPage({
           records={records}
           participants={conversation.participants}
           selectedDate={normalizedDate}
+          displayName={displayName}
         />
       )}
     </ConversationSubpageLayout>

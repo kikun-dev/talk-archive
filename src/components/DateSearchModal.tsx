@@ -11,6 +11,7 @@ type DateSearchModalProps = {
   records: Record[];
   isOpen: boolean;
   onClose: () => void;
+  displayName: string;
 };
 
 function validateDateInput(date: string): string | null {
@@ -41,6 +42,7 @@ export function DateSearchModal({
   records,
   isOpen,
   onClose,
+  displayName,
 }: DateSearchModalProps) {
   const [selectedDate, setSelectedDate] = useState("");
 
@@ -113,6 +115,7 @@ export function DateSearchModal({
             participants={participants}
             selectedDate={normalizedDate}
             onRecordSelect={onClose}
+            displayName={displayName}
           />
         )}
       </div>

@@ -77,20 +77,20 @@ const conversation: ConversationWithRecords = {
 
 describe("ChatView", () => {
   it("renders conversation title in header", () => {
-    render(<ToastProvider><ChatView conversation={conversation} mediaUrls={{}} /></ToastProvider>);
+    render(<ToastProvider><ChatView conversation={conversation} mediaUrls={{}} displayName="" /></ToastProvider>);
 
     expect(screen.getByText("テスト会話")).toBeInTheDocument();
   });
 
   it("renders record content", () => {
-    render(<ToastProvider><ChatView conversation={conversation} mediaUrls={{}} /></ToastProvider>);
+    render(<ToastProvider><ChatView conversation={conversation} mediaUrls={{}} displayName="" /></ToastProvider>);
 
     expect(screen.getByText("最初のメッセージ")).toBeInTheDocument();
     expect(screen.getByText("二番目のメッセージ")).toBeInTheDocument();
   });
 
   it("renders participant name with messages", () => {
-    render(<ToastProvider><ChatView conversation={conversation} mediaUrls={{}} /></ToastProvider>);
+    render(<ToastProvider><ChatView conversation={conversation} mediaUrls={{}} displayName="" /></ToastProvider>);
 
     const participantLabels = screen.getAllByText("メンバーA");
     expect(participantLabels.length).toBeGreaterThan(0);
@@ -98,7 +98,7 @@ describe("ChatView", () => {
 
   it("shows empty state when no records", () => {
     const emptyConversation = { ...conversation, records: [] };
-    render(<ToastProvider><ChatView conversation={emptyConversation} mediaUrls={{}} /></ToastProvider>);
+    render(<ToastProvider><ChatView conversation={emptyConversation} mediaUrls={{}} displayName="" /></ToastProvider>);
 
     expect(
       screen.getByText("トークレコードがまだありません。"),
@@ -106,7 +106,7 @@ describe("ChatView", () => {
   });
 
   it("shows search bar when search button is clicked", () => {
-    render(<ToastProvider><ChatView conversation={conversation} mediaUrls={{}} /></ToastProvider>);
+    render(<ToastProvider><ChatView conversation={conversation} mediaUrls={{}} displayName="" /></ToastProvider>);
 
     fireEvent.click(screen.getByLabelText("検索"));
 
@@ -116,7 +116,7 @@ describe("ChatView", () => {
   });
 
   it("shows search results count", () => {
-    render(<ToastProvider><ChatView conversation={conversation} mediaUrls={{}} /></ToastProvider>);
+    render(<ToastProvider><ChatView conversation={conversation} mediaUrls={{}} displayName="" /></ToastProvider>);
 
     fireEvent.click(screen.getByLabelText("検索"));
     fireEvent.change(screen.getByPlaceholderText("会話内を検索"), {
@@ -127,7 +127,7 @@ describe("ChatView", () => {
   });
 
   it("shows no match message", () => {
-    render(<ToastProvider><ChatView conversation={conversation} mediaUrls={{}} /></ToastProvider>);
+    render(<ToastProvider><ChatView conversation={conversation} mediaUrls={{}} displayName="" /></ToastProvider>);
 
     fireEvent.click(screen.getByLabelText("検索"));
     fireEvent.change(screen.getByPlaceholderText("会話内を検索"), {
@@ -138,7 +138,7 @@ describe("ChatView", () => {
   });
 
   it("shows overflow menu when menu button is clicked", () => {
-    render(<ToastProvider><ChatView conversation={conversation} mediaUrls={{}} /></ToastProvider>);
+    render(<ToastProvider><ChatView conversation={conversation} mediaUrls={{}} displayName="" /></ToastProvider>);
 
     fireEvent.click(screen.getByLabelText("メニュー"));
 
@@ -158,20 +158,20 @@ describe("ChatView", () => {
   });
 
   it("renders back link", () => {
-    render(<ToastProvider><ChatView conversation={conversation} mediaUrls={{}} /></ToastProvider>);
+    render(<ToastProvider><ChatView conversation={conversation} mediaUrls={{}} displayName="" /></ToastProvider>);
 
     expect(screen.getByLabelText("戻る")).toBeInTheDocument();
   });
 
   it("renders composer", () => {
-    render(<ToastProvider><ChatView conversation={conversation} mediaUrls={{}} /></ToastProvider>);
+    render(<ToastProvider><ChatView conversation={conversation} mediaUrls={{}} displayName="" /></ToastProvider>);
 
     expect(screen.getByText("テキスト")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "追加" })).toBeInTheDocument();
   });
 
   it("opens date search modal from overflow menu", async () => {
-    render(<ToastProvider><ChatView conversation={conversation} mediaUrls={{}} /></ToastProvider>);
+    render(<ToastProvider><ChatView conversation={conversation} mediaUrls={{}} displayName="" /></ToastProvider>);
 
     fireEvent.click(screen.getByLabelText("メニュー"));
     fireEvent.click(screen.getByRole("button", { name: "日付検索" }));
@@ -181,7 +181,7 @@ describe("ChatView", () => {
   });
 
   it("filters records by selected date in the modal", async () => {
-    render(<ToastProvider><ChatView conversation={conversation} mediaUrls={{}} /></ToastProvider>);
+    render(<ToastProvider><ChatView conversation={conversation} mediaUrls={{}} displayName="" /></ToastProvider>);
 
     fireEvent.click(screen.getByLabelText("メニュー"));
     fireEvent.click(screen.getByRole("button", { name: "日付検索" }));
@@ -201,7 +201,7 @@ describe("ChatView", () => {
   });
 
   it("enters edit mode from overflow menu", () => {
-    render(<ToastProvider><ChatView conversation={conversation} mediaUrls={{}} /></ToastProvider>);
+    render(<ToastProvider><ChatView conversation={conversation} mediaUrls={{}} displayName="" /></ToastProvider>);
 
     fireEvent.click(screen.getByLabelText("メニュー"));
     fireEvent.click(screen.getByRole("button", { name: "会話編集" }));

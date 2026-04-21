@@ -20,7 +20,7 @@ const baseResult: SearchRecordResult = {
 
 describe("SearchResults", () => {
   it("shows empty message when no results", () => {
-    render(<SearchResults results={[]} query="テスト" />);
+    render(<SearchResults results={[]} query="テスト" displayName="" />);
 
     expect(
       screen.getByText("「テスト」に一致する結果はありません。"),
@@ -28,31 +28,31 @@ describe("SearchResults", () => {
   });
 
   it("shows result count", () => {
-    render(<SearchResults results={[baseResult]} query="テスト" />);
+    render(<SearchResults results={[baseResult]} query="テスト" displayName="" />);
 
     expect(screen.getByText("1件の結果")).toBeInTheDocument();
   });
 
   it("renders result content", () => {
-    render(<SearchResults results={[baseResult]} query="テスト" />);
+    render(<SearchResults results={[baseResult]} query="テスト" displayName="" />);
 
     expect(screen.getByText("テストメッセージ内容")).toBeInTheDocument();
   });
 
   it("renders conversation title", () => {
-    render(<SearchResults results={[baseResult]} query="テスト" />);
+    render(<SearchResults results={[baseResult]} query="テスト" displayName="" />);
 
     expect(screen.getByText("テスト会話")).toBeInTheDocument();
   });
 
   it("renders record type badge", () => {
-    render(<SearchResults results={[baseResult]} query="テスト" />);
+    render(<SearchResults results={[baseResult]} query="テスト" displayName="" />);
 
     expect(screen.getByText("テキスト")).toBeInTheDocument();
   });
 
   it("links to conversation with recordId", () => {
-    render(<SearchResults results={[baseResult]} query="テスト" />);
+    render(<SearchResults results={[baseResult]} query="テスト" displayName="" />);
 
     const link = screen.getByRole("link");
     expect(link).toHaveAttribute(
@@ -67,7 +67,7 @@ describe("SearchResults", () => {
       content: null,
       title: "レコードタイトル",
     };
-    render(<SearchResults results={[result]} query="テスト" />);
+    render(<SearchResults results={[result]} query="テスト" displayName="" />);
 
     expect(screen.getByText("レコードタイトル")).toBeInTheDocument();
   });
@@ -79,7 +79,7 @@ describe("SearchResults", () => {
       title: null,
       recordType: "image" as const,
     };
-    render(<SearchResults results={[result]} query="テスト" />);
+    render(<SearchResults results={[result]} query="テスト" displayName="" />);
 
     expect(screen.getByText("(画像ファイル)")).toBeInTheDocument();
   });
@@ -87,7 +87,7 @@ describe("SearchResults", () => {
   it("truncates long content", () => {
     const longContent = "あ".repeat(200);
     const result = { ...baseResult, content: longContent };
-    render(<SearchResults results={[result]} query="テスト" />);
+    render(<SearchResults results={[result]} query="テスト" displayName="" />);
 
     const truncated = "あ".repeat(150) + "…";
     expect(screen.getByText(truncated)).toBeInTheDocument();
@@ -103,7 +103,7 @@ describe("SearchResults", () => {
         conversationTitle: "別の会話",
       },
     ];
-    render(<SearchResults results={results} query="テスト" />);
+    render(<SearchResults results={results} query="テスト" displayName="" />);
 
     expect(screen.getByText("2件の結果")).toBeInTheDocument();
     expect(screen.getAllByRole("link")).toHaveLength(2);

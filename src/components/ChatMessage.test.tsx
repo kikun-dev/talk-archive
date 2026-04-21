@@ -36,6 +36,7 @@ describe("ChatMessage", () => {
         record={textRecord}
         participantName="メンバーA"
         conversationId="conv-1"
+        displayName=""
       /></ToastProvider>,
     );
 
@@ -49,6 +50,7 @@ describe("ChatMessage", () => {
         record={textRecord}
         participantName="メンバーA"
         conversationId="conv-1"
+        displayName=""
       /></ToastProvider>,
     );
 
@@ -62,6 +64,7 @@ describe("ChatMessage", () => {
         record={textRecord}
         participantName="メンバーA"
         conversationId="conv-1"
+        displayName=""
       /></ToastProvider>,
     );
 
@@ -75,6 +78,7 @@ describe("ChatMessage", () => {
         participantName="メンバーA"
         conversationId="conv-1"
         isEditMode
+        displayName=""
       /></ToastProvider>,
     );
 
@@ -95,6 +99,7 @@ describe("ChatMessage", () => {
         participantName="メンバーA"
         conversationId="conv-1"
         isEditMode
+        displayName=""
       /></ToastProvider>,
     );
 
@@ -110,6 +115,7 @@ describe("ChatMessage", () => {
         record={imageRecord}
         participantName="メンバーA"
         conversationId="conv-1"
+        displayName=""
       /></ToastProvider>,
     );
 
@@ -123,6 +129,7 @@ describe("ChatMessage", () => {
         participantName="メンバーA"
         conversationId="conv-1"
         isEditMode
+        displayName=""
       /></ToastProvider>,
     );
 
@@ -135,6 +142,7 @@ describe("ChatMessage", () => {
         record={textRecord}
         participantName="メンバーA"
         conversationId="conv-1"
+        displayName=""
       /></ToastProvider>,
     );
 
@@ -150,6 +158,7 @@ describe("ChatMessage", () => {
         participantName="メンバーA"
         conversationId="conv-1"
         isEditMode
+        displayName=""
       /></ToastProvider>,
     );
 
@@ -170,9 +179,70 @@ describe("ChatMessage", () => {
         record={textRecord}
         participantName="メンバーA"
         conversationId="conv-1"
+        displayName=""
       /></ToastProvider>,
     );
 
     expect(screen.queryByRole("button", { name: "操作" })).toBeNull();
+  });
+
+  it("replaces {{MY_NAME}} in content with displayName", () => {
+    const record = {
+      ...textRecord,
+      content: "こんにちは{{MY_NAME}}さん",
+      title: "{{MY_NAME}}へのメッセージ",
+    };
+    render(
+      <ToastProvider><ChatMessage
+        record={record}
+        participantName="メンバーA"
+        conversationId="conv-1"
+        displayName="太郎"
+      /></ToastProvider>,
+    );
+
+    expect(screen.getByText("こんにちは太郎さん")).toBeInTheDocument();
+    expect(screen.getByText("太郎へのメッセージ")).toBeInTheDocument();
+  });
+
+  it("shows raw placeholder when displayName is empty", () => {
+    const record = {
+      ...textRecord,
+      content: "こんにちは{{MY_NAME}}さん",
+    };
+    render(
+      <ToastProvider><ChatMessage
+        record={record}
+        participantName="メンバーA"
+        conversationId="conv-1"
+        displayName=""
+      /></ToastProvider>,
+    );
+
+    expect(
+      screen.getByText("こんにちは{{MY_NAME}}さん"),
+    ).toBeInTheDocument();
+  });
+
+  it("shows raw placeholder in edit mode textarea", () => {
+    const record = {
+      ...textRecord,
+      content: "こんにちは{{MY_NAME}}さん",
+    };
+    render(
+      <ToastProvider><ChatMessage
+        record={record}
+        participantName="メンバーA"
+        conversationId="conv-1"
+        isEditMode
+        displayName="太郎"
+      /></ToastProvider>,
+    );
+
+    fireEvent.click(screen.getByText("編集"));
+
+    expect(screen.getByLabelText("テキスト")).toHaveValue(
+      "こんにちは{{MY_NAME}}さん",
+    );
   });
 });

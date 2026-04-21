@@ -42,6 +42,7 @@ describe("DateSearchResults", () => {
         records={[]}
         participants={participants}
         selectedDate="2026-01-01"
+        displayName=""
       />,
     );
 
@@ -57,6 +58,7 @@ describe("DateSearchResults", () => {
         records={[baseRecord]}
         participants={participants}
         selectedDate="2026-01-01"
+        displayName=""
       />,
     );
 
@@ -70,6 +72,7 @@ describe("DateSearchResults", () => {
         records={[baseRecord]}
         participants={participants}
         selectedDate="2026-01-01"
+        displayName=""
       />,
     );
 
@@ -83,6 +86,7 @@ describe("DateSearchResults", () => {
         records={[baseRecord]}
         participants={participants}
         selectedDate="2026-01-01"
+        displayName=""
       />,
     );
 
@@ -96,6 +100,7 @@ describe("DateSearchResults", () => {
         records={[baseRecord]}
         participants={participants}
         selectedDate="2026-01-01"
+        displayName=""
       />,
     );
 
@@ -110,6 +115,7 @@ describe("DateSearchResults", () => {
         records={[record]}
         participants={participants}
         selectedDate="2026-01-01"
+        displayName=""
       />,
     );
 
@@ -123,6 +129,7 @@ describe("DateSearchResults", () => {
         records={[baseRecord]}
         participants={participants}
         selectedDate="2026-01-01"
+        displayName=""
       />,
     );
 
@@ -146,6 +153,7 @@ describe("DateSearchResults", () => {
         records={[record]}
         participants={participants}
         selectedDate="2026-01-01"
+        displayName=""
       />,
     );
 
@@ -165,6 +173,7 @@ describe("DateSearchResults", () => {
         records={[record]}
         participants={participants}
         selectedDate="2026-01-01"
+        displayName=""
       />,
     );
 
@@ -180,6 +189,7 @@ describe("DateSearchResults", () => {
         records={[record]}
         participants={participants}
         selectedDate="2026-01-01"
+        displayName=""
       />,
     );
 
