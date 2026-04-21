@@ -2,6 +2,7 @@ import { notFound, redirect } from "next/navigation";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { getConversationWithRecords } from "@/usecases/conversationUseCases";
 import { getMediaUrlsForRecords } from "@/usecases/recordUseCases";
+import { getDisplayName } from "@/usecases/userSettingsUseCases";
 import { ChatView } from "@/components/ChatView";
 import type { MediaUrl } from "@/usecases/recordUseCases";
 
@@ -29,10 +30,10 @@ export default async function ConversationDetailPage({
     notFound();
   }
 
-  const mediaUrlMap = await getMediaUrlsForRecords(
-    supabase,
-    conversation.records,
-  );
+  const [mediaUrlMap, displayName] = await Promise.all([
+    getMediaUrlsForRecords(supabase, conversation.records),
+    getDisplayName(supabase, user.id),
+  ]);
 
   const mediaUrls: { [recordId: string]: MediaUrl } = {};
   if (mediaUrlMap) {
@@ -42,6 +43,10 @@ export default async function ConversationDetailPage({
   }
 
   return (
-    <ChatView conversation={conversation} mediaUrls={mediaUrls} />
+    <ChatView
+      conversation={conversation}
+      mediaUrls={mediaUrls}
+      displayName={displayName}
+    />
   );
 }

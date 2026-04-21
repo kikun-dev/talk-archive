@@ -12,6 +12,7 @@ import { FormError } from "@/components/FormError";
 import { useToast } from "@/components/ToastProvider";
 import type { Record } from "@/types/domain";
 import type { MediaUrl } from "@/usecases/recordUseCases";
+import { replaceMyNamePlaceholder } from "@/usecases/contentTransform";
 
 type ChatMessageProps = {
   record: Record;
@@ -19,6 +20,7 @@ type ChatMessageProps = {
   conversationId: string;
   mediaUrl?: MediaUrl;
   isEditMode?: boolean;
+  displayName: string;
 };
 
 function getInitial(name: string): string {
@@ -67,6 +69,7 @@ export function ChatMessage({
   conversationId,
   mediaUrl,
   isEditMode = false,
+  displayName,
 }: ChatMessageProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [isActionMenuOpen, setIsActionMenuOpen] = useState(false);
@@ -178,12 +181,12 @@ export function ChatMessage({
         <div className="mt-0.5 rounded-lg rounded-tl-none bg-white px-3 py-2 shadow-sm">
           {record.title && (
             <p className="text-xs font-semibold text-gray-800">
-              {record.title}
+              {replaceMyNamePlaceholder(record.title, displayName)}
             </p>
           )}
           {record.content && (
             <p className="whitespace-pre-wrap text-sm text-gray-700">
-              {record.content}
+              {replaceMyNamePlaceholder(record.content, displayName)}
             </p>
           )}
           {mediaUrl && <MediaContent record={record} mediaUrl={mediaUrl} />}

@@ -97,3 +97,15 @@ export type MediaAttachment = Attachment & {
 export type SearchRecordResult = Record & {
   conversationTitle: string;
 };
+
+/** 自分の名前プレースホルダー */
+export const MY_NAME_PLACEHOLDER = "{{MY_NAME}}" as const;
+
+/** ユーザー設定 */
+export type UserSettings = {
+  id: string;
+  userId: string;
+  displayName: string;
+  createdAt: string;
+  updatedAt: string;
+};

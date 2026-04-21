@@ -65,6 +65,15 @@ function SidebarContent({
               新規作成
             </Link>
           </li>
+          <li>
+            <Link
+              href="/settings"
+              className={linkClassName}
+              onClick={onNavigate}
+            >
+              設定
+            </Link>
+          </li>
         </ul>
       </nav>
 
