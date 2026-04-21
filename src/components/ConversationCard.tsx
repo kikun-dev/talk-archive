@@ -1,3 +1,4 @@
+import { memo } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import type { ConversationSummary } from "@/usecases/conversationUseCases";
@@ -16,7 +17,7 @@ function canRenderConversationCoverImage(
   );
 }
 
-export function ConversationCard({ conversation }: ConversationCardProps) {
+export const ConversationCard = memo(function ConversationCard({ conversation }: ConversationCardProps) {
   return (
     <Link
       href={`/conversations/${conversation.id}`}
@@ -28,6 +29,7 @@ export function ConversationCard({ conversation }: ConversationCardProps) {
             src={conversation.coverImagePath}
             alt={conversation.title}
             fill
+            sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
             className="object-cover"
           />
         ) : (
@@ -44,4 +46,4 @@ export function ConversationCard({ conversation }: ConversationCardProps) {
       </div>
     </Link>
   );
-}
+});

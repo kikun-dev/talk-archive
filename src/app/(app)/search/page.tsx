@@ -1,4 +1,9 @@
+import type { Metadata } from "next";
 import { redirect } from "next/navigation";
+
+export const metadata: Metadata = {
+  title: "検索 | トークアーカイブ",
+};
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { searchRecords } from "@/usecases/searchUseCases";
 import { getDisplayName } from "@/usecases/userSettingsUseCases";

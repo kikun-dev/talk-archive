@@ -16,7 +16,7 @@ import {
 import {
   buildStoragePath,
   uploadFile,
-  getFileUrl,
+  getFileUrls,
   deleteFile,
 } from "@/repositories/storageService";
 
@@ -346,24 +346,28 @@ export async function getMediaUrlsForRecords(
     }
   }
 
-  const results = await Promise.all(
-    mediaRecords.map(async (record) => {
-      const attachment = firstAttachmentByRecordId.get(record.id);
-      if (!attachment) {
-        return null;
-      }
-      const url = await getFileUrl(client, attachment.filePath);
-      return {
+  const pathToRecordId = new Map<string, { recordId: string; mimeType: string }>();
+  for (const record of mediaRecords) {
+    const attachment = firstAttachmentByRecordId.get(record.id);
+    if (attachment) {
+      pathToRecordId.set(attachment.filePath, {
         recordId: record.id,
-        mediaUrl: { url, mimeType: attachment.mimeType },
-      };
-    }),
-  );
+        mimeType: attachment.mimeType,
+      });
+    }
+  }
+
+  if (pathToRecordId.size === 0) {
+    return new Map();
+  }
+
+  const signedUrls = await getFileUrls(client, [...pathToRecordId.keys()]);
 
   const map = new Map<string, MediaUrl>();
-  for (const result of results) {
-    if (result) {
-      map.set(result.recordId, result.mediaUrl);
+  for (const [path, info] of pathToRecordId) {
+    const url = signedUrls.get(path);
+    if (url) {
+      map.set(info.recordId, { url, mimeType: info.mimeType });
     }
   }
   return map;

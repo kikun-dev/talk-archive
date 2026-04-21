@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
+import dynamic from "next/dynamic";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { formatDateHeaderJst, getDateKeyJst } from "@/lib/dateTime";
 import type { ConversationParticipant, Record } from "@/types/domain";
@@ -10,7 +11,11 @@ import type { MediaUrl } from "@/usecases/recordUseCases";
 import { replaceMyNamePlaceholder } from "@/usecases/contentTransform";
 import { ChatMessage } from "@/components/ChatMessage";
 import { ChatComposer } from "@/components/ChatComposer";
-import { DateSearchModal } from "@/components/DateSearchModal";
+const DateSearchModal = dynamic(
+  () =>
+    import("@/components/DateSearchModal").then((m) => m.DateSearchModal),
+  { ssr: false },
+);
 
 type ChatViewProps = {
   conversation: ConversationWithRecords;
@@ -78,8 +83,14 @@ function searchRecordsLocal(
 }
 
 export function ChatView({ conversation, mediaUrls, displayName }: ChatViewProps) {
-  const participantMap = buildParticipantMap(conversation.participants);
-  const dateGroups = groupRecordsByDate(conversation.records);
+  const participantMap = useMemo(
+    () => buildParticipantMap(conversation.participants),
+    [conversation.participants],
+  );
+  const dateGroups = useMemo(
+    () => groupRecordsByDate(conversation.records),
+    [conversation.records],
+  );
   const searchParams = useSearchParams();
   const targetRecordId = searchParams.get("recordId");
 
@@ -93,7 +104,10 @@ export function ChatView({ conversation, mediaUrls, displayName }: ChatViewProps
   const timelineRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
-  const matchedIds = searchRecordsLocal(conversation.records, searchQuery, displayName);
+  const matchedIds = useMemo(
+    () => searchRecordsLocal(conversation.records, searchQuery, displayName),
+    [conversation.records, searchQuery, displayName],
+  );
 
   const scrollToRecord = useCallback((recordId: string) => {
     const el = timelineRef.current?.querySelector(

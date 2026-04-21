@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useActionState, useState, useTransition } from "react";
+import { memo, useActionState, useState, useTransition } from "react";
 import {
   updateRecordAction,
   deleteRecordAction,
@@ -48,7 +48,7 @@ function MediaContent({
       );
     case "video":
       return (
-        <video controls aria-label={record.title ?? "動画"} className="mt-1 max-h-60 w-full rounded">
+        <video controls preload="metadata" aria-label={record.title ?? "動画"} className="mt-1 max-h-60 w-full rounded">
           <source src={mediaUrl.url} type={mediaUrl.mimeType} />
         </video>
       );
@@ -63,7 +63,7 @@ function MediaContent({
   }
 }
 
-export function ChatMessage({
+export const ChatMessage = memo(function ChatMessage({
   record,
   participantName,
   conversationId,
@@ -272,4 +272,4 @@ export function ChatMessage({
       </div>
     </div>
   );
-}
+});
