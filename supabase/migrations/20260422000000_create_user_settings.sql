@@ -5,7 +5,10 @@ create table user_settings (
   display_name text not null default '',
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  constraint user_settings_display_name_length_check check (char_length(btrim(display_name)) <= 50),
+  constraint user_settings_display_name_format_check check (
+    display_name = btrim(display_name)
+    and char_length(display_name) <= 50
+  ),
   constraint user_settings_user_id_unique unique (user_id)
 );
 
