@@ -7,7 +7,7 @@ import {
   deleteRecordAction,
   type ActionState,
 } from "@/app/(app)/conversations/[id]/actions";
-import { formatTimeJst } from "@/lib/dateTime";
+import { formatMessageDateTimeJst } from "@/lib/dateTime";
 import { FormError } from "@/components/FormError";
 import { useToast } from "@/components/ToastProvider";
 import type { Record } from "@/types/domain";
@@ -193,7 +193,7 @@ export const ChatMessage = memo(function ChatMessage({
         </div>
         <div className="mt-0.5 flex items-center gap-2">
           <span className="text-[10px] text-gray-500">
-            {formatTimeJst(record.postedAt)}
+            {formatMessageDateTimeJst(record.postedAt)}
           </span>
           {isEditMode && (
             <>

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { afterEach, describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent, within } from "@testing-library/react";
 import { ChatMessage } from "./ChatMessage";
 import { ToastProvider } from "./ToastProvider";
@@ -30,6 +30,10 @@ const imageRecord: Record = {
 };
 
 describe("ChatMessage", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("renders participant name and initial", () => {
     render(
       <ToastProvider><ChatMessage
@@ -58,7 +62,10 @@ describe("ChatMessage", () => {
     expect(screen.getByText("テスト内容")).toBeInTheDocument();
   });
 
-  it("renders posted time", () => {
+  it("renders posted date time without year for current-year records", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-22T00:00:00Z"));
+
     render(
       <ToastProvider><ChatMessage
         record={textRecord}
@@ -68,7 +75,7 @@ describe("ChatMessage", () => {
       /></ToastProvider>,
     );
 
-    expect(screen.getByText("19:30")).toBeInTheDocument();
+    expect(screen.getByText("01/15(木) 19:30")).toBeInTheDocument();
   });
 
   it("switches to edit form when edit button is clicked", () => {
