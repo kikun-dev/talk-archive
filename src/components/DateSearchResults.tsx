@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { formatTimeJst } from "@/lib/dateTime";
+import { formatMessageDateTimeJst } from "@/lib/dateTime";
 import type { ConversationParticipant, Record, RecordType } from "@/types/domain";
 import { replaceMyNamePlaceholder } from "@/usecases/contentTransform";
 
@@ -62,7 +62,7 @@ export function DateSearchResults({
                   {recordTypeLabels[record.recordType]}
                 </span>
                 <span className="text-xs text-gray-500">
-                  {formatTimeJst(record.postedAt)}
+                  {formatMessageDateTimeJst(record.postedAt)}
                 </span>
                 <span className="text-xs text-gray-500">
                   {participantMap.get(record.speakerParticipantId) ?? "不明"}

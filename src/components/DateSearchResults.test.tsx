@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { afterEach, describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { DateSearchResults } from "./DateSearchResults";
 import type { ConversationParticipant, Record } from "@/types/domain";
@@ -35,6 +35,10 @@ const baseRecord: Record = {
 };
 
 describe("DateSearchResults", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("shows empty message when no records", () => {
     render(
       <DateSearchResults
@@ -105,6 +109,23 @@ describe("DateSearchResults", () => {
     );
 
     expect(screen.getByText("メンバーA")).toBeInTheDocument();
+  });
+
+  it("renders posted date time without year for current-year records", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-22T00:00:00Z"));
+
+    render(
+      <DateSearchResults
+        conversationId="conv-1"
+        records={[baseRecord]}
+        participants={participants}
+        selectedDate="2026-01-01"
+        displayName=""
+      />,
+    );
+
+    expect(screen.getByText("01/01(木) 10:00")).toBeInTheDocument();
   });
 
   it("shows unknown for missing participant", () => {
