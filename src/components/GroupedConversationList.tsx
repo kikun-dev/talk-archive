@@ -50,7 +50,10 @@ export function GroupedConversationList({
             このグループの会話はまだありません。
           </p>
         ) : (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div
+            data-testid="conversation-grid"
+            className="grid grid-cols-3 gap-2 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3"
+          >
             {filtered.map((conversation) => (
               <ConversationCard
                 key={conversation.id}
