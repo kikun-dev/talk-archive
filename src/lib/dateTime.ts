@@ -1,4 +1,5 @@
 const JST_TIME_ZONE = "Asia/Tokyo";
+const JST_OFFSET_MS = 9 * 60 * 60 * 1000;
 
 function createFormatter(
   options: Intl.DateTimeFormatOptions,
@@ -50,6 +51,28 @@ const dateKeyFormatter = createFormatter({
   month: "2-digit",
   day: "2-digit",
 });
+
+function padTwoDigits(value: number): string {
+  return String(value).padStart(2, "0");
+}
+
+function getJstDateInputParts(date: Date): {
+  year: number;
+  month: string;
+  day: string;
+  hour: string;
+  minute: string;
+} {
+  const jstDate = new Date(date.getTime() + JST_OFFSET_MS);
+
+  return {
+    year: jstDate.getUTCFullYear(),
+    month: padTwoDigits(jstDate.getUTCMonth() + 1),
+    day: padTwoDigits(jstDate.getUTCDate()),
+    hour: padTwoDigits(jstDate.getUTCHours()),
+    minute: padTwoDigits(jstDate.getUTCMinutes()),
+  };
+}
 
 export function formatDateJst(dateString: string): string {
   return dateFormatter.format(new Date(dateString));
@@ -105,4 +128,14 @@ export function formatDateHeaderJst(dateString: string): string {
 
 export function getDateKeyJst(dateString: string): string {
   return dateKeyFormatter.format(new Date(dateString)).replace(/\//g, "-");
+}
+
+export function getCurrentJstDateTimeLocal(currentDate = new Date()): string {
+  const parts = getJstDateInputParts(currentDate);
+  return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}`;
+}
+
+export function getCurrentJstDate(currentDate = new Date()): string {
+  const parts = getJstDateInputParts(currentDate);
+  return `${parts.year}-${parts.month}-${parts.day}`;
 }

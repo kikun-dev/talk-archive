@@ -1,5 +1,5 @@
-import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { afterEach, describe, it, expect, vi } from "vitest";
+import { act, render, screen, fireEvent } from "@testing-library/react";
 import { ChatComposer } from "./ChatComposer";
 import type { ConversationParticipant } from "@/types/domain";
 
@@ -30,6 +30,10 @@ const twoParticipants: ConversationParticipant[] = [
 const singleParticipant: ConversationParticipant[] = [twoParticipants[0]];
 
 describe("ChatComposer", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("renders type tabs", () => {
     render(
       <ChatComposer
@@ -147,19 +151,23 @@ describe("ChatComposer", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("shows postedAt input", () => {
+  it("initializes postedAt input with current JST datetime", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-22T15:30:45Z"));
+
     render(
       <ChatComposer
         conversationId="conv-1"
         participants={singleParticipant}
       />,
     );
+    act(() => {
+      vi.runOnlyPendingTimers();
+    });
 
-    const dateInputs = screen.getAllByDisplayValue("");
-    const datetimeInput = dateInputs.find(
-      (el) => el.getAttribute("type") === "datetime-local",
+    expect(screen.getByLabelText("投稿日時")).toHaveValue(
+      "2026-04-23T00:30",
     );
-    expect(datetimeInput).toBeInTheDocument();
   });
 
   it("has submit button", () => {
