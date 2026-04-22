@@ -1,9 +1,13 @@
-import { describe, it, expect, vi } from "vitest";
+import { afterEach, describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { ActivePeriodFields } from "./ActivePeriodFields";
 import type { ConversationActivePeriodInput } from "@/usecases/conversationUseCases";
 
 describe("ActivePeriodFields", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("renders empty state when no periods", () => {
     render(<ActivePeriodFields periods={[]} onChange={vi.fn()} />);
 
@@ -20,7 +24,10 @@ describe("ActivePeriodFields", () => {
     expect(screen.getByDisplayValue("2026-06-30")).toBeInTheDocument();
   });
 
-  it("calls onChange with new period when add button is clicked", () => {
+  it("calls onChange with new period initialized to current JST date when add button is clicked", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-22T15:30:45Z"));
+
     const onChange = vi.fn();
     const periods: ConversationActivePeriodInput[] = [
       { startDate: "2026-01-01", endDate: null },
@@ -31,7 +38,7 @@ describe("ActivePeriodFields", () => {
 
     expect(onChange).toHaveBeenCalledWith([
       { startDate: "2026-01-01", endDate: null },
-      { startDate: "", endDate: null },
+      { startDate: "2026-04-23", endDate: null },
     ]);
   });
 

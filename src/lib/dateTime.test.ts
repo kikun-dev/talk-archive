@@ -1,14 +1,20 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   formatDateHeaderJst,
   formatDateJst,
   formatDateTimeJst,
   formatMessageDateTimeJst,
   formatTimeJst,
+  getCurrentJstDate,
+  getCurrentJstDateTimeLocal,
   getDateKeyJst,
 } from "./dateTime";
 
 describe("dateTime", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("formats time in JST", () => {
     expect(formatTimeJst("2026-01-15T10:30:00Z")).toBe("19:30");
   });
@@ -56,5 +62,19 @@ describe("dateTime", () => {
 
   it("builds date keys in JST", () => {
     expect(getDateKeyJst("2026-01-15T15:30:00Z")).toBe("2026-01-16");
+  });
+
+  it("returns current JST date time for datetime-local inputs", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-22T15:30:45Z"));
+
+    expect(getCurrentJstDateTimeLocal()).toBe("2026-04-23T00:30");
+  });
+
+  it("returns current JST date for date inputs", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-22T15:30:45Z"));
+
+    expect(getCurrentJstDate()).toBe("2026-04-23");
   });
 });

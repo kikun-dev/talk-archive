@@ -9,6 +9,7 @@ import {
   addAudioRecordAction,
   type ActionState,
 } from "@/app/(app)/conversations/[id]/actions";
+import { getCurrentJstDateTimeLocal } from "@/lib/dateTime";
 import { FormError } from "@/components/FormError";
 import type { ConversationParticipant, RecordType } from "@/types/domain";
 
@@ -186,6 +187,7 @@ export function ChatComposer({
               name="postedAt"
               type="datetime-local"
               required
+              defaultValue={getCurrentJstDateTimeLocal()}
               aria-label="投稿日時"
               className="block w-full rounded border border-gray-300 px-2 py-2 text-sm"
             />

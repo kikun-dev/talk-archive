@@ -1,5 +1,6 @@
 "use client";
 
+import { getCurrentJstDate } from "@/lib/dateTime";
 import type { ConversationActivePeriodInput } from "@/usecases/conversationUseCases";
 
 type ActivePeriodFieldsProps = {
@@ -12,7 +13,7 @@ export function ActivePeriodFields({
   onChange,
 }: ActivePeriodFieldsProps) {
   function addPeriod() {
-    onChange([...periods, { startDate: "", endDate: null }]);
+    onChange([...periods, { startDate: getCurrentJstDate(), endDate: null }]);
   }
 
   function removePeriod(index: number) {
