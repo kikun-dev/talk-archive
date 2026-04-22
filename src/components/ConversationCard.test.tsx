@@ -63,4 +63,30 @@ describe("ConversationCard", () => {
     expect(screen.getByText("No Image")).toBeInTheDocument();
     expect(screen.queryByRole("img")).not.toBeInTheDocument();
   });
+
+  it("uses compact mobile layout while preserving desktop card layout", () => {
+    render(<ConversationCard conversation={baseConversation} />);
+
+    expect(screen.getByRole("link")).toHaveClass(
+      "rounded-md",
+      "sm:rounded-lg",
+    );
+    expect(screen.getByTestId("conversation-card-thumbnail")).toHaveClass(
+      "aspect-square",
+      "sm:aspect-[16/9]",
+    );
+    expect(screen.getByTestId("conversation-card-title")).toHaveClass(
+      "truncate",
+      "text-xs",
+      "sm:text-sm",
+    );
+  });
+
+  it("keeps no-image placeholder inside square mobile thumbnail", () => {
+    render(<ConversationCard conversation={baseConversation} />);
+
+    expect(screen.getByTestId("conversation-card-thumbnail")).toContainElement(
+      screen.getByText("No Image"),
+    );
+  });
 });

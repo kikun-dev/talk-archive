@@ -58,6 +58,16 @@ describe("GroupedConversationList", () => {
     expect(screen.queryByText("日向坂の会話")).not.toBeInTheDocument();
   });
 
+  it("uses a three-column mobile grid while preserving desktop columns", () => {
+    render(<GroupedConversationList conversations={conversations} />);
+
+    expect(screen.getByTestId("conversation-grid")).toHaveClass(
+      "grid-cols-3",
+      "sm:grid-cols-2",
+      "lg:grid-cols-3",
+    );
+  });
+
   it("switches to sakurazaka group on tab click", () => {
     render(<GroupedConversationList conversations={conversations} />);
 
