@@ -1,5 +1,5 @@
 import { afterEach, describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { act, render, screen, fireEvent } from "@testing-library/react";
 import { ChatComposer } from "./ChatComposer";
 import type { ConversationParticipant } from "@/types/domain";
 
@@ -161,6 +161,9 @@ describe("ChatComposer", () => {
         participants={singleParticipant}
       />,
     );
+    act(() => {
+      vi.runOnlyPendingTimers();
+    });
 
     expect(screen.getByLabelText("投稿日時")).toHaveValue(
       "2026-04-23T00:30",

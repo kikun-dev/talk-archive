@@ -39,6 +39,7 @@ export function ChatComposer({
   const [speakerParticipantId, setSpeakerParticipantId] = useState(
     participants.length === 1 ? participants[0].id : "",
   );
+  const [postedAt, setPostedAt] = useState("");
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [clientError, setClientError] = useState<string | null>(null);
 
@@ -56,6 +57,7 @@ export function ChatComposer({
       const result = await action(conversationId, _prevState, formData);
       if (!result?.error) {
         formRef.current?.reset();
+        setPostedAt(getCurrentJstDateTimeLocal());
         setPreviewUrl(null);
         if (participants.length === 1) {
           setSpeakerParticipantId(participants[0].id);
@@ -73,6 +75,16 @@ export function ChatComposer({
       }
     };
   }, [previewUrl]);
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      setPostedAt(getCurrentJstDateTimeLocal());
+    }, 0);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, []);
 
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     setClientError(null);
@@ -187,7 +199,8 @@ export function ChatComposer({
               name="postedAt"
               type="datetime-local"
               required
-              defaultValue={getCurrentJstDateTimeLocal()}
+              value={postedAt}
+              onChange={(e) => setPostedAt(e.target.value)}
               aria-label="投稿日時"
               className="block w-full rounded border border-gray-300 px-2 py-2 text-sm"
             />
