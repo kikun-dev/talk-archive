@@ -170,6 +170,27 @@ describe("ChatView", () => {
     expect(screen.getByRole("button", { name: "追加" })).toBeInTheDocument();
   });
 
+  it("hides composer on mobile while not in edit mode and keeps it visible on desktop", () => {
+    render(<ToastProvider><ChatView conversation={conversation} mediaUrls={{}} displayName="" /></ToastProvider>);
+
+    expect(screen.getByTestId("chat-composer-container")).toHaveClass(
+      "hidden",
+      "sm:block",
+    );
+  });
+
+  it("shows composer on mobile when edit mode is enabled", () => {
+    render(<ToastProvider><ChatView conversation={conversation} mediaUrls={{}} displayName="" /></ToastProvider>);
+
+    fireEvent.click(screen.getByLabelText("メニュー"));
+    fireEvent.click(screen.getByRole("button", { name: "会話編集" }));
+
+    expect(screen.getByTestId("chat-composer-container")).toHaveClass("block");
+    expect(screen.getByTestId("chat-composer-container")).not.toHaveClass(
+      "hidden",
+    );
+  });
+
   it("opens date search modal from overflow menu", async () => {
     render(<ToastProvider><ChatView conversation={conversation} mediaUrls={{}} displayName="" /></ToastProvider>);
 
