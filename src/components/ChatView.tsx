@@ -361,10 +361,15 @@ export function ChatView({ conversation, mediaUrls, displayName }: ChatViewProps
       </div>
 
       {/* Composer */}
-      <ChatComposer
-        conversationId={conversation.id}
-        participants={conversation.participants}
-      />
+      <div
+        data-testid="chat-composer-container"
+        className={isEditMode ? "block" : "hidden sm:block"}
+      >
+        <ChatComposer
+          conversationId={conversation.id}
+          participants={conversation.participants}
+        />
+      </div>
 
       <DateSearchModal
         conversationId={conversation.id}
