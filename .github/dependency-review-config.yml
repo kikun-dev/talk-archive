@@ -1,0 +1,16 @@
+fail-on-severity: high
+license-check: true
+vulnerability-check: true
+comment-summary-in-pr: always
+allow-licenses:
+  - MIT
+  - Apache-2.0
+  - ISC
+  - BSD-2-Clause
+  - BSD-3-Clause
+  - 0BSD
+  - CC-BY-4.0
+  - MIT-0
+allow-dependencies-licenses:
+  - pkg:npm/@img/sharp-libvips-linux-x64@1.2.4
+  - pkg:npm/@img/sharp-libvips-linuxmusl-x64@1.2.4
