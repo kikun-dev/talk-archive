@@ -65,6 +65,7 @@ describe("domain types", () => {
       conversationId: "conv-1",
       name: "メンバーA",
       sortOrder: 0,
+      thumbnailPath: null,
       createdAt: "2026-01-01T00:00:00Z",
     };
     expect(participant.name).toBe("メンバーA");

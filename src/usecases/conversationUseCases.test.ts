@@ -11,11 +11,15 @@ import {
   calculateConversationActiveDays,
   createNewConversation,
   deleteExistingConversation,
+  getConversationCoverUrls,
   getConversationWithParticipants,
   getConversationWithRecords,
+  getParticipantThumbnailUrls,
   listConversationsWithMetadata,
   listConversations,
+  updateConversationCoverImage,
   updateExistingConversation,
+  updateParticipantThumbnailImage,
   validateConversationActivePeriods,
   validateConversationParticipants,
   validateCreateConversationInput,
@@ -27,6 +31,15 @@ vi.mock("@/repositories/conversationRepository");
 vi.mock("@/repositories/conversationActivePeriodRepository");
 vi.mock("@/repositories/conversationParticipantRepository");
 vi.mock("@/repositories/recordRepository");
+vi.mock("@/repositories/storageService", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("@/repositories/storageService")>();
+  return {
+    ...actual,
+    getFileUrls: vi.fn(),
+    uploadFile: vi.fn(),
+  };
+});
 
 import {
   createConversationWithMetadata,
@@ -40,8 +53,12 @@ import {
   getConversationActivePeriods,
   listConversationActivePeriods,
 } from "@/repositories/conversationActivePeriodRepository";
-import { getConversationParticipants } from "@/repositories/conversationParticipantRepository";
+import {
+  getConversationParticipants,
+  updateConversationParticipantThumbnail,
+} from "@/repositories/conversationParticipantRepository";
 import { getRecordsByConversation } from "@/repositories/recordRepository";
+import { getFileUrls, uploadFile } from "@/repositories/storageService";
 
 const mockGetConversations = vi.mocked(getConversations);
 const mockGetConversation = vi.mocked(getConversation);
@@ -62,7 +79,12 @@ const mockListConversationActivePeriods = vi.mocked(
 const mockGetConversationParticipants = vi.mocked(
   getConversationParticipants,
 );
+const mockUpdateConversationParticipantThumbnail = vi.mocked(
+  updateConversationParticipantThumbnail,
+);
 const mockGetRecordsByConversation = vi.mocked(getRecordsByConversation);
+const mockGetFileUrls = vi.mocked(getFileUrls);
+const mockUploadFile = vi.mocked(uploadFile);
 
 const client = {} as SupabaseClient<Database>;
 
@@ -96,6 +118,7 @@ const participants: ConversationParticipant[] = [
     conversationId: "conv-1",
     name: "メンバーA",
     sortOrder: 0,
+    thumbnailPath: null,
     createdAt: "2026-01-01T00:00:00Z",
   },
 ];
@@ -431,7 +454,7 @@ describe("conversationUseCases", () => {
         sourceId: undefined,
         coverImagePath: undefined,
         activePeriods: [{ startDate: "2026-01-01", endDate: "2026-01-10" }],
-        participants: [{ name: "メンバーA" }],
+        participants: [{ name: "メンバーA", thumbnailPath: null }],
       });
       expect(mockGetConversationParticipants).toHaveBeenCalledWith(
         client,
@@ -459,12 +482,16 @@ describe("conversationUseCases", () => {
   describe("updateExistingConversation", () => {
     it("updates conversation with participants preserving existing IDs", async () => {
       const existingParticipants: ConversationParticipant[] = [
-        ...participants,
+        {
+          ...participants[0],
+          thumbnailPath: "user-1/participants/member-a/photo.jpg",
+        },
         {
           id: participantId2,
           conversationId: "conv-1",
           name: "メンバーB",
           sortOrder: 1,
+          thumbnailPath: null,
           createdAt: "2026-01-01T00:00:00Z",
         },
       ];
@@ -490,8 +517,12 @@ describe("conversationUseCases", () => {
           coverImagePath: undefined,
           activePeriods: undefined,
           participants: [
-            { id: participantId1, name: "メンバーA" },
-            { id: participantId2, name: "メンバーB" },
+            {
+              id: participantId1,
+              name: "メンバーA",
+              thumbnailPath: "user-1/participants/member-a/photo.jpg",
+            },
+            { id: participantId2, name: "メンバーB", thumbnailPath: null },
           ],
         },
       );
@@ -533,8 +564,8 @@ describe("conversationUseCases", () => {
           coverImagePath: undefined,
           activePeriods: undefined,
           participants: [
-            { id: participantId1, name: "メンバーA" },
-            { name: "メンバーC" },
+            { id: participantId1, name: "メンバーA", thumbnailPath: null },
+            { id: undefined, name: "メンバーC", thumbnailPath: null },
           ],
         },
       );
@@ -567,6 +598,131 @@ describe("conversationUseCases", () => {
       await deleteExistingConversation(client, "conv-1");
 
       expect(mockDeleteConversation).toHaveBeenCalledWith(client, "conv-1");
+    });
+  });
+
+  describe("getConversationCoverUrls", () => {
+    it("returns conversation ids mapped to signed cover URLs", async () => {
+      mockGetFileUrls.mockResolvedValue(
+        new Map([["user-1/participants/member-a/photo.jpg", "https://example.com/cover"]]),
+      );
+
+      const result = await getConversationCoverUrls(client, [
+        {
+          ...baseConversation,
+          coverImagePath: "user-1/participants/member-a/photo.jpg",
+        },
+        {
+          ...baseConversation,
+          id: "conv-2",
+          coverImagePath: "/images/local.jpg",
+        },
+      ]);
+
+      expect(result.get("conv-1")).toBe("https://example.com/cover");
+      expect(result.has("conv-2")).toBe(false);
+      expect(mockGetFileUrls).toHaveBeenCalledWith(client, [
+        "user-1/participants/member-a/photo.jpg",
+      ]);
+    });
+  });
+
+  describe("getParticipantThumbnailUrls", () => {
+    it("returns participant ids mapped to signed thumbnail URLs", async () => {
+      mockGetFileUrls.mockResolvedValue(
+        new Map([["user-1/participants/member-a/photo.jpg", "https://example.com/member"]]),
+      );
+
+      const result = await getParticipantThumbnailUrls(client, [
+        {
+          ...participants[0],
+          thumbnailPath: "user-1/participants/member-a/photo.jpg",
+        },
+      ]);
+
+      expect(result.get(participantId1)).toBe("https://example.com/member");
+      expect(mockGetFileUrls).toHaveBeenCalledWith(client, [
+        "user-1/participants/member-a/photo.jpg",
+      ]);
+    });
+  });
+
+  describe("updateParticipantThumbnailImage", () => {
+    it("uploads thumbnail and updates participant path", async () => {
+      const file = new Blob(["image"], { type: "image/jpeg" });
+      mockUploadFile.mockResolvedValue(
+        "user-1/participants/participant-1/photo.jpg",
+      );
+      mockUpdateConversationParticipantThumbnail.mockResolvedValue({
+        ...participants[0],
+        id: "participant-1",
+        thumbnailPath: "user-1/participants/participant-1/photo.jpg",
+      });
+
+      const result = await updateParticipantThumbnailImage(client, {
+        userId: "user-1",
+        conversationId: "conv-1",
+        participantId: "participant-1",
+        file,
+        filename: "photo.jpg",
+        contentType: "image/jpeg",
+        useAsConversationCover: true,
+      });
+
+      expect(result.thumbnailPath).toBe(
+        "user-1/participants/participant-1/photo.jpg",
+      );
+      expect(mockUploadFile).toHaveBeenCalledWith(client, {
+        path: "user-1/participants/participant-1/photo.jpg",
+        file,
+        contentType: "image/jpeg",
+        upsert: true,
+      });
+      expect(mockUpdateConversationParticipantThumbnail).toHaveBeenCalledWith(
+        client,
+        {
+          conversationId: "conv-1",
+          participantId: "participant-1",
+          thumbnailPath: "user-1/participants/participant-1/photo.jpg",
+        },
+      );
+      expect(mockUpdateConversation).toHaveBeenCalledWith(client, "conv-1", {
+        coverImagePath: "user-1/participants/participant-1/photo.jpg",
+      });
+    });
+  });
+
+  describe("updateConversationCoverImage", () => {
+    it("uploads cover image and updates conversation cover path", async () => {
+      const file = new Blob(["image"], { type: "image/jpeg" });
+      mockUploadFile.mockResolvedValue(
+        "user-1/conversations/conv-1/cover/cover.jpg",
+      );
+      mockUpdateConversation.mockResolvedValue({
+        ...baseConversation,
+        coverImagePath: "user-1/conversations/conv-1/cover/cover.jpg",
+      });
+
+      const result = await updateConversationCoverImage(client, {
+        userId: "user-1",
+        conversationId: "conv-1",
+        file,
+        filename: "cover.jpg",
+        contentType: "image/jpeg",
+      });
+
+      expect(result.coverImagePath).toBe(
+        "user-1/conversations/conv-1/cover/cover.jpg",
+      );
+      expect(mockUploadFile).toHaveBeenCalledWith(client, {
+        path: "user-1/conversations/conv-1/cover/cover.jpg",
+        file,
+        contentType: "image/jpeg",
+        upsert: true,
+      });
+      expect(mockUpdateConversation).toHaveBeenCalledWith(client, "conv-1", {
+        coverImagePath: "user-1/conversations/conv-1/cover/cover.jpg",
+      });
     });
   });
 });

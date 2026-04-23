@@ -20,10 +20,19 @@ import {
   listConversationActivePeriods,
 } from "@/repositories/conversationActivePeriodRepository";
 import { getConversationParticipants } from "@/repositories/conversationParticipantRepository";
+import { updateConversationParticipantThumbnail } from "@/repositories/conversationParticipantRepository";
 import { getRecordsByConversation } from "@/repositories/recordRepository";
+import {
+  buildConversationCoverPath,
+  buildParticipantThumbnailPath,
+  getFileUrls,
+  isStorageFilePath,
+  uploadFile,
+} from "@/repositories/storageService";
 
 export type ConversationSummary = Conversation & {
   activeDays: number;
+  coverImageUrl?: string;
 };
 
 export type ConversationWithMetadata = Conversation & {
@@ -48,6 +57,7 @@ export type ConversationActivePeriodInput = {
 export type ConversationParticipantInput = {
   id?: string;
   name: string;
+  thumbnailPath?: string | null;
 };
 
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
@@ -345,6 +355,7 @@ export async function createNewConversation(
     activePeriods: input.activePeriods,
     participants: input.participants.map((participant) => ({
       name: participant.name.trim(),
+      thumbnailPath: participant.thumbnailPath ?? null,
     })),
   });
   const activePeriods = await getConversationActivePeriods(client, conversation.id);
@@ -419,8 +430,9 @@ export async function updateExistingConversation(
     throw new Error(validationError);
   }
 
+  let existingParticipants: ConversationParticipant[] = [];
   if (input.participants !== undefined) {
-    const existingParticipants = await getConversationParticipants(client, id);
+    existingParticipants = await getConversationParticipants(client, id);
     const preserveError = validateParticipantsPreserveExisting(
       input.participants,
       existingParticipants.map((p) => p.id),
@@ -441,6 +453,11 @@ export async function updateExistingConversation(
           participants: input.participants?.map((participant) => ({
             id: participant.id,
             name: participant.name.trim(),
+            thumbnailPath:
+              participant.thumbnailPath !== undefined
+                ? participant.thumbnailPath
+                : (existingParticipants.find((p) => p.id === participant.id)
+                    ?.thumbnailPath ?? null),
           })),
         })
       : await updateConversation(client, id, {
@@ -465,4 +482,173 @@ export async function deleteExistingConversation(
   id: string,
 ): Promise<void> {
   return deleteConversation(client, id);
+}
+
+export async function getConversationCoverUrls(
+  client: SupabaseClient<Database>,
+  conversations: Conversation[],
+): Promise<Map<string, string>> {
+  const pathByConversationId = new Map<string, string>();
+  const paths = new Set<string>();
+
+  for (const conversation of conversations) {
+    if (!isStorageFilePath(conversation.coverImagePath)) continue;
+    pathByConversationId.set(conversation.id, conversation.coverImagePath);
+    paths.add(conversation.coverImagePath);
+  }
+
+  const urlByPath = await getFileUrls(client, [...paths]);
+  const urlByConversationId = new Map<string, string>();
+  for (const [conversationId, path] of pathByConversationId) {
+    const url = urlByPath.get(path);
+    if (url) {
+      urlByConversationId.set(conversationId, url);
+    }
+  }
+
+  return urlByConversationId;
+}
+
+export async function getParticipantThumbnailUrls(
+  client: SupabaseClient<Database>,
+  participants: ConversationParticipant[],
+): Promise<Map<string, string>> {
+  const pathByParticipantId = new Map<string, string>();
+  const paths = new Set<string>();
+
+  for (const participant of participants) {
+    if (!isStorageFilePath(participant.thumbnailPath)) continue;
+    pathByParticipantId.set(participant.id, participant.thumbnailPath);
+    paths.add(participant.thumbnailPath);
+  }
+
+  const urlByPath = await getFileUrls(client, [...paths]);
+  const urlByParticipantId = new Map<string, string>();
+  for (const [participantId, path] of pathByParticipantId) {
+    const url = urlByPath.get(path);
+    if (url) {
+      urlByParticipantId.set(participantId, url);
+    }
+  }
+
+  return urlByParticipantId;
+}
+
+export type UpdateParticipantThumbnailInput = {
+  userId: string;
+  conversationId: string;
+  participantId: string;
+  file: File | Blob;
+  filename: string;
+  contentType: string;
+  useAsConversationCover?: boolean;
+};
+
+export function validateUpdateParticipantThumbnailInput(
+  input: UpdateParticipantThumbnailInput,
+): string | null {
+  if (input.userId.trim().length === 0) {
+    return "ユーザーIDが不正です";
+  }
+  if (input.conversationId.trim().length === 0) {
+    return "会話IDが不正です";
+  }
+  if (input.participantId.trim().length === 0) {
+    return "参加者IDが不正です";
+  }
+  if (input.filename.trim().length === 0) {
+    return "ファイル名を指定してください";
+  }
+  if (!input.contentType.startsWith("image/")) {
+    return "画像ファイルを選択してください";
+  }
+
+  return null;
+}
+
+export async function updateParticipantThumbnailImage(
+  client: SupabaseClient<Database>,
+  input: UpdateParticipantThumbnailInput,
+): Promise<ConversationParticipant> {
+  const validationError = validateUpdateParticipantThumbnailInput(input);
+  if (validationError) {
+    throw new Error(validationError);
+  }
+
+  const thumbnailPath = await uploadFile(client, {
+    path: buildParticipantThumbnailPath({
+      userId: input.userId,
+      participantId: input.participantId,
+      filename: input.filename,
+    }),
+    file: input.file,
+    contentType: input.contentType,
+    upsert: true,
+  });
+
+  const participant = await updateConversationParticipantThumbnail(client, {
+    conversationId: input.conversationId,
+    participantId: input.participantId,
+    thumbnailPath,
+  });
+
+  if (input.useAsConversationCover) {
+    await updateConversation(client, input.conversationId, {
+      coverImagePath: thumbnailPath,
+    });
+  }
+
+  return participant;
+}
+
+export type UpdateConversationCoverImageInput = {
+  userId: string;
+  conversationId: string;
+  file: File | Blob;
+  filename: string;
+  contentType: string;
+};
+
+export function validateUpdateConversationCoverImageInput(
+  input: UpdateConversationCoverImageInput,
+): string | null {
+  if (input.userId.trim().length === 0) {
+    return "ユーザーIDが不正です";
+  }
+  if (input.conversationId.trim().length === 0) {
+    return "会話IDが不正です";
+  }
+  if (input.filename.trim().length === 0) {
+    return "ファイル名を指定してください";
+  }
+  if (!input.contentType.startsWith("image/")) {
+    return "画像ファイルを選択してください";
+  }
+
+  return null;
+}
+
+export async function updateConversationCoverImage(
+  client: SupabaseClient<Database>,
+  input: UpdateConversationCoverImageInput,
+): Promise<Conversation> {
+  const validationError = validateUpdateConversationCoverImageInput(input);
+  if (validationError) {
+    throw new Error(validationError);
+  }
+
+  const coverImagePath = await uploadFile(client, {
+    path: buildConversationCoverPath({
+      userId: input.userId,
+      conversationId: input.conversationId,
+      filename: input.filename,
+    }),
+    file: input.file,
+    contentType: input.contentType,
+    upsert: true,
+  });
+
+  return updateConversation(client, input.conversationId, {
+    coverImagePath,
+  });
 }

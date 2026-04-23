@@ -94,6 +94,7 @@ export async function createConversationWithMetadata(
     }>;
     participants: Array<{
       name: string;
+      thumbnailPath?: string | null;
     }>;
   },
 ): Promise<Conversation> {
@@ -111,6 +112,7 @@ export async function createConversationWithMetadata(
       p_participants: params.participants.map((participant, index) => ({
         name: participant.name,
         sort_order: index,
+        thumbnail_path: participant.thumbnailPath ?? null,
       })),
     })
     .single();
@@ -176,6 +178,7 @@ export async function updateConversationWithMetadata(
     participants?: Array<{
       id?: string;
       name: string;
+      thumbnailPath?: string | null;
     }>;
   },
 ): Promise<Conversation> {
@@ -200,6 +203,7 @@ export async function updateConversationWithMetadata(
           id: participant.id ?? null,
           name: participant.name,
           sort_order: index,
+          thumbnail_path: participant.thumbnailPath ?? null,
         }),
       ),
       p_has_participants: params.participants !== undefined,

@@ -15,6 +15,8 @@ vi.mock("@/app/(app)/conversations/[id]/actions", () => ({
   addImageRecordAction: vi.fn(),
   addVideoRecordAction: vi.fn(),
   addAudioRecordAction: vi.fn(),
+  updateParticipantThumbnailAction: vi.fn(),
+  updateConversationCoverImageAction: vi.fn(),
 }));
 
 const conversation: ConversationWithRecords = {
@@ -41,6 +43,7 @@ const conversation: ConversationWithRecords = {
       conversationId: "conv-1",
       name: "メンバーA",
       sortOrder: 0,
+      thumbnailPath: null,
       createdAt: "2026-01-01T00:00:00Z",
     },
   ],
@@ -230,6 +233,27 @@ describe("ChatView", () => {
     expect(
       screen.getByText("編集モード中です。各レコードの操作メニューから編集・削除できます。"),
     ).toBeInTheDocument();
+    expect(screen.getByText("サムネイル")).toBeInTheDocument();
+    expect(screen.getByLabelText("メンバーAのサムネイル画像")).toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: "操作" }).length).toBeGreaterThan(0);
+  });
+
+  it("passes participant thumbnail URL to messages", () => {
+    render(
+      <ToastProvider>
+        <ChatView
+          conversation={conversation}
+          mediaUrls={{}}
+          participantThumbnailUrls={{
+            "part-1": "https://example.com/member-a.jpg",
+          }}
+          displayName=""
+        />
+      </ToastProvider>,
+    );
+
+    expect(
+      screen.getAllByRole("img", { name: "メンバーAのサムネイル" }).length,
+    ).toBeGreaterThan(0);
   });
 });

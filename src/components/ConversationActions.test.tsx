@@ -33,6 +33,7 @@ const conversation: ConversationWithMetadata = {
       conversationId: "conv-1",
       name: "メンバーA",
       sortOrder: 0,
+      thumbnailPath: null,
       createdAt: "2026-01-15T00:00:00Z",
     },
   ],

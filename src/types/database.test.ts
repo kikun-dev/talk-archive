@@ -104,6 +104,9 @@ describe("database types", () => {
       );
       expectTypeOf<ConversationParticipantRow>().toHaveProperty("name");
       expectTypeOf<ConversationParticipantRow>().toHaveProperty("sort_order");
+      expectTypeOf<ConversationParticipantRow>().toHaveProperty(
+        "thumbnail_path",
+      );
       expectTypeOf<ConversationParticipantRow>().toHaveProperty("created_at");
     });
 
@@ -116,6 +119,9 @@ describe("database types", () => {
       >();
       expectTypeOf<ConversationParticipantRow["sort_order"]>().toEqualTypeOf<
         ConversationParticipant["sortOrder"]
+      >();
+      expectTypeOf<ConversationParticipantRow["thumbnail_path"]>().toEqualTypeOf<
+        ConversationParticipant["thumbnailPath"]
       >();
     });
   });

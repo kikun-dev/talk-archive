@@ -8,6 +8,10 @@ import {
   updateExistingConversation,
   deleteExistingConversation,
   validateUpdateConversationInput,
+  updateParticipantThumbnailImage,
+  validateUpdateParticipantThumbnailInput,
+  updateConversationCoverImage,
+  validateUpdateConversationCoverImageInput,
 } from "@/usecases/conversationUseCases";
 import {
   addTextRecord,
@@ -79,7 +83,7 @@ function parseActivePeriods(
 
 function parseParticipants(
   value: string,
-): Array<{ id?: string; name: string }> | null {
+): Array<{ id?: string; name: string; thumbnailPath?: string | null }> | null {
   let parsed: unknown;
 
   try {
@@ -92,7 +96,11 @@ function parseParticipants(
     return null;
   }
 
-  const participants: Array<{ id?: string; name: string }> = [];
+  const participants: Array<{
+    id?: string;
+    name: string;
+    thumbnailPath?: string | null;
+  }> = [];
 
   for (const participant of parsed) {
     if (!isRecord(participant) || typeof participant.name !== "string") {
@@ -107,10 +115,22 @@ function parseParticipants(
       return null;
     }
 
+    if (
+      participant.thumbnailPath !== undefined &&
+      participant.thumbnailPath !== null &&
+      typeof participant.thumbnailPath !== "string"
+    ) {
+      return null;
+    }
+
     participants.push({
       id:
         typeof participant.id === "string" ? participant.id : undefined,
       name: participant.name,
+      thumbnailPath:
+        participant.thumbnailPath === undefined
+          ? undefined
+          : (participant.thumbnailPath as string | null),
     });
   }
 
@@ -256,6 +276,24 @@ export async function addTextRecordAction(
 }
 
 const MAX_IMAGE_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+const MAX_THUMBNAIL_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+
+function getImageFile(formData: FormData): File | { error: string } {
+  const file = formData.get("file");
+  if (!(file instanceof File) || file.size === 0) {
+    return { error: "画像ファイルを選択してください" };
+  }
+
+  if (file.size > MAX_THUMBNAIL_FILE_SIZE) {
+    return { error: "ファイルサイズは10MB以内にしてください" };
+  }
+
+  if (!file.type.startsWith("image/")) {
+    return { error: "画像ファイルを選択してください" };
+  }
+
+  return file;
+}
 
 export async function addImageRecordAction(
   conversationId: string,
@@ -567,6 +605,97 @@ export async function updateConversationAction(
     return { error: "会話の更新に失敗しました。時間をおいて再度お試しください。" };
   }
 
+  revalidatePath(`/conversations/${conversationId}`);
+
+  return undefined;
+}
+
+export async function updateParticipantThumbnailAction(
+  conversationId: string,
+  participantId: string,
+  formData: FormData,
+): Promise<ActionState> {
+  const supabase = await createSupabaseServerClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    redirect("/login");
+  }
+
+  const file = getImageFile(formData);
+  if (!(file instanceof File)) {
+    return file;
+  }
+
+  const input = {
+    userId: user.id,
+    conversationId,
+    participantId,
+    file,
+    filename: file.name,
+    contentType: file.type,
+    useAsConversationCover: formData.get("useAsConversationCover") === "true",
+  };
+
+  const validationError = validateUpdateParticipantThumbnailInput(input);
+  if (validationError) {
+    return { error: validationError };
+  }
+
+  try {
+    await updateParticipantThumbnailImage(supabase, input);
+  } catch (error) {
+    console.error("Failed to update participant thumbnail:", error);
+    return { error: "参加者サムネイルの更新に失敗しました。時間をおいて再度お試しください。" };
+  }
+
+  revalidatePath("/");
+  revalidatePath(`/conversations/${conversationId}`);
+
+  return undefined;
+}
+
+export async function updateConversationCoverImageAction(
+  conversationId: string,
+  formData: FormData,
+): Promise<ActionState> {
+  const supabase = await createSupabaseServerClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    redirect("/login");
+  }
+
+  const file = getImageFile(formData);
+  if (!(file instanceof File)) {
+    return file;
+  }
+
+  const input = {
+    userId: user.id,
+    conversationId,
+    file,
+    filename: file.name,
+    contentType: file.type,
+  };
+
+  const validationError = validateUpdateConversationCoverImageInput(input);
+  if (validationError) {
+    return { error: validationError };
+  }
+
+  try {
+    await updateConversationCoverImage(supabase, input);
+  } catch (error) {
+    console.error("Failed to update conversation cover image:", error);
+    return { error: "会話一覧サムネイルの更新に失敗しました。時間をおいて再度お試しください。" };
+  }
+
+  revalidatePath("/");
   revalidatePath(`/conversations/${conversationId}`);
 
   return undefined;

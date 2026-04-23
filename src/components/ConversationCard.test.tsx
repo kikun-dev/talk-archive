@@ -53,15 +53,17 @@ describe("ConversationCard", () => {
     expect(img).toHaveAttribute("alt", "テスト会話");
   });
 
-  it("falls back to placeholder for non-local image paths", () => {
+  it("shows signed cover image URL when provided", () => {
     const conversation = {
       ...baseConversation,
-      coverImagePath: "https://example.com/cover.jpg",
+      coverImagePath: "user-1/participants/participant-1/photo.jpg",
+      coverImageUrl: "https://example.com/cover.jpg",
     };
     render(<ConversationCard conversation={conversation} />);
 
-    expect(screen.getByText("No Image")).toBeInTheDocument();
-    expect(screen.queryByRole("img")).not.toBeInTheDocument();
+    const img = screen.getByRole("img");
+    expect(img.getAttribute("src")).toContain("cover.jpg");
+    expect(img).toHaveAttribute("alt", "テスト会話");
   });
 
   it("uses compact mobile layout while preserving desktop card layout", () => {

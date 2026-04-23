@@ -1,6 +1,9 @@
 import { redirect } from "next/navigation";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { listConversationsWithMetadata } from "@/usecases/conversationUseCases";
+import {
+  getConversationCoverUrls,
+  listConversationsWithMetadata,
+} from "@/usecases/conversationUseCases";
 import { GroupedConversationList } from "@/components/GroupedConversationList";
 
 export default async function HomePage() {
@@ -14,8 +17,13 @@ export default async function HomePage() {
   }
 
   const conversations = await listConversationsWithMetadata(supabase, user!.id);
+  const coverImageUrls = await getConversationCoverUrls(supabase, conversations);
+  const conversationsWithCoverUrls = conversations.map((conversation) => ({
+    ...conversation,
+    coverImageUrl: coverImageUrls.get(conversation.id),
+  }));
 
   return (
-    <GroupedConversationList conversations={conversations} />
+    <GroupedConversationList conversations={conversationsWithCoverUrls} />
   );
 }

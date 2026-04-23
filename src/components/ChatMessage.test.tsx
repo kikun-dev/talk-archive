@@ -48,6 +48,22 @@ describe("ChatMessage", () => {
     expect(screen.getByText("メ")).toBeInTheDocument();
   });
 
+  it("renders participant thumbnail when provided", () => {
+    render(
+      <ToastProvider><ChatMessage
+        record={textRecord}
+        participantName="メンバーA"
+        participantThumbnailUrl="https://example.com/member-a.jpg"
+        conversationId="conv-1"
+        displayName=""
+      /></ToastProvider>,
+    );
+
+    const img = screen.getByRole("img", { name: "メンバーAのサムネイル" });
+    expect(img.getAttribute("src")).toContain("member-a.jpg");
+    expect(screen.queryByText("メ")).not.toBeInTheDocument();
+  });
+
   it("renders record title and content", () => {
     render(
       <ToastProvider><ChatMessage
