@@ -74,4 +74,13 @@ describe("Sidebar", () => {
     fireEvent.click(overlay);
     expect(screen.queryByRole("dialog", { name: "ナビゲーション" })).toBeNull();
   });
+
+  it("keeps the mobile header from shrinking in the fixed app shell", () => {
+    render(<Sidebar userEmail="test@example.com" />);
+
+    const [mobileTitleLink] = screen.getAllByRole("link", {
+      name: "トークアーカイブ",
+    });
+    expect(mobileTitleLink.closest("div")).toHaveClass("shrink-0");
+  });
 });

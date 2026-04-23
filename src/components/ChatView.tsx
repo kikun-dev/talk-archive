@@ -169,7 +169,7 @@ export function ChatView({
   }, [targetRecordId, scrollToRecord]);
 
   return (
-    <div className="-m-4 flex min-h-[calc(100dvh-4rem)] flex-col bg-gray-100 sm:-m-6 lg:h-[100dvh] lg:min-h-0">
+    <div className="-m-4 flex h-full flex-col bg-gray-100 sm:-m-6">
       {/* Header */}
       <div className="flex items-center gap-2 border-b border-gray-300 bg-white px-3 py-3 sm:px-4">
         <Link

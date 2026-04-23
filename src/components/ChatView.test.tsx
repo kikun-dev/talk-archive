@@ -85,6 +85,14 @@ describe("ChatView", () => {
     expect(screen.getByText("テスト会話")).toBeInTheDocument();
   });
 
+  it("fills the available app shell height on mobile", () => {
+    const { container } = render(<ToastProvider><ChatView conversation={conversation} mediaUrls={{}} displayName="" /></ToastProvider>);
+
+    const chatShell = container.firstElementChild;
+    expect(chatShell).toHaveClass("h-full");
+    expect(chatShell).not.toHaveClass("min-h-[calc(100dvh-4rem)]");
+  });
+
   it("renders record content", () => {
     render(<ToastProvider><ChatView conversation={conversation} mediaUrls={{}} displayName="" /></ToastProvider>);
 

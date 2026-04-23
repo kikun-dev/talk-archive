@@ -90,7 +90,7 @@ export function Sidebar({ userEmail }: SidebarProps) {
 
   return (
     <>
-      <div className="flex items-center justify-between border-b border-gray-200 bg-gray-50 px-4 py-3 lg:hidden">
+      <div className="flex shrink-0 items-center justify-between border-b border-gray-200 bg-gray-50 px-4 py-3 lg:hidden">
         <Link href="/" className="text-lg font-bold">
           トークアーカイブ
         </Link>
