@@ -94,6 +94,49 @@ describe("ChatMessage", () => {
     expect(screen.getByText("01/15(木) 19:30")).toBeInTheDocument();
   });
 
+  it("renders posted date time inline with participant name", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-22T00:00:00Z"));
+
+    render(
+      <ToastProvider><ChatMessage
+        record={textRecord}
+        participantName="メンバーA"
+        conversationId="conv-1"
+        displayName=""
+      /></ToastProvider>,
+    );
+
+    const metaRow = screen.getByTestId("message-meta-row");
+    expect(metaRow).toHaveClass("flex", "items-baseline", "gap-2");
+    expect(within(metaRow).getByText("メンバーA")).toBeInTheDocument();
+    expect(within(metaRow).getByText("01/15(木) 19:30")).toBeInTheDocument();
+  });
+
+  it("keeps edit actions below the bubble in edit mode", () => {
+    const { container } = render(
+      <ToastProvider><ChatMessage
+        record={textRecord}
+        participantName="メンバーA"
+        conversationId="conv-1"
+        isEditMode
+        displayName=""
+      /></ToastProvider>,
+    );
+
+    const bubble = screen.getByText("テスト内容").closest("div");
+    const editActions = screen.getByTestId("message-edit-actions");
+
+    expect(bubble?.compareDocumentPosition(editActions)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+    expect(
+      within(editActions).getByRole("button", { name: "操作" }),
+    ).toBeInTheDocument();
+    expect(container.querySelector('[data-testid="message-edit-actions"]')).not
+      .toBeNull();
+  });
+
   it("switches to edit form when edit button is clicked", () => {
     render(
       <ToastProvider><ChatMessage
