@@ -92,6 +92,12 @@ describe("ChatView", () => {
     expect(screen.getByText("二番目のメッセージ")).toBeInTheDocument();
   });
 
+  it("uses wider spacing between messages", () => {
+    render(<ToastProvider><ChatView conversation={conversation} mediaUrls={{}} displayName="" /></ToastProvider>);
+
+    expect(screen.getByTestId("message-list")).toHaveClass("space-y-5");
+  });
+
   it("renders participant name with messages", () => {
     render(<ToastProvider><ChatView conversation={conversation} mediaUrls={{}} displayName="" /></ToastProvider>);
 

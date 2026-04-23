@@ -361,29 +361,31 @@ export function ChatView({
             トークレコードがまだありません。
           </p>
         ) : (
-          dateGroups.map((group) => (
-            <div key={group.dateKey}>
-              <div className="space-y-3">
-                {group.records.map((record) => {
-                  const participant = participantMap.get(
-                    record.speakerParticipantId,
-                  );
-                  return (
-                    <ChatMessage
-                      key={record.id}
-                      record={record}
-                      participantName={participant?.name ?? "不明"}
-                      participantThumbnailUrl={participant?.thumbnailUrl}
-                      conversationId={conversation.id}
-                      mediaUrl={mediaUrls[record.id]}
-                      isEditMode={isEditMode}
-                      displayName={displayName}
-                    />
-                  );
-                })}
+          <div data-testid="message-list" className="space-y-5">
+            {dateGroups.map((group) => (
+              <div key={group.dateKey}>
+                <div className="space-y-5">
+                  {group.records.map((record) => {
+                    const participant = participantMap.get(
+                      record.speakerParticipantId,
+                    );
+                    return (
+                      <ChatMessage
+                        key={record.id}
+                        record={record}
+                        participantName={participant?.name ?? "不明"}
+                        participantThumbnailUrl={participant?.thumbnailUrl}
+                        conversationId={conversation.id}
+                        mediaUrl={mediaUrls[record.id]}
+                        isEditMode={isEditMode}
+                        displayName={displayName}
+                      />
+                    );
+                  })}
+                </div>
               </div>
-            </div>
-          ))
+            ))}
+          </div>
         )}
       </div>
 

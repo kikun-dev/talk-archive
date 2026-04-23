@@ -140,7 +140,17 @@ export const ChatMessage = memo(function ChatMessage({
           thumbnailUrl={participantThumbnailUrl}
         />
         <div className="min-w-0 flex-1">
-          <p className="text-xs font-medium text-gray-600">{participantName}</p>
+          <div
+            data-testid="message-meta-row"
+            className="flex items-baseline gap-2"
+          >
+            <p className="text-xs font-medium text-gray-600">
+              {participantName}
+            </p>
+            <span className="text-[10px] text-gray-500">
+              {formatMessageDateTimeJst(record.postedAt)}
+            </span>
+          </div>
           <div className="mt-1 rounded-lg border border-blue-200 bg-blue-50 p-3">
             <form action={formAction} className="space-y-2">
               <div>
@@ -206,7 +216,17 @@ export const ChatMessage = memo(function ChatMessage({
         thumbnailUrl={participantThumbnailUrl}
       />
       <div className="min-w-0 max-w-[85%] sm:max-w-[75%]">
-        <p className="text-xs font-medium text-gray-600">{participantName}</p>
+        <div
+          data-testid="message-meta-row"
+          className="flex items-baseline gap-2"
+        >
+          <p className="text-xs font-medium text-gray-600">
+            {participantName}
+          </p>
+          <span className="text-[10px] text-gray-500">
+            {formatMessageDateTimeJst(record.postedAt)}
+          </span>
+        </div>
         <div className="mt-0.5 rounded-lg rounded-tl-none bg-white px-3 py-2 shadow-sm">
           {record.title && (
             <p className="text-xs font-semibold text-gray-800">
@@ -220,11 +240,11 @@ export const ChatMessage = memo(function ChatMessage({
           )}
           {mediaUrl && <MediaContent record={record} mediaUrl={mediaUrl} />}
         </div>
-        <div className="mt-0.5 flex items-center gap-2">
-          <span className="text-[10px] text-gray-500">
-            {formatMessageDateTimeJst(record.postedAt)}
-          </span>
-          {isEditMode && (
+        {isEditMode && (
+          <div
+            data-testid="message-edit-actions"
+            className="mt-0.5 flex items-center gap-2"
+          >
             <>
               <div className="hidden gap-1 sm:group-hover:flex sm:group-focus-within:flex">
                 {record.recordType === "text" && (
@@ -265,8 +285,8 @@ export const ChatMessage = memo(function ChatMessage({
                 </svg>
               </button>
             </>
-          )}
-        </div>
+          </div>
+        )}
         {isEditMode && isActionMenuOpen && (
           <div
             role="menu"
