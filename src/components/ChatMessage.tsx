@@ -17,6 +17,7 @@ import { replaceMyNamePlaceholder } from "@/usecases/contentTransform";
 type ChatMessageProps = {
   record: Record;
   participantName: string;
+  participantThumbnailUrl?: string;
   conversationId: string;
   mediaUrl?: MediaUrl;
   isEditMode?: boolean;
@@ -63,9 +64,37 @@ function MediaContent({
   }
 }
 
+function ParticipantAvatar({
+  name,
+  thumbnailUrl,
+}: {
+  name: string;
+  thumbnailUrl?: string;
+}) {
+  if (thumbnailUrl) {
+    return (
+      <Image
+        src={thumbnailUrl}
+        alt={`${name}のサムネイル`}
+        unoptimized
+        width={32}
+        height={32}
+        className="h-8 w-8 shrink-0 rounded-full object-cover"
+      />
+    );
+  }
+
+  return (
+    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gray-400 text-sm font-bold text-white">
+      {getInitial(name)}
+    </div>
+  );
+}
+
 export const ChatMessage = memo(function ChatMessage({
   record,
   participantName,
+  participantThumbnailUrl,
   conversationId,
   mediaUrl,
   isEditMode = false,
@@ -103,14 +132,13 @@ export const ChatMessage = memo(function ChatMessage({
     });
   }
 
-  const initial = getInitial(participantName);
-
   if (isEditing) {
     return (
       <div className="flex gap-2 px-4" data-record-id={record.id}>
-        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gray-400 text-sm font-bold text-white">
-          {initial}
-        </div>
+        <ParticipantAvatar
+          name={participantName}
+          thumbnailUrl={participantThumbnailUrl}
+        />
         <div className="min-w-0 flex-1">
           <p className="text-xs font-medium text-gray-600">{participantName}</p>
           <div className="mt-1 rounded-lg border border-blue-200 bg-blue-50 p-3">
@@ -173,9 +201,10 @@ export const ChatMessage = memo(function ChatMessage({
 
   return (
     <div className="group flex gap-2 px-4" data-record-id={record.id}>
-      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gray-400 text-sm font-bold text-white">
-        {initial}
-      </div>
+      <ParticipantAvatar
+        name={participantName}
+        thumbnailUrl={participantThumbnailUrl}
+      />
       <div className="min-w-0 max-w-[85%] sm:max-w-[75%]">
         <p className="text-xs font-medium text-gray-600">{participantName}</p>
         <div className="mt-0.5 rounded-lg rounded-tl-none bg-white px-3 py-2 shadow-sm">

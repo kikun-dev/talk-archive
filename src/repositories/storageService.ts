@@ -26,6 +26,39 @@ export function buildStoragePath(params: {
 }
 
 /**
+ * 参加者サムネイルの Storage パスを生成する
+ * 規約: {userId}/participants/{participantId}/{filename}
+ */
+export function buildParticipantThumbnailPath(params: {
+  userId: string;
+  participantId: string;
+  filename: string;
+}): string {
+  return `${params.userId}/participants/${params.participantId}/${params.filename}`;
+}
+
+/**
+ * 会話一覧カバー画像の Storage パスを生成する
+ */
+export function buildConversationCoverPath(params: {
+  userId: string;
+  conversationId: string;
+  filename: string;
+}): string {
+  return `${params.userId}/conversations/${params.conversationId}/cover/${params.filename}`;
+}
+
+export function isStorageFilePath(path: string | null): path is string {
+  return (
+    typeof path === "string" &&
+    path.length > 0 &&
+    !path.startsWith("/") &&
+    !path.startsWith("http://") &&
+    !path.startsWith("https://")
+  );
+}
+
+/**
  * ファイルを Supabase Storage にアップロードする
  */
 export async function uploadFile(
@@ -34,13 +67,14 @@ export async function uploadFile(
     path: string;
     file: File | Blob;
     contentType: string;
+    upsert?: boolean;
   },
 ): Promise<string> {
   const { data, error } = await client.storage
     .from(BUCKET_NAME)
     .upload(params.path, params.file, {
       contentType: params.contentType,
-      upsert: false,
+      upsert: params.upsert ?? false,
     });
 
   if (error) {

@@ -22,6 +22,10 @@ const validateAddMediaRecordInputMock = vi.fn();
 const validateUpdateConversationInputMock = vi.fn();
 const updateExistingConversationMock = vi.fn();
 const deleteExistingConversationMock = vi.fn();
+const updateParticipantThumbnailImageMock = vi.fn();
+const validateUpdateParticipantThumbnailInputMock = vi.fn();
+const updateConversationCoverImageMock = vi.fn();
+const validateUpdateConversationCoverImageInputMock = vi.fn();
 const validateUpdateRecordInputMock = vi.fn();
 const updateExistingRecordMock = vi.fn();
 const deleteExistingRecordMock = vi.fn();
@@ -42,6 +46,12 @@ vi.mock("@/usecases/conversationUseCases", () => ({
   validateUpdateConversationInput: validateUpdateConversationInputMock,
   updateExistingConversation: updateExistingConversationMock,
   deleteExistingConversation: deleteExistingConversationMock,
+  updateParticipantThumbnailImage: updateParticipantThumbnailImageMock,
+  validateUpdateParticipantThumbnailInput:
+    validateUpdateParticipantThumbnailInputMock,
+  updateConversationCoverImage: updateConversationCoverImageMock,
+  validateUpdateConversationCoverImageInput:
+    validateUpdateConversationCoverImageInputMock,
 }));
 
 vi.mock("@/usecases/recordUseCases", () => ({
@@ -510,6 +520,73 @@ function createImageFormData(overrides?: {
   }
   return formData;
 }
+
+describe("updateParticipantThumbnailAction", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("updates participant thumbnail and revalidates home and detail", async () => {
+    mockSupabaseClient({ id: "user-1" });
+    validateUpdateParticipantThumbnailInputMock.mockReturnValue(null);
+    updateParticipantThumbnailImageMock.mockResolvedValue({ id: "part-1" });
+    const formData = createImageFormData();
+    formData.set("useAsConversationCover", "true");
+
+    const { updateParticipantThumbnailAction } = await import("./actions");
+    const result = await updateParticipantThumbnailAction(
+      "conv-1",
+      "part-1",
+      formData,
+    );
+
+    expect(result).toBeUndefined();
+    expect(updateParticipantThumbnailImageMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        userId: "user-1",
+        conversationId: "conv-1",
+        participantId: "part-1",
+        filename: "photo.jpg",
+        contentType: "image/jpeg",
+        useAsConversationCover: true,
+      }),
+    );
+    expect(revalidatePathMock).toHaveBeenCalledWith("/");
+    expect(revalidatePathMock).toHaveBeenCalledWith("/conversations/conv-1");
+  });
+});
+
+describe("updateConversationCoverImageAction", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("updates conversation cover image and revalidates home and detail", async () => {
+    mockSupabaseClient({ id: "user-1" });
+    validateUpdateConversationCoverImageInputMock.mockReturnValue(null);
+    updateConversationCoverImageMock.mockResolvedValue({ id: "conv-1" });
+
+    const { updateConversationCoverImageAction } = await import("./actions");
+    const result = await updateConversationCoverImageAction(
+      "conv-1",
+      createImageFormData(),
+    );
+
+    expect(result).toBeUndefined();
+    expect(updateConversationCoverImageMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        userId: "user-1",
+        conversationId: "conv-1",
+        filename: "photo.jpg",
+        contentType: "image/jpeg",
+      }),
+    );
+    expect(revalidatePathMock).toHaveBeenCalledWith("/");
+    expect(revalidatePathMock).toHaveBeenCalledWith("/conversations/conv-1");
+  });
+});
 
 describe("addImageRecordAction", () => {
   beforeEach(() => {

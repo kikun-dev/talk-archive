@@ -18,6 +18,12 @@ function canRenderConversationCoverImage(
 }
 
 export const ConversationCard = memo(function ConversationCard({ conversation }: ConversationCardProps) {
+  const coverImageSrc =
+    conversation.coverImageUrl ??
+    (canRenderConversationCoverImage(conversation.coverImagePath)
+      ? conversation.coverImagePath
+      : null);
+
   return (
     <Link
       href={`/conversations/${conversation.id}`}
@@ -27,10 +33,11 @@ export const ConversationCard = memo(function ConversationCard({ conversation }:
         data-testid="conversation-card-thumbnail"
         className="relative aspect-square bg-gray-100 sm:aspect-[16/9]"
       >
-        {canRenderConversationCoverImage(conversation.coverImagePath) ? (
+        {coverImageSrc ? (
           <Image
-            src={conversation.coverImagePath}
+            src={coverImageSrc}
             alt={conversation.title}
+            unoptimized
             fill
             sizes="(max-width: 640px) 33vw, (max-width: 1024px) 50vw, 33vw"
             className="object-cover"

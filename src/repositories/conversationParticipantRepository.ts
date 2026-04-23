@@ -13,6 +13,7 @@ function toConversationParticipant(
     conversationId: row.conversation_id,
     name: row.name,
     sortOrder: row.sort_order,
+    thumbnailPath: row.thumbnail_path,
     createdAt: row.created_at,
   };
 }
@@ -32,4 +33,27 @@ export async function getConversationParticipants(
   }
 
   return data.map(toConversationParticipant);
+}
+
+export async function updateConversationParticipantThumbnail(
+  client: SupabaseClient<Database>,
+  params: {
+    conversationId: string;
+    participantId: string;
+    thumbnailPath: string | null;
+  },
+): Promise<ConversationParticipant> {
+  const { data, error } = await client
+    .from("conversation_participants")
+    .update({ thumbnail_path: params.thumbnailPath })
+    .eq("id", params.participantId)
+    .eq("conversation_id", params.conversationId)
+    .select()
+    .single();
+
+  if (error) {
+    throw error;
+  }
+
+  return toConversationParticipant(data);
 }

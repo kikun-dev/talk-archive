@@ -108,6 +108,7 @@ export type Database = {
           id: string
           name: string
           sort_order: number
+          thumbnail_path: string | null
         }
         Insert: {
           conversation_id: string
@@ -115,6 +116,7 @@ export type Database = {
           id?: string
           name: string
           sort_order: number
+          thumbnail_path?: string | null
         }
         Update: {
           conversation_id?: string
@@ -122,6 +124,7 @@ export type Database = {
           id?: string
           name?: string
           sort_order?: number
+          thumbnail_path?: string | null
         }
         Relationships: [
           {

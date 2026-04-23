@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
 import {
+  buildParticipantThumbnailPath,
   buildStoragePath,
   uploadFile,
   getFileUrl,
@@ -43,6 +44,18 @@ describe("storageService", () => {
       });
 
       expect(path).toBe("user-1/conv-1/rec-1/photo.jpg");
+    });
+  });
+
+  describe("buildParticipantThumbnailPath", () => {
+    it("builds path in the participant thumbnail format", () => {
+      const path = buildParticipantThumbnailPath({
+        userId: "user-1",
+        participantId: "participant-1",
+        filename: "photo.jpg",
+      });
+
+      expect(path).toBe("user-1/participants/participant-1/photo.jpg");
     });
   });
 

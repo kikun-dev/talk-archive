@@ -60,6 +60,7 @@ export type ConversationParticipant = {
   conversationId: string;
   name: string;
   sortOrder: number;
+  thumbnailPath: string | null;
   createdAt: string;
 };
 

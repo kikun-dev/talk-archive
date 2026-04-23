@@ -11,6 +11,7 @@ import type { MediaUrl } from "@/usecases/recordUseCases";
 import { replaceMyNamePlaceholder } from "@/usecases/contentTransform";
 import { ChatMessage } from "@/components/ChatMessage";
 import { ChatComposer } from "@/components/ChatComposer";
+import { ConversationThumbnailManager } from "@/components/ConversationThumbnailManager";
 const DateSearchModal = dynamic(
   () =>
     import("@/components/DateSearchModal").then((m) => m.DateSearchModal),
@@ -20,15 +21,21 @@ const DateSearchModal = dynamic(
 type ChatViewProps = {
   conversation: ConversationWithRecords;
   mediaUrls: { [recordId: string]: MediaUrl };
+  participantThumbnailUrls?: { [participantId: string]: string };
+  coverImageUrl?: string;
   displayName: string;
 };
 
 function buildParticipantMap(
   participants: ConversationParticipant[],
-): Map<string, string> {
-  const map = new Map<string, string>();
+  participantThumbnailUrls: { [participantId: string]: string },
+): Map<string, { name: string; thumbnailUrl?: string }> {
+  const map = new Map<string, { name: string; thumbnailUrl?: string }>();
   for (const p of participants) {
-    map.set(p.id, p.name);
+    map.set(p.id, {
+      name: p.name,
+      thumbnailUrl: participantThumbnailUrls[p.id],
+    });
   }
   return map;
 }
@@ -82,10 +89,16 @@ function searchRecordsLocal(
     .map((r) => r.id);
 }
 
-export function ChatView({ conversation, mediaUrls, displayName }: ChatViewProps) {
+export function ChatView({
+  conversation,
+  mediaUrls,
+  participantThumbnailUrls = {},
+  coverImageUrl,
+  displayName,
+}: ChatViewProps) {
   const participantMap = useMemo(
-    () => buildParticipantMap(conversation.participants),
-    [conversation.participants],
+    () => buildParticipantMap(conversation.participants, participantThumbnailUrls),
+    [conversation.participants, participantThumbnailUrls],
   );
   const dateGroups = useMemo(
     () => groupRecordsByDate(conversation.records),
@@ -285,6 +298,16 @@ export function ChatView({ conversation, mediaUrls, displayName }: ChatViewProps
         </div>
       )}
 
+      {isEditMode && (
+        <ConversationThumbnailManager
+          conversationId={conversation.id}
+          participants={conversation.participants}
+          participantThumbnailUrls={participantThumbnailUrls}
+          coverImagePath={conversation.coverImagePath}
+          coverImageUrl={coverImageUrl}
+        />
+      )}
+
       {/* Search Bar */}
       {isSearchOpen && (
         <div className="flex flex-wrap items-center gap-2 border-b border-gray-200 bg-white px-3 py-2 sm:px-4">
@@ -341,19 +364,23 @@ export function ChatView({ conversation, mediaUrls, displayName }: ChatViewProps
           dateGroups.map((group) => (
             <div key={group.dateKey}>
               <div className="space-y-3">
-                {group.records.map((record) => (
-                  <ChatMessage
-                    key={record.id}
-                    record={record}
-                    participantName={
-                      participantMap.get(record.speakerParticipantId) ?? "不明"
-                    }
-                    conversationId={conversation.id}
-                    mediaUrl={mediaUrls[record.id]}
-                    isEditMode={isEditMode}
-                    displayName={displayName}
-                  />
-                ))}
+                {group.records.map((record) => {
+                  const participant = participantMap.get(
+                    record.speakerParticipantId,
+                  );
+                  return (
+                    <ChatMessage
+                      key={record.id}
+                      record={record}
+                      participantName={participant?.name ?? "不明"}
+                      participantThumbnailUrl={participant?.thumbnailUrl}
+                      conversationId={conversation.id}
+                      mediaUrl={mediaUrls[record.id]}
+                      isEditMode={isEditMode}
+                      displayName={displayName}
+                    />
+                  );
+                })}
               </div>
             </div>
           ))

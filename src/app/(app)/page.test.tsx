@@ -3,6 +3,7 @@ import { render, screen } from "@testing-library/react";
 import type { ConversationSummary } from "@/usecases/conversationUseCases";
 
 const createSupabaseServerClientMock = vi.fn();
+const getConversationCoverUrlsMock = vi.fn();
 const listConversationsWithMetadataMock = vi.fn();
 const redirectMock = vi.fn();
 
@@ -11,6 +12,7 @@ vi.mock("@/lib/supabase/server", () => ({
 }));
 
 vi.mock("@/usecases/conversationUseCases", () => ({
+  getConversationCoverUrls: getConversationCoverUrlsMock,
   listConversationsWithMetadata: listConversationsWithMetadataMock,
 }));
 
@@ -61,6 +63,7 @@ describe("HomePage", () => {
   it("loads and renders conversations for the authenticated user", async () => {
     mockSupabaseUser({ id: "user-1" });
     listConversationsWithMetadataMock.mockResolvedValue([baseConversation]);
+    getConversationCoverUrlsMock.mockResolvedValue(new Map());
 
     const { default: HomePage } = await import("./page");
     render(await HomePage());
@@ -68,6 +71,10 @@ describe("HomePage", () => {
     expect(listConversationsWithMetadataMock).toHaveBeenCalledWith(
       expect.anything(),
       "user-1",
+    );
+    expect(getConversationCoverUrlsMock).toHaveBeenCalledWith(
+      expect.anything(),
+      [baseConversation],
     );
     expect(screen.queryByRole("heading", { name: "会話一覧" })).toBeNull();
     expect(screen.queryByRole("link", { name: "新規作成" })).toBeNull();

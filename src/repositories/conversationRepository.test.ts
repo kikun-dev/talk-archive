@@ -145,8 +145,8 @@ describe("conversationRepository", () => {
           },
         ],
         p_participants: [
-          { name: "メンバーA", sort_order: 0 },
-          { name: "メンバーB", sort_order: 1 },
+          { name: "メンバーA", sort_order: 0, thumbnail_path: null },
+          { name: "メンバーB", sort_order: 1, thumbnail_path: null },
         ],
       },
     );
@@ -176,7 +176,13 @@ describe("conversationRepository", () => {
     client = createMockClient(builder);
 
     await updateConversationWithMetadata(client, "conv-1", {
-      participants: [{ name: "メンバーA" }],
+      participants: [
+        {
+          id: "participant-1",
+          name: "メンバーA",
+          thumbnailPath: "user-1/participants/participant-1/photo.jpg",
+        },
+      ],
     });
 
     expect(client.rpc).toHaveBeenCalledWith(
@@ -193,7 +199,14 @@ describe("conversationRepository", () => {
         p_has_cover_image_path: false,
         p_active_periods: [],
         p_has_active_periods: false,
-        p_participants: [{ id: null, name: "メンバーA", sort_order: 0 }],
+        p_participants: [
+          {
+            id: "participant-1",
+            name: "メンバーA",
+            sort_order: 0,
+            thumbnail_path: "user-1/participants/participant-1/photo.jpg",
+          },
+        ],
         p_has_participants: true,
       },
     );

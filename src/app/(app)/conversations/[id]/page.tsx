@@ -2,7 +2,11 @@ import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { cache } from "react";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { getConversationWithRecords } from "@/usecases/conversationUseCases";
+import {
+  getConversationCoverUrls,
+  getConversationWithRecords,
+  getParticipantThumbnailUrls,
+} from "@/usecases/conversationUseCases";
 import { getMediaUrlsForRecords } from "@/usecases/recordUseCases";
 import { getDisplayName } from "@/usecases/userSettingsUseCases";
 import { ChatView } from "@/components/ChatView";
@@ -49,8 +53,10 @@ export default async function ConversationDetailPage({
     notFound();
   }
 
-  const [mediaUrlMap, displayName] = await Promise.all([
+  const [mediaUrlMap, participantThumbnailUrlMap, coverImageUrlMap, displayName] = await Promise.all([
     getMediaUrlsForRecords(supabase, conversation.records),
+    getParticipantThumbnailUrls(supabase, conversation.participants),
+    getConversationCoverUrls(supabase, [conversation]),
     getDisplayName(supabase, user.id),
   ]);
 
@@ -61,10 +67,20 @@ export default async function ConversationDetailPage({
     }
   }
 
+  const participantThumbnailUrls: { [participantId: string]: string } = {};
+  for (const participant of conversation.participants) {
+    const thumbnailUrl = participantThumbnailUrlMap.get(participant.id);
+    if (thumbnailUrl) {
+      participantThumbnailUrls[participant.id] = thumbnailUrl;
+    }
+  }
+
   return (
     <ChatView
       conversation={conversation}
       mediaUrls={mediaUrls}
+      participantThumbnailUrls={participantThumbnailUrls}
+      coverImageUrl={coverImageUrlMap.get(conversation.id)}
       displayName={displayName}
     />
   );
