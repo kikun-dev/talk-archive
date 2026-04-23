@@ -54,6 +54,8 @@ function isUnsupportedLicense(license) {
 }
 
 async function readFirstMatchingFile(packagePaths, candidateNames, readTextFile) {
+  // package によって LICENSE / LICENCE / COPYING のように名前が揺れるため、
+  // 候補を順に見て最初に読めたものを採用する。
   for (const packagePath of packagePaths) {
     for (const candidateName of candidateNames) {
       const candidatePath = join(packagePath, candidateName);
@@ -109,6 +111,8 @@ export async function createLicenseInventory(
 ) {
   const packages = [];
 
+  // pnpm の出力は license 単位のグルーピングなので、
+  // UI と commit 差分に向いた package 単位の deterministic な配列へ正規化する。
   for (const entries of Object.values(report)) {
     for (const entry of entries) {
       const versions = normalizeVersions(entry.versions);
@@ -135,6 +139,7 @@ export async function createLicenseInventory(
         licenseText,
         noticeText,
         licenseSource,
+        // 「ライセンス不明」または「本文未取得」を手動確認対象として残す。
         manualReviewRequired:
           isUnsupportedLicense(normalizedLicense) || licenseText === null,
       });

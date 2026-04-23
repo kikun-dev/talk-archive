@@ -14,6 +14,8 @@ const targetPath = join(repoRootPath, "src/generated/licenses.json");
 const temporaryPath = `${targetPath}.${randomUUID()}.tmp`;
 const rawReportPath = join(repoRootPath, `.pnpm-licenses.${randomUUID()}.json`);
 
+// `pnpm licenses` の JSON は環境によって stdout で安定して取れないため、
+// いったん一時ファイルへ出してから読む。
 const result = spawnSync(
   "/bin/bash",
   ["-lc", `pnpm licenses list --json --prod > "${rawReportPath}"`],
@@ -51,10 +53,14 @@ try {
 }
 
 const inventory = await createLicenseInventory(report);
+
+// CI では unknown / unsupported license をここで fail させる。
+// licenseText が見つからない package は UI 上の manualReviewRequired で扱う。
 assertNoUnknownLicenses(inventory);
 
 try {
   await mkdir(dirname(targetPath), { recursive: true });
+  // commit 管理する generated file なので、atomic write で中途半端な状態を避ける。
   await writeFile(`${temporaryPath}`, `${JSON.stringify(inventory, null, 2)}\n`, "utf8");
   await rename(temporaryPath, targetPath);
 } catch (error) {
