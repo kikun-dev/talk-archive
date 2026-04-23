@@ -19,7 +19,6 @@ vi.mock("next/navigation", () => ({
 }));
 
 const inventory: LicenseInventory = {
-  generatedAt: "2026-04-24T00:00:00.000Z",
   packageCount: 2,
   manualReviewRequiredCount: 1,
   licenses: [

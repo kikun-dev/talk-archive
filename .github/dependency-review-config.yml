@@ -14,3 +14,5 @@ allow-licenses:
 allow-dependencies-licenses:
   - pkg:npm/@img/sharp-libvips-linux-x64@1.2.4
   - pkg:npm/@img/sharp-libvips-linuxmusl-x64@1.2.4
+  - pkg:githubactions/actions/checkout
+  - pkg:githubactions/actions/dependency-review-action

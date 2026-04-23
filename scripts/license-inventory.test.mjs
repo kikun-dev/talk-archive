@@ -59,11 +59,9 @@ describe("createLicenseInventory", () => {
           },
         ],
       },
-      { generatedAt: "2026-04-24T00:00:00.000Z" },
     );
 
     expect(inventory).toEqual({
-      generatedAt: "2026-04-24T00:00:00.000Z",
       packageCount: 2,
       manualReviewRequiredCount: 0,
       licenses: [
@@ -115,7 +113,6 @@ describe("createLicenseInventory", () => {
           },
         ],
       },
-      { generatedAt: "2026-04-24T00:00:00.000Z" },
     );
 
     expect(inventory.manualReviewRequiredCount).toBe(1);
@@ -135,7 +132,6 @@ describe("assertNoUnknownLicenses", () => {
   it("throws when inventory includes packages with unknown licenses", () => {
     expect(() =>
       assertNoUnknownLicenses({
-        generatedAt: "2026-04-24T00:00:00.000Z",
         packageCount: 1,
         manualReviewRequiredCount: 1,
         licenses: [{ license: "UNKNOWN", count: 1 }],

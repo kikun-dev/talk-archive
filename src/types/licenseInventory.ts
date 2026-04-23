@@ -17,7 +17,6 @@ export type LicensePackage = {
 };
 
 export type LicenseInventory = {
-  generatedAt: string;
   packageCount: number;
   manualReviewRequiredCount: number;
   licenses: LicenseSummary[];

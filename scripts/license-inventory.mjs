@@ -104,7 +104,6 @@ function createLicenseSummary(packages) {
 export async function createLicenseInventory(
   report,
   {
-    generatedAt = new Date().toISOString(),
     readTextFile = readFile,
   } = {},
 ) {
@@ -149,7 +148,6 @@ export async function createLicenseInventory(
   );
 
   return {
-    generatedAt,
     packageCount: packages.length,
     manualReviewRequiredCount: packages.filter(
       (pkg) => pkg.manualReviewRequired,
