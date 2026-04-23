@@ -11,7 +11,6 @@ import type { MediaUrl } from "@/usecases/recordUseCases";
 import { replaceMyNamePlaceholder } from "@/usecases/contentTransform";
 import { ChatMessage } from "@/components/ChatMessage";
 import { ChatComposer } from "@/components/ChatComposer";
-import { ConversationThumbnailManager } from "@/components/ConversationThumbnailManager";
 const DateSearchModal = dynamic(
   () =>
     import("@/components/DateSearchModal").then((m) => m.DateSearchModal),
@@ -22,7 +21,6 @@ type ChatViewProps = {
   conversation: ConversationWithRecords;
   mediaUrls: { [recordId: string]: MediaUrl };
   participantThumbnailUrls?: { [participantId: string]: string };
-  coverImageUrl?: string;
   displayName: string;
 };
 
@@ -93,7 +91,6 @@ export function ChatView({
   conversation,
   mediaUrls,
   participantThumbnailUrls = {},
-  coverImageUrl,
   displayName,
 }: ChatViewProps) {
   const participantMap = useMemo(
@@ -296,16 +293,6 @@ export function ChatView({
             終了
           </button>
         </div>
-      )}
-
-      {isEditMode && (
-        <ConversationThumbnailManager
-          conversationId={conversation.id}
-          participants={conversation.participants}
-          participantThumbnailUrls={participantThumbnailUrls}
-          coverImagePath={conversation.coverImagePath}
-          coverImageUrl={coverImageUrl}
-        />
       )}
 
       {/* Search Bar */}

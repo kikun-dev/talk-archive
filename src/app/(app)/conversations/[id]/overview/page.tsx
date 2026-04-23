@@ -1,6 +1,10 @@
 import { notFound, redirect } from "next/navigation";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { getConversationWithRecords } from "@/usecases/conversationUseCases";
+import {
+  getConversationCoverUrls,
+  getConversationWithRecords,
+  getParticipantThumbnailUrls,
+} from "@/usecases/conversationUseCases";
 import { ConversationActions } from "@/components/ConversationActions";
 import { ConversationSubpageLayout } from "@/components/ConversationSubpageLayout";
 
@@ -28,12 +32,29 @@ export default async function ConversationOverviewPage({
     notFound();
   }
 
+  const [participantThumbnailUrlMap, coverImageUrlMap] = await Promise.all([
+    getParticipantThumbnailUrls(supabase, conversation.participants),
+    getConversationCoverUrls(supabase, [conversation]),
+  ]);
+
+  const participantThumbnailUrls: { [participantId: string]: string } = {};
+  for (const participant of conversation.participants) {
+    const thumbnailUrl = participantThumbnailUrlMap.get(participant.id);
+    if (thumbnailUrl) {
+      participantThumbnailUrls[participant.id] = thumbnailUrl;
+    }
+  }
+
   return (
     <ConversationSubpageLayout
       conversationId={conversation.id}
       title="概要"
     >
-      <ConversationActions conversation={conversation} />
+      <ConversationActions
+        conversation={conversation}
+        participantThumbnailUrls={participantThumbnailUrls}
+        coverImageUrl={coverImageUrlMap.get(conversation.id)}
+      />
     </ConversationSubpageLayout>
   );
 }

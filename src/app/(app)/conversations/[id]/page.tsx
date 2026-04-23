@@ -3,7 +3,6 @@ import { notFound, redirect } from "next/navigation";
 import { cache } from "react";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import {
-  getConversationCoverUrls,
   getConversationWithRecords,
   getParticipantThumbnailUrls,
 } from "@/usecases/conversationUseCases";
@@ -53,10 +52,9 @@ export default async function ConversationDetailPage({
     notFound();
   }
 
-  const [mediaUrlMap, participantThumbnailUrlMap, coverImageUrlMap, displayName] = await Promise.all([
+  const [mediaUrlMap, participantThumbnailUrlMap, displayName] = await Promise.all([
     getMediaUrlsForRecords(supabase, conversation.records),
     getParticipantThumbnailUrls(supabase, conversation.participants),
-    getConversationCoverUrls(supabase, [conversation]),
     getDisplayName(supabase, user.id),
   ]);
 
@@ -80,7 +78,6 @@ export default async function ConversationDetailPage({
       conversation={conversation}
       mediaUrls={mediaUrls}
       participantThumbnailUrls={participantThumbnailUrls}
-      coverImageUrl={coverImageUrlMap.get(conversation.id)}
       displayName={displayName}
     />
   );

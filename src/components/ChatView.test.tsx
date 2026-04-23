@@ -247,8 +247,10 @@ describe("ChatView", () => {
     expect(
       screen.getByText("編集モード中です。各レコードの操作メニューから編集・削除できます。"),
     ).toBeInTheDocument();
-    expect(screen.getByText("サムネイル")).toBeInTheDocument();
-    expect(screen.getByLabelText("メンバーAのサムネイル画像")).toBeInTheDocument();
+    expect(screen.queryByText("サムネイル")).not.toBeInTheDocument();
+    expect(
+      screen.queryByLabelText("メンバーAのサムネイル画像"),
+    ).not.toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: "操作" }).length).toBeGreaterThan(0);
   });
 
