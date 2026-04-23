@@ -7,6 +7,8 @@ import type { ConversationWithMetadata } from "@/usecases/conversationUseCases";
 vi.mock("@/app/(app)/conversations/[id]/actions", () => ({
   updateConversationAction: vi.fn(),
   deleteConversationAction: vi.fn(),
+  updateParticipantThumbnailAction: vi.fn(),
+  updateConversationCoverImageAction: vi.fn(),
 }));
 
 const conversation: ConversationWithMetadata = {
@@ -47,6 +49,28 @@ describe("ConversationActions", () => {
     expect(screen.getByText("テスト会話")).toBeInTheDocument();
     expect(screen.getByText("編集")).toBeInTheDocument();
     expect(screen.getByText("会話を削除")).toBeInTheDocument();
+  });
+
+  it("renders thumbnail manager on overview", () => {
+    render(
+      <ToastProvider>
+        <ConversationActions
+          conversation={conversation}
+          participantThumbnailUrls={{
+            "part-1": "https://example.com/member-a.jpg",
+          }}
+          coverImageUrl="https://example.com/cover.jpg"
+        />
+      </ToastProvider>,
+    );
+
+    expect(screen.getByText("サムネイル")).toBeInTheDocument();
+    expect(
+      screen.getByRole("img", { name: "メンバーAのサムネイル" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByLabelText("メンバーAのサムネイル画像"),
+    ).toBeInTheDocument();
   });
 
   it("switches to edit form when edit button is clicked", () => {
