@@ -12,9 +12,11 @@ export default async function AppLayout({
   } = await supabase.auth.getUser();
 
   return (
-    <div className="flex min-h-screen flex-col bg-white lg:h-screen lg:flex-row">
+    <div className="flex h-dvh flex-col overflow-hidden bg-white lg:flex-row">
       <Sidebar userEmail={user?.email ?? ""} />
-      <main className="flex-1 overflow-y-auto p-4 sm:p-6">{children}</main>
+      <main className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6">
+        {children}
+      </main>
     </div>
   );
 }
