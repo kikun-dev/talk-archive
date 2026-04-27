@@ -82,14 +82,12 @@ describe("LicenseDetailPage", () => {
     ).toBeInTheDocument();
     expect(screen.getByText("MIT License text")).toBeInTheDocument();
     expect(screen.getByText("Notice text")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "https://example.com/pkg-a" })).toHaveAttribute(
-      "href",
-      "https://example.com/pkg-a",
-    );
-    expect(screen.getByRole("link", { name: "ライセンス一覧に戻る" })).toHaveAttribute(
-      "href",
-      "/licenses",
-    );
+    expect(
+      screen.getByRole("link", { name: "https://example.com/pkg-a" }),
+    ).toHaveAttribute("href", "https://example.com/pkg-a");
+    expect(
+      screen.getByRole("link", { name: "ライセンス一覧に戻る" }),
+    ).toHaveAttribute("href", "/licenses");
   });
 
   it("renders a neutral fallback message when license text is not available", async () => {
