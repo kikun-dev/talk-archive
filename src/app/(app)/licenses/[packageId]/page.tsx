@@ -46,16 +46,9 @@ export default async function LicenseDetailPage({
               {pkg.versions.join(", ")}
             </p>
           </div>
-          <div className="flex flex-wrap gap-2">
-            <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-700">
-              {pkg.license}
-            </span>
-            {pkg.manualReviewRequired ? (
-              <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-medium text-amber-800">
-                手動確認
-              </span>
-            ) : null}
-          </div>
+          <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-700">
+            {pkg.license}
+          </span>
         </div>
 
         {pkg.description ? (
@@ -100,8 +93,8 @@ export default async function LicenseDetailPage({
             {pkg.licenseText}
           </pre>
         ) : (
-          <p className="mt-3 text-sm leading-6 text-amber-800">
-            ライセンス本文を自動取得できなかったため、手動確認が必要です。
+          <p className="mt-3 text-sm leading-6 text-gray-600">
+            ライセンス本文は提供元の配布内容をご確認ください。
           </p>
         )}
       </section>

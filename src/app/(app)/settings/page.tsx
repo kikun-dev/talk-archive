@@ -44,12 +44,9 @@ export default async function SettingsPage() {
             <p className="mt-1 text-xs leading-5 text-gray-500">
               本番依存のライセンス情報を確認できます。
             </p>
-            <div className="mt-3 flex flex-wrap gap-2">
+            <div className="mt-3">
               <span className="rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-700">
                 {inventory.packageCount}パッケージ
-              </span>
-              <span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-800">
-                要確認 {inventory.manualReviewRequiredCount}件
               </span>
             </div>
           </div>
