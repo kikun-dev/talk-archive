@@ -31,10 +31,10 @@ export default async function LicensesPage() {
             {inventory.packageCount}
           </p>
         </div>
-        <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
-          <p className="text-xs font-medium text-amber-700">要確認</p>
-          <p className="mt-2 text-sm font-semibold text-amber-900">
-            要確認 {inventory.manualReviewRequiredCount}件
+        <div className="rounded-lg border border-gray-200 bg-white p-4">
+          <p className="text-xs font-medium text-gray-500">ライセンス種別</p>
+          <p className="mt-2 text-2xl font-semibold text-gray-900">
+            {inventory.licenses.length}
           </p>
         </div>
         <div className="col-span-2 rounded-lg border border-gray-200 bg-gray-50 p-4">
@@ -81,11 +81,6 @@ export default async function LicensesPage() {
 
               <div className="mt-3 flex items-center justify-between gap-3 text-xs">
                 <div className="flex flex-wrap gap-2">
-                  {pkg.manualReviewRequired ? (
-                    <span className="rounded-full bg-amber-100 px-2.5 py-1 font-medium text-amber-800">
-                      手動確認
-                    </span>
-                  ) : null}
                   {pkg.homepage ? (
                     <span className="rounded-full bg-blue-50 px-2.5 py-1 font-medium text-blue-700">
                       参照先あり

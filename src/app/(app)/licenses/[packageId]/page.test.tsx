@@ -92,6 +92,27 @@ describe("LicenseDetailPage", () => {
     );
   });
 
+  it("renders a neutral fallback message when license text is not available", async () => {
+    mockSupabaseUser({ id: "user-1" });
+    getLicensePackageByIdMock.mockReturnValue({
+      ...packageRecord,
+      licenseText: null,
+      manualReviewRequired: true,
+    });
+
+    const { default: LicenseDetailPage } = await import("./page");
+    render(
+      await LicenseDetailPage({
+        params: Promise.resolve({ packageId: "pkg-a%401.0.0" }),
+      }),
+    );
+
+    expect(
+      screen.getByText("ライセンス本文は提供元の配布内容をご確認ください。"),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("手動確認")).toBeNull();
+  });
+
   it("calls notFound when the package cannot be found", async () => {
     mockSupabaseUser({ id: "user-1" });
     getLicensePackageByIdMock.mockReturnValue(null);

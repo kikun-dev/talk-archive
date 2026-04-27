@@ -91,8 +91,8 @@ describe("LicensesPage", () => {
     expect(
       screen.getByRole("heading", { name: "OSSライセンス" }),
     ).toBeInTheDocument();
-    expect(screen.getByText("2")).toBeInTheDocument();
-    expect(screen.getByText("要確認 1件")).toBeInTheDocument();
+    expect(screen.getByText("パッケージ数")).toBeInTheDocument();
+    expect(screen.getByText("ライセンス種別")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /pkg-a/ })).toHaveAttribute(
       "href",
       "/licenses/pkg-a%401.0.0",
@@ -102,6 +102,7 @@ describe("LicensesPage", () => {
       "/licenses/pkg-b%402.0.0",
     );
     expect(screen.getByText("Apache-2.0")).toBeInTheDocument();
-    expect(screen.getByText("手動確認")).toBeInTheDocument();
+    expect(screen.queryByText("要確認")).toBeNull();
+    expect(screen.queryByText("手動確認")).toBeNull();
   });
 });

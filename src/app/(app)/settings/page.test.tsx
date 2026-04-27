@@ -76,6 +76,6 @@ describe("SettingsPage", () => {
       "/licenses",
     );
     expect(screen.getByText("42パッケージ")).toBeInTheDocument();
-    expect(screen.getByText("要確認 3件")).toBeInTheDocument();
+    expect(screen.queryByText("要確認")).toBeNull();
   });
 });
