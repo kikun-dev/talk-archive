@@ -7,7 +7,10 @@ import type { Record } from "@/types/domain";
 vi.mock("@/app/(app)/conversations/[id]/actions", () => ({
   updateRecordAction: vi.fn(),
   deleteRecordAction: vi.fn(),
+  attachRecordMediaAction: vi.fn(),
 }));
+
+import { attachRecordMediaAction } from "@/app/(app)/conversations/[id]/actions";
 
 const textRecord: Record = {
   id: "rec-1",
@@ -310,5 +313,149 @@ describe("ChatMessage", () => {
     expect(screen.getByLabelText("テキスト")).toHaveValue(
       "こんにちは{{MY_NAME}}さん",
     );
+  });
+
+  // --- メディア未添付レコード（#113） ---
+
+  const pendingVideoRecord: Record = {
+    ...textRecord,
+    id: "rec-pend-1",
+    recordType: "video",
+    title: null,
+    content: null,
+  };
+
+  function renderPending(record: Record = pendingVideoRecord) {
+    return render(
+      <ToastProvider>
+        <ChatMessage
+          record={record}
+          participantName="メンバーA"
+          conversationId="conv-1"
+          displayName=""
+          isPendingMedia
+        />
+      </ToastProvider>,
+    );
+  }
+
+  it("shows a pending badge for media records without attachment", () => {
+    renderPending();
+
+    expect(screen.getByText("動画未添付")).toBeInTheDocument();
+  });
+
+  it("does not show a pending badge when not pending", () => {
+    render(
+      <ToastProvider>
+        <ChatMessage
+          record={pendingVideoRecord}
+          participantName="メンバーA"
+          conversationId="conv-1"
+          displayName=""
+        />
+      </ToastProvider>,
+    );
+
+    expect(screen.queryByText("動画未添付")).not.toBeInTheDocument();
+  });
+
+  it("reveals an attach form with type-scoped accept when the attach button is clicked", () => {
+    renderPending();
+
+    expect(screen.queryByLabelText("添付ファイル")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "ファイルを添付" }));
+
+    const fileInput = screen.getByLabelText("添付ファイル");
+    expect(fileInput).toHaveAttribute("accept", "video/*");
+    expect(
+      screen.getByRole("button", { name: "添付する" }),
+    ).toBeInTheDocument();
+  });
+
+  it("uses an image accept filter for pending image records", () => {
+    renderPending({ ...pendingVideoRecord, recordType: "image" });
+
+    expect(screen.getByText("画像未添付")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "ファイルを添付" }));
+    expect(screen.getByLabelText("添付ファイル")).toHaveAttribute(
+      "accept",
+      "image/*",
+    );
+  });
+
+  it("hides the attach form when cancelled", () => {
+    renderPending();
+
+    fireEvent.click(screen.getByRole("button", { name: "ファイルを添付" }));
+    fireEvent.click(screen.getByRole("button", { name: "キャンセル" }));
+
+    expect(screen.queryByLabelText("添付ファイル")).not.toBeInTheDocument();
+  });
+
+  it("shows a validation error and blocks submission when the selected file is the wrong type", () => {
+    renderPending();
+
+    fireEvent.click(screen.getByRole("button", { name: "ファイルを添付" }));
+    const fileInput = screen.getByLabelText("添付ファイル");
+
+    const wrongTypeFile = new File(["data"], "photo.jpg", {
+      type: "image/jpeg",
+    });
+    fireEvent.change(fileInput, { target: { files: [wrongTypeFile] } });
+
+    expect(
+      screen.getByText("動画ファイルを選択してください"),
+    ).toBeInTheDocument();
+    expect(fileInput).toHaveValue("");
+
+    fireEvent.click(screen.getByRole("button", { name: "添付する" }));
+
+    expect(vi.mocked(attachRecordMediaAction)).not.toHaveBeenCalled();
+  });
+
+  it("shows a validation error when the selected file exceeds the size limit", () => {
+    renderPending();
+
+    fireEvent.click(screen.getByRole("button", { name: "ファイルを添付" }));
+    const fileInput = screen.getByLabelText("添付ファイル");
+
+    const oversizedFile = new File(["data"], "video.mp4", {
+      type: "video/mp4",
+    });
+    Object.defineProperty(oversizedFile, "size", {
+      value: 50 * 1024 * 1024 + 1,
+    });
+    fireEvent.change(fileInput, { target: { files: [oversizedFile] } });
+
+    expect(
+      screen.getByText("ファイルサイズは50MB以内にしてください"),
+    ).toBeInTheDocument();
+    expect(fileInput).toHaveValue("");
+  });
+
+  it("clears the validation error once a valid file is selected", () => {
+    renderPending();
+
+    fireEvent.click(screen.getByRole("button", { name: "ファイルを添付" }));
+    const fileInput = screen.getByLabelText("添付ファイル");
+
+    fireEvent.change(fileInput, {
+      target: { files: [new File(["data"], "photo.jpg", { type: "image/jpeg" })] },
+    });
+    expect(
+      screen.getByText("動画ファイルを選択してください"),
+    ).toBeInTheDocument();
+
+    fireEvent.change(fileInput, {
+      target: {
+        files: [new File(["data"], "video.mp4", { type: "video/mp4" })],
+      },
+    });
+
+    expect(
+      screen.queryByText("動画ファイルを選択してください"),
+    ).not.toBeInTheDocument();
   });
 });

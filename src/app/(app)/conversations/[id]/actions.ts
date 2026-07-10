@@ -20,10 +20,16 @@ import {
   addVideoRecord,
   addAudioRecord,
   validateAddMediaRecordInput,
+  addPendingMediaRecord,
+  validateAddPendingMediaRecordInput,
+  attachRecordMedia,
+  validateAttachRecordMediaInput,
+  AttachMediaError,
   updateExistingRecord,
   validateUpdateRecordInput,
   deleteExistingRecord,
 } from "@/usecases/recordUseCases";
+import type { RecordType } from "@/types/domain";
 
 export type ActionState =
   | {
@@ -535,6 +541,136 @@ export async function addAudioRecordAction(
   } catch (error) {
     console.error("Failed to add audio record:", error);
     return { error: "音声レコードの追加に失敗しました。時間をおいて再度お試しください。" };
+  }
+
+  revalidatePath(`/conversations/${conversationId}`);
+
+  return undefined;
+}
+
+const PENDING_MEDIA_RECORD_TYPES = new Set(["image", "video", "audio"]);
+
+function isPendingMediaRecordType(
+  value: string,
+): value is Exclude<RecordType, "text"> {
+  return PENDING_MEDIA_RECORD_TYPES.has(value);
+}
+
+export async function addPendingMediaRecordAction(
+  conversationId: string,
+  _prevState: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const supabase = await createSupabaseServerClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    redirect("/login");
+  }
+
+  const recordType = getRequiredStringField(formData, "recordType");
+  if (recordType === null || !isPendingMediaRecordType(recordType)) {
+    return { error: "レコード種別のデータが不正です" };
+  }
+
+  const titleValue = getOptionalStringField(formData, "title");
+  if (titleValue === null) {
+    return { error: "タイトルのデータが不正です" };
+  }
+
+  const contentValue = getOptionalStringField(formData, "content");
+  if (contentValue === null) {
+    return { error: "テキストのデータが不正です" };
+  }
+
+  const speakerParticipantId = getRequiredStringField(
+    formData,
+    "speakerParticipantId",
+  );
+  if (speakerParticipantId === null) {
+    return { error: "発言者のデータが不正です" };
+  }
+
+  const postedAt = getRequiredStringField(formData, "postedAt");
+  if (postedAt === null) {
+    return { error: "投稿日時のデータが不正です" };
+  }
+  const normalizedPostedAt = normalizePostedAtInput(postedAt);
+  if (normalizedPostedAt === null) {
+    return { error: "投稿日時のデータが不正です" };
+  }
+
+  const input = {
+    conversationId,
+    recordType,
+    title: titleValue || null,
+    content: contentValue || null,
+    hasAudio: formData.get("hasAudio") === "true",
+    speakerParticipantId,
+    postedAt: normalizedPostedAt,
+  };
+
+  const validationError = validateAddPendingMediaRecordInput(input);
+  if (validationError) {
+    return { error: validationError };
+  }
+
+  try {
+    await addPendingMediaRecord(supabase, input);
+  } catch (error) {
+    console.error("Failed to add pending media record:", error);
+    return { error: "レコードの追加に失敗しました。時間をおいて再度お試しください。" };
+  }
+
+  revalidatePath(`/conversations/${conversationId}`);
+
+  return undefined;
+}
+
+export async function attachRecordMediaAction(
+  conversationId: string,
+  recordId: string,
+  _prevState: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const supabase = await createSupabaseServerClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    redirect("/login");
+  }
+
+  const file = formData.get("file");
+  if (!(file instanceof File) || file.size === 0) {
+    return { error: "ファイルを選択してください" };
+  }
+
+  const input = {
+    userId: user.id,
+    recordId,
+    file,
+    filename: file.name,
+    contentType: file.type,
+  };
+
+  const validationError = validateAttachRecordMediaInput(input);
+  if (validationError) {
+    return { error: validationError };
+  }
+
+  try {
+    await attachRecordMedia(supabase, input);
+  } catch (error) {
+    // AttachMediaError はユーザー向けメッセージなのでそのまま返す
+    if (error instanceof AttachMediaError) {
+      return { error: error.message };
+    }
+    console.error("Failed to attach record media:", error);
+    return { error: "メディアの添付に失敗しました。時間をおいて再度お試しください。" };
   }
 
   revalidatePath(`/conversations/${conversationId}`);

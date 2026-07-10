@@ -7,9 +7,15 @@ import {
   addImageRecordAction,
   addVideoRecordAction,
   addAudioRecordAction,
+  addPendingMediaRecordAction,
   type ActionState,
 } from "@/app/(app)/conversations/[id]/actions";
 import { getCurrentJstDateTimeLocal } from "@/lib/dateTime";
+import {
+  MEDIA_FILE_LIMITS,
+  validateMediaFileSelection,
+  type MediaFileKind,
+} from "@/lib/mediaFileSelection";
 import { FormError } from "@/components/FormError";
 import type { ConversationParticipant, RecordType } from "@/types/domain";
 
@@ -27,9 +33,6 @@ const tabs: { type: ComposerTab; label: string }[] = [
   { type: "audio", label: "音声" },
 ];
 
-const MAX_IMAGE_SIZE = 10 * 1024 * 1024;
-const MAX_MEDIA_SIZE = 50 * 1024 * 1024;
-
 export function ChatComposer({
   conversationId,
   participants,
@@ -42,6 +45,7 @@ export function ChatComposer({
   const [postedAt, setPostedAt] = useState("");
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [clientError, setClientError] = useState<string | null>(null);
+  const [isPendingMedia, setIsPendingMedia] = useState(false);
 
   const actionMap = {
     text: addTextRecordAction,
@@ -53,7 +57,10 @@ export function ChatComposer({
   const [state, formAction, isPending] = useActionState<ActionState, FormData>(
     async (_prevState, formData) => {
       setClientError(null);
-      const action = actionMap[activeTab];
+      // 「ファイルはあとで添付する」選択時は未添付レコードとして保存する
+      const action = isPendingMedia
+        ? addPendingMediaRecordAction
+        : actionMap[activeTab];
       const result = await action(conversationId, _prevState, formData);
       if (!result?.error) {
         formRef.current?.reset();
@@ -94,30 +101,11 @@ export function ChatComposer({
       return;
     }
 
-    const maxSize = activeTab === "image" ? MAX_IMAGE_SIZE : MAX_MEDIA_SIZE;
-    const maxLabel = activeTab === "image" ? "10MB" : "50MB";
-
-    if (file.size > maxSize) {
-      setClientError(`ファイルサイズは${maxLabel}以内にしてください`);
-      setPreviewUrl(null);
-      e.target.value = "";
-      return;
-    }
-
-    const expectedPrefix =
-      activeTab === "image"
-        ? "image/"
-        : activeTab === "video"
-          ? "video/"
-          : "audio/";
-    if (!file.type.startsWith(expectedPrefix)) {
-      const typeLabel =
-        activeTab === "image"
-          ? "画像"
-          : activeTab === "video"
-            ? "動画"
-            : "音声";
-      setClientError(`${typeLabel}ファイルを選択してください`);
+    // ファイル入力は image/video/audio タブでのみ表示されるため activeTab は MediaFileKind
+    const kind = activeTab as MediaFileKind;
+    const validationError = validateMediaFileSelection(kind, file);
+    if (validationError) {
+      setClientError(validationError);
       setPreviewUrl(null);
       e.target.value = "";
       return;
@@ -132,7 +120,14 @@ export function ChatComposer({
     setActiveTab(tab);
     setClientError(null);
     setPreviewUrl(null);
+    setIsPendingMedia(false);
     formRef.current?.reset();
+  }
+
+  function handlePendingMediaChange(e: React.ChangeEvent<HTMLInputElement>) {
+    setIsPendingMedia(e.target.checked);
+    setClientError(null);
+    setPreviewUrl(null);
   }
 
   const displayError = clientError ?? state?.error;
@@ -235,16 +230,18 @@ export function ChatComposer({
               placeholder="テキスト（任意）"
               className="block w-full rounded border border-gray-300 px-2 py-2 text-sm"
             />
-            <input
-              name="file"
-              type="file"
-              accept="image/*"
-              required
-              aria-label="画像ファイル"
-              onChange={handleFileChange}
-              className="block w-full text-sm"
-            />
-            {previewUrl && (
+            {!isPendingMedia && (
+              <input
+                name="file"
+                type="file"
+                accept={MEDIA_FILE_LIMITS.image.accept}
+                required
+                aria-label="画像ファイル"
+                onChange={handleFileChange}
+                className="block w-full text-sm"
+              />
+            )}
+            {!isPendingMedia && previewUrl && (
               <Image
                 src={previewUrl}
                 alt="プレビュー"
@@ -259,15 +256,17 @@ export function ChatComposer({
 
         {activeTab === "video" && (
           <>
-            <input
-              name="file"
-              type="file"
-              accept="video/*"
-              required
-              aria-label="動画ファイル"
-              onChange={handleFileChange}
-              className="block w-full text-sm"
-            />
+            {!isPendingMedia && (
+              <input
+                name="file"
+                type="file"
+                accept={MEDIA_FILE_LIMITS.video.accept}
+                required
+                aria-label="動画ファイル"
+                onChange={handleFileChange}
+                className="block w-full text-sm"
+              />
+            )}
             <label className="flex items-center gap-1.5 text-xs">
               <input
                 name="hasAudio"
@@ -281,16 +280,33 @@ export function ChatComposer({
           </>
         )}
 
-        {activeTab === "audio" && (
+        {activeTab === "audio" && !isPendingMedia && (
           <input
             name="file"
             type="file"
-            accept="audio/*"
+            accept={MEDIA_FILE_LIMITS.audio.accept}
             required
             aria-label="音声ファイル"
             onChange={handleFileChange}
             className="block w-full text-sm"
           />
+        )}
+
+        {activeTab !== "text" && (
+          <>
+            <label className="flex items-center gap-1.5 text-xs">
+              <input
+                type="checkbox"
+                checked={isPendingMedia}
+                onChange={handlePendingMediaChange}
+                className="h-3.5 w-3.5 rounded border-gray-300"
+              />
+              ファイルはあとで添付する
+            </label>
+            {isPendingMedia && (
+              <input type="hidden" name="recordType" value={activeTab} />
+            )}
+          </>
         )}
 
         <FormError message={displayError} />

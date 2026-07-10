@@ -5,9 +5,15 @@ import { memo, useActionState, useState, useTransition } from "react";
 import {
   updateRecordAction,
   deleteRecordAction,
+  attachRecordMediaAction,
   type ActionState,
 } from "@/app/(app)/conversations/[id]/actions";
 import { formatMessageDateTimeJst } from "@/lib/dateTime";
+import {
+  MEDIA_FILE_LIMITS,
+  validateMediaFileSelection,
+  type MediaFileKind,
+} from "@/lib/mediaFileSelection";
 import { FormError } from "@/components/FormError";
 import { useToast } from "@/components/ToastProvider";
 import type { Record } from "@/types/domain";
@@ -22,6 +28,8 @@ type ChatMessageProps = {
   mediaUrl?: MediaUrl;
   isEditMode?: boolean;
   displayName: string;
+  // メディアレコードで attachment 未添付のとき true（#113）
+  isPendingMedia?: boolean;
 };
 
 function getInitial(name: string): string {
@@ -64,6 +72,105 @@ function MediaContent({
   }
 }
 
+function PendingMediaContent({
+  record,
+  conversationId,
+}: {
+  record: Record;
+  conversationId: string;
+}) {
+  const [isAttaching, setIsAttaching] = useState(false);
+  const [fileError, setFileError] = useState<string | null>(null);
+
+  // 添付フォームは image/video/audio レコードにのみ表示されるため MediaFileKind に絞れる
+  const kind = record.recordType as MediaFileKind;
+  const limits = MEDIA_FILE_LIMITS[kind];
+
+  const [state, formAction, isPending] = useActionState<ActionState, FormData>(
+    async (_prevState, formData) => {
+      const result = await attachRecordMediaAction(
+        conversationId,
+        record.id,
+        _prevState,
+        formData,
+      );
+      if (!result?.error) {
+        setIsAttaching(false);
+      }
+      return result;
+    },
+    undefined,
+  );
+
+  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    setFileError(null);
+    const file = e.target.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    const validationError = validateMediaFileSelection(kind, file);
+    if (validationError) {
+      setFileError(validationError);
+      e.target.value = "";
+    }
+  }
+
+  function handleCancel() {
+    setIsAttaching(false);
+    setFileError(null);
+  }
+
+  return (
+    <div className="mt-1">
+      <div className="flex items-center gap-2">
+        <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800">
+          {limits.typeLabel}未添付
+        </span>
+        {!isAttaching && (
+          <button
+            type="button"
+            onClick={() => setIsAttaching(true)}
+            className="text-[10px] text-blue-500 hover:text-blue-700"
+          >
+            ファイルを添付
+          </button>
+        )}
+      </div>
+      {isAttaching && (
+        <form action={formAction} className="mt-2 space-y-2">
+          <input
+            name="file"
+            type="file"
+            required
+            accept={limits.accept}
+            aria-label="添付ファイル"
+            onChange={handleFileChange}
+            className="block w-full text-xs"
+          />
+          <FormError message={fileError ?? state?.error} />
+          <div className="flex gap-2">
+            <button
+              type="submit"
+              disabled={isPending}
+              className="rounded bg-gray-900 px-3 py-1 text-xs font-medium text-white hover:bg-gray-800 disabled:opacity-50"
+            >
+              {isPending ? "添付中..." : "添付する"}
+            </button>
+            <button
+              type="button"
+              onClick={handleCancel}
+              className="rounded border border-gray-300 px-3 py-1 text-xs text-gray-700 hover:bg-gray-50"
+            >
+              キャンセル
+            </button>
+          </div>
+        </form>
+      )}
+    </div>
+  );
+}
+
 function ParticipantAvatar({
   name,
   thumbnailUrl,
@@ -99,6 +206,7 @@ export const ChatMessage = memo(function ChatMessage({
   mediaUrl,
   isEditMode = false,
   displayName,
+  isPendingMedia = false,
 }: ChatMessageProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [isActionMenuOpen, setIsActionMenuOpen] = useState(false);
@@ -239,6 +347,12 @@ export const ChatMessage = memo(function ChatMessage({
             </p>
           )}
           {mediaUrl && <MediaContent record={record} mediaUrl={mediaUrl} />}
+          {isPendingMedia && record.recordType !== "text" && (
+            <PendingMediaContent
+              record={record}
+              conversationId={conversationId}
+            />
+          )}
         </div>
         {isEditMode && (
           <div
