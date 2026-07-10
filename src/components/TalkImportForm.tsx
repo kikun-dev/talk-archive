@@ -22,6 +22,12 @@ type TalkImportFormProps = {
 
 type Stage = "select" | "preview" | "result";
 
+const stages: { key: Stage; label: string }[] = [
+  { key: "select", label: "ファイル選択" },
+  { key: "preview", label: "内容確認" },
+  { key: "result", label: "完了" },
+];
+
 const NEW_PARTICIPANT_VALUE = "new";
 
 const typeLabels: { key: keyof ImportPreview["typeCounts"]; label: string }[] = [
@@ -47,6 +53,56 @@ function formatPeriod(period: ImportPreview["period"]): string {
   return `${formatDateTimeJst(period.start)} 〜 ${formatDateTimeJst(period.end)}`;
 }
 
+function ImportProgress({ stage }: { stage: Stage }) {
+  const currentIndex = stages.findIndex(({ key }) => key === stage);
+
+  return (
+    <nav aria-label="インポートの進捗">
+      <ol className="grid grid-cols-3">
+        {stages.map(({ key, label }, index) => {
+          const isCurrent = key === stage;
+          const isCompleted = index < currentIndex;
+
+          return (
+            <li
+              key={key}
+              aria-current={isCurrent ? "step" : undefined}
+              className="relative flex flex-col items-center gap-2 text-center"
+            >
+              {index > 0 && (
+                <span
+                  aria-hidden="true"
+                  className={`absolute top-4 right-1/2 h-px w-full ${
+                    isCurrent || isCompleted ? "bg-gray-900" : "bg-gray-200"
+                  }`}
+                />
+              )}
+              <span
+                className={`relative flex size-8 items-center justify-center rounded-full border text-xs font-semibold ${
+                  isCurrent
+                    ? "border-gray-900 bg-gray-900 text-white"
+                    : isCompleted
+                      ? "border-gray-900 bg-white text-gray-900"
+                      : "border-gray-300 bg-white text-gray-500"
+                }`}
+              >
+                {index + 1}
+              </span>
+              <span
+                className={`text-xs font-medium ${
+                  isCurrent || isCompleted ? "text-gray-900" : "text-gray-500"
+                }`}
+              >
+                {label}
+              </span>
+            </li>
+          );
+        })}
+      </ol>
+    </nav>
+  );
+}
+
 export function TalkImportForm({
   conversationId,
   participants,
@@ -56,6 +112,7 @@ export function TalkImportForm({
   const [error, setError] = useState<string | undefined>();
   const [isPending, startTransition] = useTransition();
   const [jsonText, setJsonText] = useState<string | null>(null);
+  const [fileName, setFileName] = useState<string | null>(null);
   const [preview, setPreview] = useState<
     (ImportPreview & { rowErrors: string[] }) | null
   >(null);
@@ -69,6 +126,7 @@ export function TalkImportForm({
     setStage("select");
     setError(undefined);
     setJsonText(null);
+    setFileName(null);
     setPreview(null);
     setSpeakerAssignments({});
     setResult(null);
@@ -110,6 +168,7 @@ export function TalkImportForm({
       }
 
       setJsonText(text);
+      setFileName(file.name);
       setPreview(response.preview);
       setSpeakerAssignments(defaultAssignments);
       setStage("preview");
@@ -142,16 +201,39 @@ export function TalkImportForm({
     const createdParticipantNames = Object.keys(result.createdParticipants);
 
     return (
-      <div className="space-y-4">
-        <div className="space-y-1 text-sm text-gray-700">
-          <p>作成件数: {result.createdCount}件</p>
-          <p>スキップ件数: {result.skippedCount}件</p>
+      <div className="space-y-8">
+        <ImportProgress stage="result" />
+
+        <section className="border-l-4 border-green-600 bg-green-50 px-4 py-5 sm:px-6">
+          <h2 className="text-base font-semibold text-gray-900">
+            インポートが完了しました
+          </h2>
+          <div className="mt-4 grid grid-cols-2 gap-4 text-sm text-gray-700">
+            <p
+              role="group"
+              aria-label={`作成件数: ${result.createdCount}件`}
+            >
+              作成件数
+              <strong className="mt-1 block text-xl text-gray-900">
+                {result.createdCount}件
+              </strong>
+            </p>
+            <p
+              role="group"
+              aria-label={`スキップ件数: ${result.skippedCount}件`}
+            >
+              スキップ件数
+              <strong className="mt-1 block text-xl text-gray-900">
+                {result.skippedCount}件
+              </strong>
+            </p>
+          </div>
           {createdParticipantNames.length > 0 && (
-            <p>
+            <p className="mt-4 border-t border-green-200 pt-4 text-sm text-gray-700">
               新規追加された参加者: {createdParticipantNames.join("、")}
             </p>
           )}
-        </div>
+        </section>
         <Link
           href={`/conversations/${conversationId}`}
           className="inline-block rounded bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800"
@@ -166,124 +248,207 @@ export function TalkImportForm({
     const canExecute = preview.importableCount > 0;
 
     return (
-      <div className="space-y-4">
-        <div className="space-y-1 text-sm text-gray-700">
-          <p>
-            総件数: {preview.totalCount}件
-            {preview.rowErrors.length > 0 &&
-              `（うち行エラー ${preview.rowErrors.length}件）`}
-          </p>
-          <p>取り込み対象: {preview.importableCount}件</p>
-          <p>重複スキップ予定: {preview.duplicateCount}件</p>
-          <p>期間: {formatPeriod(preview.period)}</p>
-          <p>
-            種別内訳:{" "}
+      <div className="space-y-8">
+        <ImportProgress stage="preview" />
+
+        <section aria-labelledby="import-summary-heading" className="space-y-4">
+          <div>
+            <h2
+              id="import-summary-heading"
+              className="text-base font-semibold text-gray-900"
+            >
+              取り込み内容を確認
+            </h2>
+            {fileName && (
+              <p className="mt-1 break-all text-xs text-gray-500">
+                対象ファイル: {fileName}
+              </p>
+            )}
+          </div>
+
+          <div className="grid gap-px overflow-hidden border border-gray-200 bg-gray-200 sm:grid-cols-2">
+            <div
+              role="group"
+              aria-label={`総件数: ${preview.totalCount}件${
+                preview.rowErrors.length > 0
+                  ? `（うち行エラー ${preview.rowErrors.length}件）`
+                  : ""
+              }`}
+              className="bg-white p-4 text-sm text-gray-700"
+            >
+              <p className="text-xs font-medium text-gray-500">総件数</p>
+              <p className="mt-1 text-xl font-semibold text-gray-900">
+                {preview.totalCount}件
+                {preview.rowErrors.length > 0 && (
+                  <span className="ml-2 text-xs font-normal text-amber-700">
+                    うち行エラー {preview.rowErrors.length}件
+                  </span>
+                )}
+              </p>
+            </div>
+            <div
+              role="group"
+              aria-label={`取り込み対象: ${preview.importableCount}件`}
+              className="bg-white p-4 text-sm text-gray-700"
+            >
+              <p className="text-xs font-medium text-gray-500">取り込み対象</p>
+              <p className="mt-1 text-xl font-semibold text-gray-900">
+                {preview.importableCount}件
+              </p>
+            </div>
+            <div
+              role="group"
+              aria-label={`重複スキップ予定: ${preview.duplicateCount}件`}
+              className="bg-white p-4 text-sm text-gray-700"
+            >
+              <p className="text-xs font-medium text-gray-500">
+                重複スキップ予定
+              </p>
+              <p className="mt-1 text-xl font-semibold text-gray-900">
+                {preview.duplicateCount}件
+              </p>
+            </div>
+            <div
+              role="group"
+              aria-label={`期間: ${formatPeriod(preview.period)}`}
+              className="bg-white p-4 text-sm text-gray-700"
+            >
+              <p className="text-xs font-medium text-gray-500">期間</p>
+              <p className="mt-1 font-medium text-gray-900">
+                {formatPeriod(preview.period)}
+              </p>
+            </div>
+          </div>
+
+          <p className="border-y border-gray-200 py-3 text-sm text-gray-700">
+            <span className="font-medium text-gray-900">種別内訳:</span>{" "}
             {typeLabels
               .map(({ key, label }) => `${label} ${preview.typeCounts[key]}`)
               .join(" / ")}
           </p>
-        </div>
+        </section>
 
-        {!canExecute && (
-          <p className="text-sm text-gray-500">
-            取り込める新しいトークがありません
-          </p>
-        )}
-
-        {preview.rowErrors.length > 0 && (
-          <div className="space-y-1">
-            <p className="text-sm font-medium text-gray-700">
-              以下の行は取り込まれません
+        <div className="space-y-4">
+          {!canExecute && (
+            <p className="border-l-4 border-gray-400 bg-gray-50 px-4 py-3 text-sm text-gray-700">
+              取り込める新しいトークがありません
             </p>
-            <ul className="ml-4 list-disc text-xs text-gray-500">
-              {preview.rowErrors.map((rowError, index) => (
-                <li key={index}>{rowError}</li>
-              ))}
-            </ul>
-          </div>
-        )}
+          )}
 
-        {preview.unknownSpeakers.length > 0 && (
-          <div className="space-y-2">
-            <p className="text-sm font-medium text-gray-700">
-              未登録の発言者の割り当て
-            </p>
-            {preview.unknownSpeakers.map((speaker) => (
-              <div key={speaker} className="flex items-center gap-2">
-                <label
-                  htmlFor={`speaker-${speaker}`}
-                  className="min-w-0 flex-1 truncate text-sm text-gray-700"
-                >
-                  {speaker}
-                </label>
-                <select
-                  id={`speaker-${speaker}`}
-                  aria-label={`${speaker}の割り当て`}
-                  value={speakerAssignments[speaker] ?? NEW_PARTICIPANT_VALUE}
-                  onChange={(event) =>
-                    setSpeakerAssignments((prev) => ({
-                      ...prev,
-                      [speaker]: event.target.value,
-                    }))
-                  }
-                  className="rounded border border-gray-300 px-2 py-1 text-sm"
-                >
-                  <option value={NEW_PARTICIPANT_VALUE}>
-                    新規参加者として追加
-                  </option>
-                  {participants.map((participant) => (
-                    <option key={participant.id} value={participant.id}>
-                      {participant.name}
-                    </option>
-                  ))}
-                </select>
+          {preview.rowErrors.length > 0 && (
+            <section className="border-l-4 border-amber-500 bg-amber-50 px-4 py-3">
+              <h3 className="text-sm font-semibold text-gray-900">
+                以下の行は取り込まれません
+              </h3>
+              <ul className="mt-2 ml-4 list-disc text-xs text-gray-700">
+                {preview.rowErrors.map((rowError, index) => (
+                  <li key={index}>{rowError}</li>
+                ))}
+              </ul>
+            </section>
+          )}
+
+          {preview.unknownSpeakers.length > 0 && (
+            <section className="space-y-3">
+              <h3 className="text-sm font-semibold text-gray-900">
+                未登録の発言者の割り当て
+              </h3>
+              <div className="divide-y divide-gray-200 border-y border-gray-200">
+                {preview.unknownSpeakers.map((speaker) => (
+                  <div
+                    key={speaker}
+                    className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center sm:gap-4"
+                  >
+                    <label
+                      htmlFor={`speaker-${speaker}`}
+                      className="min-w-0 flex-1 break-all text-sm font-medium text-gray-700"
+                    >
+                      {speaker}
+                    </label>
+                    <select
+                      id={`speaker-${speaker}`}
+                      aria-label={`${speaker}の割り当て`}
+                      value={
+                        speakerAssignments[speaker] ?? NEW_PARTICIPANT_VALUE
+                      }
+                      onChange={(event) =>
+                        setSpeakerAssignments((prev) => ({
+                          ...prev,
+                          [speaker]: event.target.value,
+                        }))
+                      }
+                      className="min-h-10 w-full rounded border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 sm:w-auto sm:max-w-xs"
+                    >
+                      <option value={NEW_PARTICIPANT_VALUE}>
+                        新規参加者として追加
+                      </option>
+                      {participants.map((participant) => (
+                        <option key={participant.id} value={participant.id}>
+                          {participant.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                ))}
               </div>
-            ))}
+            </section>
+          )}
+
+          <FormError message={error} />
+
+          <div className="flex flex-col-reverse gap-2 border-t border-gray-200 pt-5 sm:flex-row sm:justify-end">
+            <button
+              type="button"
+              onClick={handleExecute}
+              disabled={isPending || !canExecute}
+              className="min-h-10 rounded bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {isPending ? "インポート中..." : "インポート実行"}
+            </button>
+            <button
+              type="button"
+              onClick={resetToSelect}
+              className="min-h-10 rounded border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+            >
+              やり直す
+            </button>
           </div>
-        )}
-
-        <FormError message={error} />
-
-        <div className="flex gap-2">
-          <button
-            type="button"
-            onClick={handleExecute}
-            disabled={isPending || !canExecute}
-            className="rounded bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-50"
-          >
-            {isPending ? "インポート中..." : "インポート実行"}
-          </button>
-          <button
-            type="button"
-            onClick={resetToSelect}
-            className="rounded border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
-          >
-            やり直す
-          </button>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-4">
-      <div>
-        <label
-          htmlFor={fileInputId}
-          className="block text-sm font-medium text-gray-700"
-        >
-          インポートするJSONファイル
-        </label>
+    <div className="space-y-8">
+      <ImportProgress stage="select" />
+
+      <div className="border-2 border-dashed border-gray-300 bg-gray-50 px-4 py-10 text-center sm:px-8">
         <input
           key={fileInputKey}
           id={fileInputId}
           type="file"
+          aria-label="インポートするJSONファイル"
           accept="application/json,.json"
+          disabled={isPending}
           onChange={handleFileChange}
-          className="mt-1 block w-full text-sm"
+          className="peer sr-only"
         />
+        <p className="text-sm font-semibold text-gray-900">
+          インポートするJSONファイル
+        </p>
+        <p className="mt-1 text-xs text-gray-500">JSON / 最大5MB・5,000件</p>
+        <label
+          htmlFor={fileInputId}
+          className={`mt-5 inline-flex min-h-10 cursor-pointer items-center rounded bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800 peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-gray-900 ${
+            isPending ? "pointer-events-none opacity-50" : ""
+          }`}
+        >
+          JSONファイルを選択
+        </label>
         {isPending && (
-          <p className="mt-1 text-xs text-gray-500">読み込み中...</p>
+          <p role="status" className="mt-3 text-xs font-medium text-gray-600">
+            内容を確認しています...
+          </p>
         )}
       </div>
 

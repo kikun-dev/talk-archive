@@ -75,6 +75,10 @@ describe("TalkImportForm", () => {
     expect(
       screen.getByLabelText("インポートするJSONファイル"),
     ).toBeInTheDocument();
+    expect(screen.getByText("ファイル選択").closest("li")).toHaveAttribute(
+      "aria-current",
+      "step",
+    );
   });
 
   it("shows preview counts, period, type breakdown and row errors after preview succeeds", async () => {
@@ -99,10 +103,17 @@ describe("TalkImportForm", () => {
     );
 
     expect(
-      await screen.findByText("総件数: 5件（うち行エラー 1件）"),
+      await screen.findByLabelText("総件数: 5件（うち行エラー 1件）"),
     ).toBeInTheDocument();
-    expect(screen.getByText("取り込み対象: 3件")).toBeInTheDocument();
-    expect(screen.getByText("重複スキップ予定: 2件")).toBeInTheDocument();
+    expect(screen.getByLabelText("取り込み対象: 3件")).toBeInTheDocument();
+    expect(
+      screen.getByLabelText("重複スキップ予定: 2件"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("対象ファイル: talk.json")).toBeInTheDocument();
+    expect(screen.getByText("内容確認").closest("li")).toHaveAttribute(
+      "aria-current",
+      "step",
+    );
     expect(screen.getByText(/テキスト 2/)).toBeInTheDocument();
     expect(screen.getByText(/画像 1/)).toBeInTheDocument();
     expect(
@@ -122,7 +133,7 @@ describe("TalkImportForm", () => {
 
     selectJsonFile('{"version":1,"records":[]}');
 
-    expect(await screen.findByText("総件数: 5件")).toBeInTheDocument();
+    expect(await screen.findByLabelText("総件数: 5件")).toBeInTheDocument();
   });
 
   it("rejects a file over MAX_IMPORT_FILE_SIZE without calling the preview action, and resets the input", async () => {
@@ -220,8 +231,12 @@ describe("TalkImportForm", () => {
       ),
     );
 
-    expect(await screen.findByText("作成件数: 3件")).toBeInTheDocument();
-    expect(screen.getByText("スキップ件数: 2件")).toBeInTheDocument();
+    expect(await screen.findByLabelText("作成件数: 3件")).toBeInTheDocument();
+    expect(screen.getByLabelText("スキップ件数: 2件")).toBeInTheDocument();
+    expect(screen.getByText("完了").closest("li")).toHaveAttribute(
+      "aria-current",
+      "step",
+    );
     expect(
       screen.getByText("新規追加された参加者: 新しい発言者"),
     ).toBeInTheDocument();
