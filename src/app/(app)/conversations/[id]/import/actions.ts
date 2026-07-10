@@ -15,6 +15,10 @@ import {
 
 const FILE_SIZE_ERROR_MESSAGE = "ファイルサイズは5MB以内にしてください";
 
+function isImportFileSizeExceeded(jsonText: string): boolean {
+  return new TextEncoder().encode(jsonText).byteLength > MAX_IMPORT_FILE_SIZE;
+}
+
 function isRecord(value: unknown): value is { [key: string]: unknown } {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -69,7 +73,7 @@ export async function previewTalkImportAction(
     redirect("/login");
   }
 
-  if (jsonText.length > MAX_IMPORT_FILE_SIZE) {
+  if (isImportFileSizeExceeded(jsonText)) {
     return { error: FILE_SIZE_ERROR_MESSAGE };
   }
 
@@ -117,7 +121,7 @@ export async function executeTalkImportAction(
     redirect("/login");
   }
 
-  if (jsonText.length > MAX_IMPORT_FILE_SIZE) {
+  if (isImportFileSizeExceeded(jsonText)) {
     return { error: FILE_SIZE_ERROR_MESSAGE };
   }
 

@@ -118,6 +118,22 @@ describe("previewTalkImportAction", () => {
     expect(parseTalkImportJsonMock).not.toHaveBeenCalled();
   });
 
+  it("measures the file size in UTF-8 bytes for multibyte JSON text", async () => {
+    mockSupabaseClient({ id: "user-1" });
+    const oversizedText = "あ".repeat(Math.floor((5 * 1024 * 1024) / 3) + 1);
+
+    expect(oversizedText.length).toBeLessThan(5 * 1024 * 1024);
+    expect(new TextEncoder().encode(oversizedText).byteLength).toBeGreaterThan(
+      5 * 1024 * 1024,
+    );
+
+    const { previewTalkImportAction } = await import("./actions");
+    const result = await previewTalkImportAction("conv-1", oversizedText);
+
+    expect(result).toEqual({ error: "ファイルサイズは5MB以内にしてください" });
+    expect(parseTalkImportJsonMock).not.toHaveBeenCalled();
+  });
+
   it("passes through the ImportError message", async () => {
     mockSupabaseClient({ id: "user-1" });
     parseTalkImportJsonMock.mockImplementation(() => {
