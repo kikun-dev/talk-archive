@@ -22,7 +22,7 @@ Codexは **レビュー + リファクタリング** を担当する。
 - 設計判断の履歴（なぜそうしたか）：`docs/decisions/`
 - プロジェクト憲法（破ってはいけない）：`rules/`
 - GitHub運用（Issue/PRテンプレ）：`.github/`
-- 定型手順（スキル）：`.claude/skills/`（Claude用）/ `.codex/skills/`（Codex用。共用スキルは `.claude/skills/` へのシンボリックリンク）
+- 定型手順（スキル）：`.claude/skills/`（Claude用）/ `.agents/skills/`（Codex用。共用スキルは `.claude/skills/` へのシンボリックリンク）
 - Claude運用：この `claude.md`
 
 ### 更新ルール（記録の置き場所）

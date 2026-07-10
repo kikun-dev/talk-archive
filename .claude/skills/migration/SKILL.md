@@ -13,7 +13,8 @@ argument-hint: "<DB変更の内容>"
 ### 1. 命名
 
 - ファイル名: `YYYYMMDDHHMMSS_snake_case_summary.sql`（UTC タイムスタンプ。既存 migration の命名に合わせる）
-  - `supabase migration new <summary>` で生成するか、現在時刻から手動で命名する
+  - `npx supabase migration new <summary>` で生成するか、現在時刻から手動で命名する
+    （Supabase CLI は依存に含まれないため、既存スクリプトと同様に `npx` 経由で実行する — `scripts/generate-db-types.mjs` 参照）
   - 既存ファイルより新しいタイムスタンプになっていることを確認する
 - データ投入は migration ではなく `supabase/seed.sql` に置く
 - ファイル冒頭に目的をコメントで書く（既存 migration のスタイルに合わせる）
@@ -26,8 +27,10 @@ argument-hint: "<DB変更の内容>"
     `user_id = (select auth.uid())` スコープ。初期スキーマ migration が見本）
   - `auth.*` 関数は `(select auth.uid())` 形式で書く（行ごとの再評価を避ける）
 - **外部キー追加**: FK 列にインデックスを付ける
-- **RPC 関数**: `set search_path = ''` を必ず指定する
-  （`20260310073000_fix_security_advisor_warnings.sql` で後追い修正した経緯あり）
+- **RPC 関数**: `set search_path = public` を固定値で必ず指定する（既存 atomic RPC 共通のパターン。
+  search_path 未指定は不可 — `20260310073000_fix_security_advisor_warnings.sql` で後追い修正した経緯あり）。
+  `public` 以外（`''` や `pg_catalog`）にする場合は、関数本体のテーブル・関数・型をすべて
+  `public.*` 等でスキーマ修飾しないと適用時に解決エラーになる点に注意する
 - **複数テーブル・複数行の一括更新**: アプリ側で逐次更新せず、atomic RPC にまとめる
   （`add_atomic_text_record_append` / `add_atomic_conversation_metadata_functions` のパターン）
 - **Storage**: バケットポリシーには bucket_id + `{userId}/` プレフィックス制約を付ける
@@ -36,13 +39,13 @@ argument-hint: "<DB変更の内容>"
 
 ### 3. 適用と検証
 
-- **ローカルで検証**: `supabase db reset` を実行し、新しい migration を含む
+- **ローカルで検証**: `npx supabase db reset` を実行し、新しい migration を含む
   全 migration + seed がエラーなく適用されることを確認する
-  （ローカル Supabase が起動していなければ `supabase start`）
+  （ローカル Supabase が起動していなければ `npx supabase start`）
 - スキーマを変えたら Database 型を再生成する: `pnpm db:gen-types`
   （`src/types/database.ts` が更新される）
 - `pnpm typecheck && pnpm lint && pnpm test` と、関連画面の手動確認を行う
-- **本番へ反映**: `supabase db push` は本番 DB への書き込みのため **ユーザーが実行する**
+- **本番へ反映**: `npx supabase db push` は本番 DB への書き込みのため **ユーザーが実行する**
 
 ### 4. 関連ドキュメントの更新（該当する場合のみ）
 
