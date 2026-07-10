@@ -43,6 +43,9 @@ Claude / Codex 共用スキル。
 
 ### 4. 振る舞い不変の検証（できる限り機械的に）
 
+対象を覆うテストが無い（または薄い）場合は、**リファクタ前に現状の振る舞いを固定する特性テストを追加**し、
+それが通ることを確認してから構造を変える（テスト基盤: Vitest + Testing Library — `docs/development.md`）。
+
 「目視で同じ」ではなく、旧実装（`git show HEAD:<path>`）との機械的な比較を工夫する。実例:
 
 - JSX の移動: label / placeholder / id / className 等の**属性集合を抽出・sort して diff**

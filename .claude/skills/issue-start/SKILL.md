@@ -45,6 +45,9 @@ argument-hint: "<Issue番号>"
 以下を含む計画を会話で提示する（長大な計画を Issue に貼らない。設計判断だけ Issue に残す）:
 
 - **実装順序**: 依存方向に沿って下から（migration → types → repository → usecase → UI/actions）
+- **テスト計画（TDD 前提）**: 原則 TDD で実装する（`docs/development.md` のテスト方針）。
+  Acceptance Criteria をテストケース（Vitest / Testing Library）に翻訳して計画に含め、
+  各ステップで「先に失敗するテストを書く → 実装で通す → リファクタ」の順で進める
 - **変更ファイル一覧**（見込み）と各変更の要点
 - **検証計画**: typecheck / lint / test + 手動確認手順（Issue の Acceptance Criteria と対応させる）
 - **PR 分割方針**: 差分が大きくなる場合はどこで切るか（1 Issue = 1 PR、PRは小さく — `docs/development.md`）

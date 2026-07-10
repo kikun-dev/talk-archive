@@ -36,6 +36,7 @@ gh api repos/{owner}/{repo}/issues/{PR番号}/comments
 
 - 各指摘を `rules/architecture.md`・`CLAUDE.md` の実装ガイドライン・ADR（`docs/decisions/`）に照らして妥当性を判断する
 - 妥当な指摘は修正する。妥当でない・見送る指摘は理由を明確にする（サマリーに書く）
+- 振る舞いが変わる修正は TDD で進める（`docs/development.md`）: 先に指摘を再現する失敗テストを書き、修正で通す
 - 指摘の意図が不明瞭な場合は、推測で大きく変更せず、サマリーで確認を返す
 
 ### 3. 検証
