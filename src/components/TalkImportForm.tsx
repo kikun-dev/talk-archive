@@ -9,7 +9,11 @@ import {
 import { FormError } from "@/components/FormError";
 import { formatDateTimeJst } from "@/lib/dateTime";
 import type { ConversationParticipant } from "@/types/domain";
-import type { ImportPreview, ImportResult } from "@/usecases/importUseCases";
+import {
+  MAX_IMPORT_FILE_SIZE,
+  type ImportPreview,
+  type ImportResult,
+} from "@/usecases/importUseCases";
 
 type TalkImportFormProps = {
   conversationId: string;
@@ -78,6 +82,12 @@ export function TalkImportForm({
     }
 
     setError(undefined);
+
+    if (file.size > MAX_IMPORT_FILE_SIZE) {
+      setError("ファイルサイズは5MB以内にしてください");
+      setFileInputKey((key) => key + 1);
+      return;
+    }
 
     let text: string;
     try {
@@ -158,7 +168,11 @@ export function TalkImportForm({
     return (
       <div className="space-y-4">
         <div className="space-y-1 text-sm text-gray-700">
-          <p>総件数: {preview.totalCount}件</p>
+          <p>
+            総件数: {preview.totalCount}件
+            {preview.rowErrors.length > 0 &&
+              `（うち行エラー ${preview.rowErrors.length}件）`}
+          </p>
           <p>取り込み対象: {preview.importableCount}件</p>
           <p>重複スキップ予定: {preview.duplicateCount}件</p>
           <p>期間: {formatPeriod(preview.period)}</p>

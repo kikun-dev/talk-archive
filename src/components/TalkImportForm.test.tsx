@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { TalkImportForm } from "./TalkImportForm";
 import type { ConversationParticipant } from "@/types/domain";
+import { MAX_IMPORT_FILE_SIZE } from "@/usecases/importUseCases";
 import type {
   PreviewTalkImportResult,
   ExecuteTalkImportResult,
@@ -97,7 +98,9 @@ describe("TalkImportForm", () => {
       ),
     );
 
-    expect(await screen.findByText("総件数: 5件")).toBeInTheDocument();
+    expect(
+      await screen.findByText("総件数: 5件（うち行エラー 1件）"),
+    ).toBeInTheDocument();
     expect(screen.getByText("取り込み対象: 3件")).toBeInTheDocument();
     expect(screen.getByText("重複スキップ予定: 2件")).toBeInTheDocument();
     expect(screen.getByText(/テキスト 2/)).toBeInTheDocument();
@@ -108,6 +111,41 @@ describe("TalkImportForm", () => {
     expect(
       screen.getByText("3件目: 発言者を入力してください"),
     ).toBeInTheDocument();
+  });
+
+  it("shows the total count without a row-error suffix when there are no row errors", async () => {
+    previewTalkImportActionMock.mockResolvedValue(basePreview);
+
+    render(
+      <TalkImportForm conversationId="conv-1" participants={participants} />,
+    );
+
+    selectJsonFile('{"version":1,"records":[]}');
+
+    expect(await screen.findByText("総件数: 5件")).toBeInTheDocument();
+  });
+
+  it("rejects a file over MAX_IMPORT_FILE_SIZE without calling the preview action, and resets the input", async () => {
+    render(
+      <TalkImportForm conversationId="conv-1" participants={participants} />,
+    );
+
+    const initialInput = screen.getByLabelText("インポートするJSONファイル");
+    const oversizedFile = new File(
+      [new Uint8Array(MAX_IMPORT_FILE_SIZE + 1)],
+      "too-big.json",
+      { type: "application/json" },
+    );
+    fireEvent.change(initialInput, { target: { files: [oversizedFile] } });
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "ファイルサイズは5MB以内にしてください",
+    );
+    expect(previewTalkImportActionMock).not.toHaveBeenCalled();
+    // ファイル選択 input が再マウントされ、選択状態がクリアされている
+    expect(screen.getByLabelText("インポートするJSONファイル")).not.toBe(
+      initialInput,
+    );
   });
 
   it("shows unknown speaker selects defaulting to new participant", async () => {

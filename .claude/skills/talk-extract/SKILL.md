@@ -77,6 +77,9 @@ JSON ファイルとして書き出す:
 - 出力先: `/tmp/talk-import-<日付>.json`（例: `/tmp/talk-import-20260711.json`）
 - 書き出したら、ユーザーにファイルパスを提示する（インポート画面のファイル選択で使う）
 - 実例は `docs/examples/talk-import-sample.json` を参照
+- インポート画面には上限（ファイルサイズ5MB・5,000件）があるため、`records` が5,000件を超える場合は
+  複数の JSON ファイルに分割して出力する（例: 2,500件ずつ `talk-import-20260711-1.json` /
+  `talk-import-20260711-2.json`）
 
 ### 5. 重複について
 

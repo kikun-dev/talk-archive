@@ -26,14 +26,20 @@ declare
   next_sort_order integer;
   next_position integer;
   new_participant jsonb;
-  new_participant_id uuid;
+  new_participant_name text;
+  resolved_new_participant_id uuid;
   participant_name_to_id jsonb := '{}'::jsonb;
   created_participants jsonb := '{}'::jsonb;
   record_item jsonb;
   resolved_participant_id uuid;
+  record_posted_at timestamptz;
+  record_content_prefix text;
+  duplicate_exists boolean;
   created_record_count integer := 0;
+  skipped_record_count integer := 0;
 begin
-  -- position / sort_order の採番を直列化するため会話行をロックする
+  -- position / sort_order の採番、および participant 解決・record 重複判定を
+  -- 直列化するため会話行をロックする（#124: 重複判定・participant 解決をロック内へ）
   perform 1
   from conversations
   where id = p_conversation_id
@@ -44,19 +50,34 @@ begin
   from conversation_participants
   where conversation_id = p_conversation_id;
 
+  -- p_new_participants の各 name を解決する。
+  -- 同名の participant が既に存在すればそれを再利用し（created_participants には含めない）、
+  -- なければ新規作成する（sort_order は連番、created_participants に含める）
   for new_participant in
     select * from jsonb_array_elements(coalesce(p_new_participants, '[]'::jsonb))
   loop
-    insert into conversation_participants (conversation_id, name, sort_order)
-    values (p_conversation_id, new_participant->>'name', next_sort_order)
-    returning id into new_participant_id;
+    new_participant_name := new_participant->>'name';
+
+    select id
+    into resolved_new_participant_id
+    from conversation_participants
+    where conversation_id = p_conversation_id
+      and name = new_participant_name
+    limit 1;
+
+    if resolved_new_participant_id is null then
+      insert into conversation_participants (conversation_id, name, sort_order)
+      values (p_conversation_id, new_participant_name, next_sort_order)
+      returning id into resolved_new_participant_id;
+
+      created_participants :=
+        jsonb_set(created_participants, array[new_participant_name], to_jsonb(resolved_new_participant_id::text));
+
+      next_sort_order := next_sort_order + 1;
+    end if;
 
     participant_name_to_id :=
-      jsonb_set(participant_name_to_id, array[new_participant->>'name'], to_jsonb(new_participant_id::text));
-    created_participants :=
-      jsonb_set(created_participants, array[new_participant->>'name'], to_jsonb(new_participant_id::text));
-
-    next_sort_order := next_sort_order + 1;
+      jsonb_set(participant_name_to_id, array[new_participant_name], to_jsonb(resolved_new_participant_id::text));
   end loop;
 
   select coalesce(max(position) + 1, 0)
@@ -66,6 +87,7 @@ begin
 
   -- p_records は呼び出し側で postedAt 昇順にソート済みの前提。
   -- jsonb_array_elements は配列の順序を保持するため、その順に position を採番する
+  -- （position はスキップ後の実挿入分のみ連番で振る）
   for record_item in
     select * from jsonb_array_elements(coalesce(p_records, '[]'::jsonb))
   loop
@@ -78,6 +100,27 @@ begin
       if resolved_participant_id is null then
         raise exception 'participant not found for name: %', record_item->>'participant_name';
       end if;
+    end if;
+
+    record_posted_at := (record_item->>'posted_at')::timestamptz;
+    record_content_prefix := left(trim(coalesce(record_item->>'content', '')), 20);
+
+    -- 解決済み participant_id + posted_at + record_type + 本文先頭20文字が一致する
+    -- 既存レコード（同一会話、この呼び出し内での挿入分も含む）があればスキップする
+    select exists (
+      select 1
+      from records r
+      where r.conversation_id = p_conversation_id
+        and r.speaker_participant_id = resolved_participant_id
+        and r.posted_at = record_posted_at
+        and r.record_type = (record_item->>'record_type')::record_type
+        and left(trim(coalesce(r.content, '')), 20) = record_content_prefix
+    )
+    into duplicate_exists;
+
+    if duplicate_exists then
+      skipped_record_count := skipped_record_count + 1;
+      continue;
     end if;
 
     insert into records (
@@ -97,7 +140,7 @@ begin
       record_item->>'content',
       coalesce((record_item->>'has_audio')::boolean, false),
       resolved_participant_id,
-      (record_item->>'posted_at')::timestamptz,
+      record_posted_at,
       next_position
     );
 
@@ -107,6 +150,7 @@ begin
 
   return jsonb_build_object(
     'created_record_count', created_record_count,
+    'skipped_record_count', skipped_record_count,
     'created_participants', created_participants
   );
 end;

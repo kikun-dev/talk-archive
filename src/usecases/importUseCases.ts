@@ -22,6 +22,8 @@ export type TalkImportParseResult = {
   records: TalkImportRecord[];
   defaultYear: number | null;
   rowErrors: string[];
+  /** 入力全体の件数（行エラーで除外されたレコードも含む、#124） */
+  totalCount: number;
 };
 
 /**
@@ -39,6 +41,12 @@ const TALK_IMPORT_RECORD_TYPES: ReadonlySet<string> = new Set([
 
 const MAX_TITLE_LENGTH = 200;
 
+/** インポートファイルの最大サイズ（5MB、#124） */
+export const MAX_IMPORT_FILE_SIZE = 5 * 1024 * 1024;
+
+/** 一度にインポートできる最大レコード件数（#124） */
+export const MAX_IMPORT_RECORD_COUNT = 5000;
+
 function isTalkImportRecordType(value: unknown): value is TalkImportRecordType {
   return typeof value === "string" && TALK_IMPORT_RECORD_TYPES.has(value);
 }
@@ -47,13 +55,70 @@ function isJsonObject(value: unknown): value is { [key: string]: unknown } {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-/** ISO 8601 としてパース可能かつタイムゾーン指定（Z または ±HH:MM）を持つか */
+/**
+ * ISO 8601 の厳格な形式（YYYY-MM-DDTHH:MM[:SS[.SSS]](Z|±HH:MM)）にのみ一致する。
+ * スペース区切りや英語月名などは拒否する（#124）
+ */
+// tsconfig の target（ES2017）では名前付きキャプチャグループ（ES2018〜）が使えないため、
+// 位置ベースのキャプチャグループを使う
+// 1:year 2:month 3:day 4:hour 5:minute 6:second 7:offsetHour 8:offsetMinute
+const POSTED_AT_PATTERN =
+  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.\d{1,3})?)?(?:Z|[+-](\d{2}):(\d{2}))$/;
+
+function isLeapYear(year: number): boolean {
+  return (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
+}
+
+const DAYS_IN_MONTH: readonly number[] = [
+  31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31,
+];
+
+function daysInMonth(year: number, month: number): number {
+  if (month === 2 && isLeapYear(year)) {
+    return 29;
+  }
+  return DAYS_IN_MONTH[month - 1];
+}
+
+/** ISO 8601 の厳格な形式かつ成分（月日・時分秒・offset）が実在する値かを検証する */
 function isValidPostedAtInput(value: string): boolean {
   const trimmed = value.trim();
-  if (trimmed.length === 0 || Number.isNaN(Date.parse(trimmed))) {
+
+  const match = POSTED_AT_PATTERN.exec(trimmed);
+  if (!match) {
     return false;
   }
-  return /(Z|[+-]\d{2}:\d{2})$/.test(trimmed);
+
+  const [, year, month, day, hour, minute, second, offsetHour, offsetMinute] =
+    match;
+
+  const yearNum = Number(year);
+  const monthNum = Number(month);
+  const dayNum = Number(day);
+  const hourNum = Number(hour);
+  const minuteNum = Number(minute);
+  const secondNum = second === undefined ? 0 : Number(second);
+
+  if (monthNum < 1 || monthNum > 12) {
+    return false;
+  }
+  if (dayNum < 1 || dayNum > daysInMonth(yearNum, monthNum)) {
+    return false;
+  }
+  if (hourNum > 23) {
+    return false;
+  }
+  if (minuteNum > 59 || secondNum > 59) {
+    return false;
+  }
+
+  if (offsetHour !== undefined) {
+    if (Number(offsetHour) > 14 || Number(offsetMinute) > 59) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 /**
@@ -80,6 +145,14 @@ export function parseTalkImportJson(text: string): TalkImportParseResult {
   if (!Array.isArray(parsed.records)) {
     throw new ImportError("recordsが見つかりません");
   }
+
+  if (parsed.records.length > MAX_IMPORT_RECORD_COUNT) {
+    throw new ImportError(
+      "一度に取り込めるのは5000件までです。ファイルを分割してください",
+    );
+  }
+
+  const totalCount = parsed.records.length;
 
   const defaultYear =
     typeof parsed.defaultYear === "number" && Number.isInteger(parsed.defaultYear)
@@ -167,7 +240,7 @@ export function parseTalkImportJson(text: string): TalkImportParseResult {
     });
   });
 
-  return { records, defaultYear, rowErrors };
+  return { records, defaultYear, rowErrors, totalCount };
 }
 
 // --- 重複排除キー ---
@@ -269,12 +342,16 @@ function buildPeriod(
 /**
  * インポート内容のプレビューを構築する
  * 既存 participants / records を取得し、重複件数・期間・種別内訳・未知 speaker を集計する
+ * totalCount は parseResult.totalCount（行エラーで除外されたレコードを含む入力全体の件数）を使う。
+ * importableCount / duplicateCount は正常にパースできた records のみを対象に算出する（#124）
  */
 export async function buildImportPreview(
   client: SupabaseClient<Database>,
   conversationId: string,
-  records: TalkImportRecord[],
+  parseResult: TalkImportParseResult,
 ): Promise<ImportPreview> {
+  const { records, totalCount } = parseResult;
+
   const [participants, existingRecords] = await Promise.all([
     getConversationParticipants(client, conversationId),
     getRecordsByConversation(client, conversationId),
@@ -307,7 +384,7 @@ export async function buildImportPreview(
   );
 
   return {
-    totalCount: records.length,
+    totalCount,
     importableCount: records.length - duplicateCount,
     duplicateCount,
     period: buildPeriod(records),
@@ -383,10 +460,13 @@ function resolveSpeakers(
 
 /**
  * インポートを実行する
- * 1. speaker 名をすべて解決（未解決があれば ImportError）
- * 2. 実行時点の既存 records を取り直して重複（既存 + JSON 内部）を除外
+ * 1. speaker 名をすべて解決（未解決があれば ImportError。既存 participants の
+ *    取得はこの検証のためだけに必要）
+ * 2. JSON 内部の重複のみをここで除外する（ペイロード削減・決定的なため）。
+ *    既存 records との重複判定・participant 解決の権威は RPC 側（会話行ロック内）に
+ *    ある（並行実行時の重複作成を避けるため、#124）
  * 3. postedAt 昇順ソートのうえ、Repository 経由で import_records_atomic RPC を呼ぶ
- * 取り込み対象が 0 件なら RPC を呼ばない
+ * 取り込み対象が 0 件（JSON 内部重複除外後）なら RPC を呼ばない
  */
 export async function executeImport(
   client: SupabaseClient<Database>,
@@ -409,10 +489,7 @@ export async function executeImport(
     return resolved?.kind === "existing" ? resolved.participantId : record.speaker;
   };
 
-  const existingRecords = await getRecordsByConversation(client, conversationId);
-  const existingKeys = buildExistingDedupKeys(existingRecords);
-
-  const { unique, duplicateCount } = partitionByDuplicate(
+  const { unique, duplicateCount: jsonDuplicateCount } = partitionByDuplicate(
     input.records,
     (record) =>
       buildRecordDedupKey(
@@ -421,11 +498,15 @@ export async function executeImport(
         record.type,
         record.content,
       ),
-    existingKeys,
+    new Set<string>(),
   );
 
   if (unique.length === 0) {
-    return { createdCount: 0, skippedCount: duplicateCount, createdParticipants: {} };
+    return {
+      createdCount: 0,
+      skippedCount: jsonDuplicateCount,
+      createdParticipants: {},
+    };
   }
 
   const sorted = [...unique].sort((a, b) => a.postedAt.localeCompare(b.postedAt));
@@ -458,7 +539,7 @@ export async function executeImport(
 
   return {
     createdCount: result.createdRecordCount,
-    skippedCount: duplicateCount,
+    skippedCount: jsonDuplicateCount + result.skippedRecordCount,
     createdParticipants: result.createdParticipants,
   };
 }

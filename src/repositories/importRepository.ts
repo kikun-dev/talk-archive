@@ -19,6 +19,7 @@ export type ImportRecordsAtomicParams = {
 
 export type ImportRecordsAtomicResult = {
   createdRecordCount: number;
+  skippedRecordCount: number;
   createdParticipants: { [name: string]: string };
 };
 
@@ -50,11 +51,13 @@ export async function importRecordsAtomic(
 
   const result = data as {
     created_record_count: number;
+    skipped_record_count: number;
     created_participants: { [name: string]: string };
   };
 
   return {
     createdRecordCount: result.created_record_count,
+    skippedRecordCount: result.skipped_record_count,
     createdParticipants: result.created_participants,
   };
 }

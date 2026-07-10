@@ -37,6 +37,7 @@ vi.mock("@/usecases/importUseCases", () => ({
   buildImportPreview: buildImportPreviewMock,
   executeImport: executeImportMock,
   ImportError: ImportErrorMock,
+  MAX_IMPORT_FILE_SIZE: 5 * 1024 * 1024,
 }));
 
 function mockSupabaseClient(user: { id: string } | null) {
@@ -77,13 +78,15 @@ describe("previewTalkImportAction", () => {
     mockSupabaseClient({ id: "user-1" });
     const records = [{ speaker: "瀬戸口 心月" }];
     const rowErrors = ["2件目: 発言者を入力してください"];
-    parseTalkImportJsonMock.mockReturnValue({
+    const parseResult = {
       records,
       defaultYear: 2026,
       rowErrors,
-    });
+      totalCount: 2,
+    };
+    parseTalkImportJsonMock.mockReturnValue(parseResult);
     const preview = {
-      totalCount: 1,
+      totalCount: 2,
       importableCount: 1,
       duplicateCount: 0,
       period: null,
@@ -99,9 +102,20 @@ describe("previewTalkImportAction", () => {
     expect(buildImportPreviewMock).toHaveBeenCalledWith(
       expect.anything(),
       "conv-1",
-      records,
+      parseResult,
     );
     expect(result).toEqual({ preview: { ...preview, rowErrors } });
+  });
+
+  it("returns an error when jsonText exceeds MAX_IMPORT_FILE_SIZE", async () => {
+    mockSupabaseClient({ id: "user-1" });
+    const oversizedText = "a".repeat(5 * 1024 * 1024 + 1);
+
+    const { previewTalkImportAction } = await import("./actions");
+    const result = await previewTalkImportAction("conv-1", oversizedText);
+
+    expect(result).toEqual({ error: "ファイルサイズは5MB以内にしてください" });
+    expect(parseTalkImportJsonMock).not.toHaveBeenCalled();
   });
 
   it("passes through the ImportError message", async () => {
@@ -251,6 +265,18 @@ describe("executeTalkImportAction", () => {
     const result = await executeTalkImportAction("conv-1", "not json", "{}");
 
     expect(result).toEqual({ error: "JSONの形式が不正です" });
+    expect(executeImportMock).not.toHaveBeenCalled();
+  });
+
+  it("returns an error when jsonText exceeds MAX_IMPORT_FILE_SIZE", async () => {
+    mockSupabaseClient({ id: "user-1" });
+    const oversizedText = "a".repeat(5 * 1024 * 1024 + 1);
+
+    const { executeTalkImportAction } = await import("./actions");
+    const result = await executeTalkImportAction("conv-1", oversizedText, "{}");
+
+    expect(result).toEqual({ error: "ファイルサイズは5MB以内にしてください" });
+    expect(parseTalkImportJsonMock).not.toHaveBeenCalled();
     expect(executeImportMock).not.toHaveBeenCalled();
   });
 });

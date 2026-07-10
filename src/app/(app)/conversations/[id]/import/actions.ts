@@ -8,9 +8,12 @@ import {
   buildImportPreview,
   executeImport,
   ImportError,
+  MAX_IMPORT_FILE_SIZE,
   type ImportPreview,
   type ImportResult,
 } from "@/usecases/importUseCases";
+
+const FILE_SIZE_ERROR_MESSAGE = "ファイルサイズは5MB以内にしてください";
 
 function isRecord(value: unknown): value is { [key: string]: unknown } {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -66,12 +69,16 @@ export async function previewTalkImportAction(
     redirect("/login");
   }
 
+  if (jsonText.length > MAX_IMPORT_FILE_SIZE) {
+    return { error: FILE_SIZE_ERROR_MESSAGE };
+  }
+
   try {
     const parseResult = parseTalkImportJson(jsonText);
     const preview = await buildImportPreview(
       supabase,
       conversationId,
-      parseResult.records,
+      parseResult,
     );
 
     return { preview: { ...preview, rowErrors: parseResult.rowErrors } };
@@ -108,6 +115,10 @@ export async function executeTalkImportAction(
 
   if (!user) {
     redirect("/login");
+  }
+
+  if (jsonText.length > MAX_IMPORT_FILE_SIZE) {
+    return { error: FILE_SIZE_ERROR_MESSAGE };
   }
 
   try {

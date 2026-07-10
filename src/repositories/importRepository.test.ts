@@ -18,6 +18,7 @@ describe("importRepository", () => {
       rpcMock.mockResolvedValue({
         data: {
           created_record_count: 2,
+          skipped_record_count: 1,
           created_participants: { "新しい人": "part-new-1" },
         },
         error: null,
@@ -74,6 +75,7 @@ describe("importRepository", () => {
       });
       expect(result).toEqual({
         createdRecordCount: 2,
+        skippedRecordCount: 1,
         createdParticipants: { "新しい人": "part-new-1" },
       });
     });
