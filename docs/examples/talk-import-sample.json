@@ -1,0 +1,38 @@
+{
+  "version": 1,
+  "defaultYear": 2026,
+  "records": [
+    {
+      "speaker": "瀬戸口 心月",
+      "postedAt": "2026-06-01T20:15:00+09:00",
+      "type": "text",
+      "title": null,
+      "content": "今日のライブ本当に楽しかった！みんなありがとう🥹✨",
+      "hasAudio": false
+    },
+    {
+      "speaker": "瀬戸口 心月",
+      "postedAt": "2026-06-01T20:16:30+09:00",
+      "type": "image",
+      "title": null,
+      "content": "楽屋からの一枚📸",
+      "hasAudio": false
+    },
+    {
+      "speaker": "早乙女 ひなた",
+      "postedAt": "2026-06-01T20:20:00+09:00",
+      "type": "video",
+      "title": null,
+      "content": null,
+      "hasAudio": true
+    },
+    {
+      "speaker": "早乙女 ひなた",
+      "postedAt": "2026-06-01T20:25:45+09:00",
+      "type": "audio",
+      "title": null,
+      "content": null,
+      "hasAudio": false
+    }
+  ]
+}

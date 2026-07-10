@@ -273,6 +273,13 @@ export function ChatView({
                 >
                   会話内メディア一覧
                 </Link>
+                <Link
+                  href={`/conversations/${conversation.id}/import`}
+                  className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                  onClick={() => setIsMenuOpen(false)}
+                >
+                  インポート
+                </Link>
                 <button
                   type="button"
                   className="block w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
