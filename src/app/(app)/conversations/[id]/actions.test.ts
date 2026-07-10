@@ -29,6 +29,12 @@ const validateUpdateConversationCoverImageInputMock = vi.fn();
 const validateUpdateRecordInputMock = vi.fn();
 const updateExistingRecordMock = vi.fn();
 const deleteExistingRecordMock = vi.fn();
+const validateAddPendingMediaRecordInputMock = vi.fn();
+const addPendingMediaRecordMock = vi.fn();
+const validateAttachRecordMediaInputMock = vi.fn();
+const attachRecordMediaMock = vi.fn();
+
+class AttachMediaErrorMock extends Error {}
 
 vi.mock("@/lib/supabase/server", () => ({
   createSupabaseServerClient: createSupabaseServerClientMock,
@@ -64,6 +70,11 @@ vi.mock("@/usecases/recordUseCases", () => ({
   validateUpdateRecordInput: validateUpdateRecordInputMock,
   updateExistingRecord: updateExistingRecordMock,
   deleteExistingRecord: deleteExistingRecordMock,
+  validateAddPendingMediaRecordInput: validateAddPendingMediaRecordInputMock,
+  addPendingMediaRecord: addPendingMediaRecordMock,
+  validateAttachRecordMediaInput: validateAttachRecordMediaInputMock,
+  attachRecordMedia: attachRecordMediaMock,
+  AttachMediaError: AttachMediaErrorMock,
 }));
 
 function mockSupabaseClient(user: { id: string } | null) {
@@ -1022,5 +1033,222 @@ describe("addAudioRecordAction", () => {
       }),
     );
     expect(revalidatePathMock).toHaveBeenCalledWith("/conversations/conv-1");
+  });
+});
+
+describe("addPendingMediaRecordAction", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  function createPendingFormData(
+    overrides: Record<string, string> = {},
+  ): FormData {
+    return createFormData({
+      recordType: "video",
+      hasAudio: "true",
+      speakerParticipantId: "part-1",
+      postedAt: "2026-01-01T12:00",
+      ...overrides,
+    });
+  }
+
+  it("redirects to login when not authenticated", async () => {
+    mockSupabaseClient(null);
+
+    const { addPendingMediaRecordAction } = await import("./actions");
+    await expect(
+      addPendingMediaRecordAction("conv-1", undefined, createPendingFormData()),
+    ).rejects.toThrow("NEXT_REDIRECT: /login");
+  });
+
+  it("returns error for an invalid record type", async () => {
+    mockSupabaseClient({ id: "user-1" });
+
+    const { addPendingMediaRecordAction } = await import("./actions");
+    const result = await addPendingMediaRecordAction(
+      "conv-1",
+      undefined,
+      createPendingFormData({ recordType: "text" }),
+    );
+
+    expect(result).toEqual({ error: "レコード種別のデータが不正です" });
+    expect(addPendingMediaRecordMock).not.toHaveBeenCalled();
+  });
+
+  it("creates a pending media record and revalidates", async () => {
+    mockSupabaseClient({ id: "user-1" });
+    validateAddPendingMediaRecordInputMock.mockReturnValue(null);
+    addPendingMediaRecordMock.mockResolvedValue({ id: "rec-pend-1" });
+
+    const { addPendingMediaRecordAction } = await import("./actions");
+    const result = await addPendingMediaRecordAction(
+      "conv-1",
+      undefined,
+      createPendingFormData({ title: "タイトル" }),
+    );
+
+    expect(result).toBeUndefined();
+    expect(addPendingMediaRecordMock).toHaveBeenCalledWith(
+      expect.anything(),
+      {
+        conversationId: "conv-1",
+        recordType: "video",
+        title: "タイトル",
+        content: null,
+        hasAudio: true,
+        speakerParticipantId: "part-1",
+        postedAt: "2026-01-01T03:00:00.000Z",
+      },
+    );
+    expect(revalidatePathMock).toHaveBeenCalledWith("/conversations/conv-1");
+  });
+
+  it("returns validation error from usecase validation", async () => {
+    mockSupabaseClient({ id: "user-1" });
+    validateAddPendingMediaRecordInputMock.mockReturnValue(
+      "発言者を正しく選択してください",
+    );
+
+    const { addPendingMediaRecordAction } = await import("./actions");
+    const result = await addPendingMediaRecordAction(
+      "conv-1",
+      undefined,
+      createPendingFormData(),
+    );
+
+    expect(result).toEqual({ error: "発言者を正しく選択してください" });
+    expect(addPendingMediaRecordMock).not.toHaveBeenCalled();
+  });
+
+  it("returns generic error when the usecase fails", async () => {
+    mockSupabaseClient({ id: "user-1" });
+    validateAddPendingMediaRecordInputMock.mockReturnValue(null);
+    addPendingMediaRecordMock.mockRejectedValue(new Error("DB error"));
+
+    const { addPendingMediaRecordAction } = await import("./actions");
+    const result = await addPendingMediaRecordAction(
+      "conv-1",
+      undefined,
+      createPendingFormData(),
+    );
+
+    expect(result).toEqual({
+      error:
+        "レコードの追加に失敗しました。時間をおいて再度お試しください。",
+    });
+  });
+});
+
+describe("attachRecordMediaAction", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  function createAttachFormData(file?: File): FormData {
+    const formData = new FormData();
+    formData.set(
+      "file",
+      file ?? new File(["video-data"], "video.mp4", { type: "video/mp4" }),
+    );
+    return formData;
+  }
+
+  it("redirects to login when not authenticated", async () => {
+    mockSupabaseClient(null);
+
+    const { attachRecordMediaAction } = await import("./actions");
+    await expect(
+      attachRecordMediaAction(
+        "conv-1",
+        "rec-pend-1",
+        undefined,
+        createAttachFormData(),
+      ),
+    ).rejects.toThrow("NEXT_REDIRECT: /login");
+  });
+
+  it("returns error when file is missing", async () => {
+    mockSupabaseClient({ id: "user-1" });
+
+    const { attachRecordMediaAction } = await import("./actions");
+    const result = await attachRecordMediaAction(
+      "conv-1",
+      "rec-pend-1",
+      undefined,
+      new FormData(),
+    );
+
+    expect(result).toEqual({ error: "ファイルを選択してください" });
+    expect(attachRecordMediaMock).not.toHaveBeenCalled();
+  });
+
+  it("attaches media and revalidates", async () => {
+    mockSupabaseClient({ id: "user-1" });
+    validateAttachRecordMediaInputMock.mockReturnValue(null);
+    attachRecordMediaMock.mockResolvedValue({
+      record: { id: "rec-pend-1" },
+      attachment: { id: "att-1" },
+    });
+
+    const file = new File(["video-data"], "video.mp4", { type: "video/mp4" });
+    const { attachRecordMediaAction } = await import("./actions");
+    const result = await attachRecordMediaAction(
+      "conv-1",
+      "rec-pend-1",
+      undefined,
+      createAttachFormData(file),
+    );
+
+    expect(result).toBeUndefined();
+    expect(attachRecordMediaMock).toHaveBeenCalledWith(expect.anything(), {
+      userId: "user-1",
+      recordId: "rec-pend-1",
+      file,
+      filename: "video.mp4",
+      contentType: "video/mp4",
+    });
+    expect(revalidatePathMock).toHaveBeenCalledWith("/conversations/conv-1");
+  });
+
+  it("returns the message of an AttachMediaError as-is", async () => {
+    mockSupabaseClient({ id: "user-1" });
+    validateAttachRecordMediaInputMock.mockReturnValue(null);
+    attachRecordMediaMock.mockRejectedValue(
+      new AttachMediaErrorMock(
+        "このレコードにはすでにメディアが添付されています",
+      ),
+    );
+
+    const { attachRecordMediaAction } = await import("./actions");
+    const result = await attachRecordMediaAction(
+      "conv-1",
+      "rec-pend-1",
+      undefined,
+      createAttachFormData(),
+    );
+
+    expect(result).toEqual({
+      error: "このレコードにはすでにメディアが添付されています",
+    });
+  });
+
+  it("returns generic error for unexpected failures", async () => {
+    mockSupabaseClient({ id: "user-1" });
+    validateAttachRecordMediaInputMock.mockReturnValue(null);
+    attachRecordMediaMock.mockRejectedValue(new Error("Storage down"));
+
+    const { attachRecordMediaAction } = await import("./actions");
+    const result = await attachRecordMediaAction(
+      "conv-1",
+      "rec-pend-1",
+      undefined,
+      createAttachFormData(),
+    );
+
+    expect(result).toEqual({
+      error:
+        "メディアの添付に失敗しました。時間をおいて再度お試しください。",
+    });
   });
 });

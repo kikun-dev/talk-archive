@@ -17,6 +17,11 @@ import {
   validateDateSearchInput,
   filterMediaRecords,
   listMediaRecordsByConversation,
+  validateAddPendingMediaRecordInput,
+  addPendingMediaRecord,
+  validateAttachRecordMediaInput,
+  attachRecordMedia,
+  getPendingMediaRecordIds,
 } from "./recordUseCases";
 
 vi.mock("@/repositories/recordRepository");
@@ -27,12 +32,14 @@ import {
   createTextRecordAtNextPosition,
   createMediaRecordAtNextPosition,
   getMediaRecordsByConversation,
+  getRecord,
   updateRecord,
   deleteRecord,
   getRecordsByConversationAndDateRange,
 } from "@/repositories/recordRepository";
 import {
   createAttachment,
+  getAttachmentsByRecord,
   getAttachmentsByRecordIds,
 } from "@/repositories/attachmentRepository";
 import {
@@ -51,9 +58,11 @@ const mockCreateMediaRecordAtNextPosition = vi.mocked(
 const mockGetMediaRecordsByConversation = vi.mocked(
   getMediaRecordsByConversation,
 );
+const mockGetRecord = vi.mocked(getRecord);
 const mockUpdateRecord = vi.mocked(updateRecord);
 const mockDeleteRecord = vi.mocked(deleteRecord);
 const mockCreateAttachment = vi.mocked(createAttachment);
+const mockGetAttachmentsByRecord = vi.mocked(getAttachmentsByRecord);
 const mockGetAttachmentsByRecordIds = vi.mocked(getAttachmentsByRecordIds);
 const mockBuildStoragePath = vi.mocked(buildStoragePath);
 const mockUploadFile = vi.mocked(uploadFile);
@@ -906,6 +915,324 @@ describe("recordUseCases", () => {
         client,
         "conv-1",
       );
+    });
+  });
+
+  // --- メディア未添付レコード（#113） ---
+
+  const basePendingInput = {
+    conversationId: "conv-1",
+    recordType: "video" as const,
+    hasAudio: true,
+    speakerParticipantId: participantId,
+    postedAt: "2026-01-01T12:00:00Z",
+  };
+
+  const pendingVideoRecord: Record = {
+    ...imageRecord,
+    id: "rec-pend-1",
+    recordType: "video",
+    hasAudio: true,
+  };
+
+  describe("validateAddPendingMediaRecordInput", () => {
+    it("returns null for valid input", () => {
+      expect(validateAddPendingMediaRecordInput(basePendingInput)).toBeNull();
+    });
+
+    it("rejects title over 200 characters", () => {
+      expect(
+        validateAddPendingMediaRecordInput({
+          ...basePendingInput,
+          title: "あ".repeat(201),
+        }),
+      ).toBe("タイトルは200文字以内で入力してください");
+    });
+
+    it("rejects invalid speakerParticipantId", () => {
+      expect(
+        validateAddPendingMediaRecordInput({
+          ...basePendingInput,
+          speakerParticipantId: "not-a-uuid",
+        }),
+      ).toBe("発言者を正しく選択してください");
+    });
+
+    it("rejects invalid postedAt", () => {
+      expect(
+        validateAddPendingMediaRecordInput({
+          ...basePendingInput,
+          postedAt: "invalid-date",
+        }),
+      ).toBe("投稿日時が不正です");
+    });
+  });
+
+  describe("addPendingMediaRecord", () => {
+    it("creates a media record without upload or attachment", async () => {
+      mockCreateMediaRecordAtNextPosition.mockResolvedValue(
+        pendingVideoRecord,
+      );
+
+      const result = await addPendingMediaRecord(client, basePendingInput);
+
+      expect(result.id).toBe("rec-pend-1");
+      expect(mockCreateMediaRecordAtNextPosition).toHaveBeenCalledWith(
+        client,
+        {
+          conversationId: "conv-1",
+          recordType: "video",
+          title: null,
+          content: null,
+          hasAudio: true,
+          speakerParticipantId: participantId,
+          postedAt: "2026-01-01T12:00:00Z",
+        },
+      );
+      expect(mockUploadFile).not.toHaveBeenCalled();
+      expect(mockCreateAttachment).not.toHaveBeenCalled();
+    });
+
+    it("trims title and content", async () => {
+      mockCreateMediaRecordAtNextPosition.mockResolvedValue({
+        ...pendingVideoRecord,
+        recordType: "image",
+      });
+
+      await addPendingMediaRecord(client, {
+        ...basePendingInput,
+        recordType: "image",
+        hasAudio: undefined,
+        title: "  タイトル  ",
+        content: "  テキスト  ",
+      });
+
+      expect(mockCreateMediaRecordAtNextPosition).toHaveBeenCalledWith(
+        client,
+        expect.objectContaining({
+          recordType: "image",
+          title: "タイトル",
+          content: "テキスト",
+          hasAudio: false,
+        }),
+      );
+    });
+
+    it("throws on invalid input without creating record", async () => {
+      await expect(
+        addPendingMediaRecord(client, {
+          ...basePendingInput,
+          postedAt: "invalid-date",
+        }),
+      ).rejects.toThrow("投稿日時が不正です");
+
+      expect(mockCreateMediaRecordAtNextPosition).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("validateAttachRecordMediaInput", () => {
+    const baseAttachInput = {
+      userId: "user-1",
+      recordId: "rec-pend-1",
+      file: new Blob(["video-data"], { type: "video/mp4" }),
+      filename: "video.mp4",
+      contentType: "video/mp4",
+    };
+
+    it("returns null for valid input", () => {
+      expect(validateAttachRecordMediaInput(baseAttachInput)).toBeNull();
+    });
+
+    it("rejects empty filename", () => {
+      expect(
+        validateAttachRecordMediaInput({ ...baseAttachInput, filename: " " }),
+      ).toBe("ファイル名を指定してください");
+    });
+
+    it("rejects empty contentType", () => {
+      expect(
+        validateAttachRecordMediaInput({
+          ...baseAttachInput,
+          contentType: "",
+        }),
+      ).toBe("コンテンツタイプを指定してください");
+    });
+  });
+
+  describe("attachRecordMedia", () => {
+    const attachInput = {
+      userId: "user-1",
+      recordId: "rec-pend-1",
+      file: new Blob(["video-data"], { type: "video/mp4" }),
+      filename: "video.mp4",
+      contentType: "video/mp4",
+    };
+
+    function setupAttachMocks() {
+      mockGetRecord.mockResolvedValue(pendingVideoRecord);
+      mockGetAttachmentsByRecord.mockResolvedValue([]);
+      mockBuildStoragePath.mockReturnValue(
+        "user-1/conv-1/rec-pend-1/video.mp4",
+      );
+      mockUploadFile.mockResolvedValue("user-1/conv-1/rec-pend-1/video.mp4");
+      mockCreateAttachment.mockResolvedValue({
+        ...baseAttachment,
+        id: "att-2",
+        recordId: "rec-pend-1",
+        filePath: "user-1/conv-1/rec-pend-1/video.mp4",
+        mimeType: "video/mp4",
+      });
+    }
+
+    it("uploads file and creates attachment for a pending record", async () => {
+      setupAttachMocks();
+
+      const result = await attachRecordMedia(client, attachInput);
+
+      expect(result.record.id).toBe("rec-pend-1");
+      expect(result.attachment.id).toBe("att-2");
+      expect(mockBuildStoragePath).toHaveBeenCalledWith({
+        userId: "user-1",
+        conversationId: "conv-1",
+        recordId: "rec-pend-1",
+        filename: "video.mp4",
+      });
+      expect(mockUploadFile).toHaveBeenCalledWith(client, {
+        path: "user-1/conv-1/rec-pend-1/video.mp4",
+        file: attachInput.file,
+        contentType: "video/mp4",
+      });
+      expect(mockCreateAttachment).toHaveBeenCalledWith(client, {
+        recordId: "rec-pend-1",
+        filePath: "user-1/conv-1/rec-pend-1/video.mp4",
+        mimeType: "video/mp4",
+        fileSize: attachInput.file.size,
+      });
+    });
+
+    it("throws when record is not found", async () => {
+      mockGetRecord.mockResolvedValue(null);
+
+      await expect(attachRecordMedia(client, attachInput)).rejects.toThrow(
+        "レコードが見つかりません",
+      );
+      expect(mockUploadFile).not.toHaveBeenCalled();
+    });
+
+    it("rejects text records", async () => {
+      mockGetRecord.mockResolvedValue(baseRecord);
+
+      await expect(attachRecordMedia(client, attachInput)).rejects.toThrow(
+        "テキストレコードにはメディアを添付できません",
+      );
+      expect(mockUploadFile).not.toHaveBeenCalled();
+    });
+
+    it("rejects when the record already has an attachment", async () => {
+      mockGetRecord.mockResolvedValue(pendingVideoRecord);
+      mockGetAttachmentsByRecord.mockResolvedValue([baseAttachment]);
+
+      await expect(attachRecordMedia(client, attachInput)).rejects.toThrow(
+        "このレコードにはすでにメディアが添付されています",
+      );
+      expect(mockUploadFile).not.toHaveBeenCalled();
+    });
+
+    it("rejects a mime type that does not match the record type", async () => {
+      mockGetRecord.mockResolvedValue(pendingVideoRecord);
+      mockGetAttachmentsByRecord.mockResolvedValue([]);
+
+      await expect(
+        attachRecordMedia(client, {
+          ...attachInput,
+          contentType: "image/jpeg",
+        }),
+      ).rejects.toThrow("動画ファイルを選択してください");
+      expect(mockUploadFile).not.toHaveBeenCalled();
+    });
+
+    it("rejects an image file over the 10MB limit", async () => {
+      mockGetRecord.mockResolvedValue({
+        ...pendingVideoRecord,
+        recordType: "image",
+      });
+      mockGetAttachmentsByRecord.mockResolvedValue([]);
+
+      await expect(
+        attachRecordMedia(client, {
+          ...attachInput,
+          file: { size: 10 * 1024 * 1024 + 1 } as Blob,
+          contentType: "image/jpeg",
+        }),
+      ).rejects.toThrow("ファイルサイズは10MB以内にしてください");
+      expect(mockUploadFile).not.toHaveBeenCalled();
+    });
+
+    it("rejects a video file over the 50MB limit", async () => {
+      mockGetRecord.mockResolvedValue(pendingVideoRecord);
+      mockGetAttachmentsByRecord.mockResolvedValue([]);
+
+      await expect(
+        attachRecordMedia(client, {
+          ...attachInput,
+          file: { size: 50 * 1024 * 1024 + 1 } as Blob,
+        }),
+      ).rejects.toThrow("ファイルサイズは50MB以内にしてください");
+      expect(mockUploadFile).not.toHaveBeenCalled();
+    });
+
+    it("deletes the uploaded file but keeps the record when attachment creation fails", async () => {
+      mockGetRecord.mockResolvedValue(pendingVideoRecord);
+      mockGetAttachmentsByRecord.mockResolvedValue([]);
+      mockBuildStoragePath.mockReturnValue(
+        "user-1/conv-1/rec-pend-1/video.mp4",
+      );
+      mockUploadFile.mockResolvedValue("user-1/conv-1/rec-pend-1/video.mp4");
+      mockCreateAttachment.mockRejectedValue(new Error("Attachment failed"));
+      mockDeleteFile.mockResolvedValue(undefined);
+
+      await expect(attachRecordMedia(client, attachInput)).rejects.toThrow(
+        "Attachment failed",
+      );
+
+      expect(mockDeleteFile).toHaveBeenCalledWith(
+        client,
+        "user-1/conv-1/rec-pend-1/video.mp4",
+      );
+      expect(mockDeleteRecord).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("getPendingMediaRecordIds", () => {
+    it("returns ids of media records without attachments", async () => {
+      const attachedImage = { ...imageRecord, id: "rec-img-attached" };
+      const pendingAudio: Record = {
+        ...imageRecord,
+        id: "rec-audio-pending",
+        recordType: "audio",
+      };
+      mockGetAttachmentsByRecordIds.mockResolvedValue([
+        { ...baseAttachment, recordId: "rec-img-attached" },
+      ]);
+
+      const result = await getPendingMediaRecordIds(client, [
+        baseRecord,
+        attachedImage,
+        pendingAudio,
+      ]);
+
+      expect(result).toEqual(new Set(["rec-audio-pending"]));
+      expect(mockGetAttachmentsByRecordIds).toHaveBeenCalledWith(client, [
+        "rec-img-attached",
+        "rec-audio-pending",
+      ]);
+    });
+
+    it("returns an empty set without querying when there are no media records", async () => {
+      const result = await getPendingMediaRecordIds(client, [baseRecord]);
+
+      expect(result).toEqual(new Set());
+      expect(mockGetAttachmentsByRecordIds).not.toHaveBeenCalled();
     });
   });
 });

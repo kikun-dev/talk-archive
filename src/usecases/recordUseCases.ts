@@ -5,12 +5,14 @@ import {
   createTextRecordAtNextPosition,
   createMediaRecordAtNextPosition,
   getMediaRecordsByConversation,
+  getRecord,
   getRecordsByConversationAndDateRange,
   updateRecord,
   deleteRecord,
 } from "@/repositories/recordRepository";
 import {
   createAttachment,
+  getAttachmentsByRecord,
   getAttachmentsByRecordIds,
 } from "@/repositories/attachmentRepository";
 import {
@@ -281,6 +283,226 @@ async function createMediaRecord(
   }
 
   return { record, attachment };
+}
+
+// --- メディア未添付レコード（#113） ---
+// attachment が 0 件のメディアレコードを「未添付」とみなす（状態カラムは持たない）
+
+export type AddPendingMediaRecordInput = {
+  conversationId: string;
+  recordType: Exclude<RecordType, "text">;
+  title?: string | null;
+  content?: string | null;
+  hasAudio?: boolean;
+  speakerParticipantId: string;
+  postedAt: string;
+};
+
+export function validateAddPendingMediaRecordInput(
+  input: AddPendingMediaRecordInput,
+): string | null {
+  if (input.title !== undefined && input.title !== null) {
+    const trimmedTitle = input.title.trim();
+    if (trimmedTitle.length > 200) {
+      return "タイトルは200文字以内で入力してください";
+    }
+  }
+
+  if (!isValidUuid(input.speakerParticipantId.trim())) {
+    return "発言者を正しく選択してください";
+  }
+
+  if (!isValidPostedAt(input.postedAt.trim())) {
+    return "投稿日時が不正です";
+  }
+
+  return null;
+}
+
+export async function addPendingMediaRecord(
+  client: SupabaseClient<Database>,
+  input: AddPendingMediaRecordInput,
+): Promise<Record> {
+  const validationError = validateAddPendingMediaRecordInput(input);
+  if (validationError) {
+    throw new Error(validationError);
+  }
+
+  return createMediaRecordAtNextPosition(client, {
+    conversationId: input.conversationId,
+    recordType: input.recordType,
+    title: input.title?.trim() ?? null,
+    content: input.content?.trim() ?? null,
+    hasAudio: input.hasAudio ?? false,
+    speakerParticipantId: input.speakerParticipantId.trim(),
+    postedAt: input.postedAt.trim(),
+  });
+}
+
+export type AttachRecordMediaInput = {
+  userId: string;
+  recordId: string;
+  file: File | Blob;
+  filename: string;
+  contentType: string;
+};
+
+/**
+ * 添付操作のユーザー向けエラー
+ * action 層はこのエラーの message をそのまま画面に返してよい
+ */
+export class AttachMediaError extends Error {}
+
+const MAX_ATTACH_IMAGE_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+const MAX_ATTACH_MEDIA_FILE_SIZE = 50 * 1024 * 1024; // 50MB
+
+const MEDIA_TYPE_RULES: {
+  [key in Exclude<RecordType, "text">]: {
+    mimePrefix: string;
+    maxFileSize: number;
+    mismatchError: string;
+    sizeError: string;
+  };
+} = {
+  image: {
+    mimePrefix: "image/",
+    maxFileSize: MAX_ATTACH_IMAGE_FILE_SIZE,
+    mismatchError: "画像ファイルを選択してください",
+    sizeError: "ファイルサイズは10MB以内にしてください",
+  },
+  video: {
+    mimePrefix: "video/",
+    maxFileSize: MAX_ATTACH_MEDIA_FILE_SIZE,
+    mismatchError: "動画ファイルを選択してください",
+    sizeError: "ファイルサイズは50MB以内にしてください",
+  },
+  audio: {
+    mimePrefix: "audio/",
+    maxFileSize: MAX_ATTACH_MEDIA_FILE_SIZE,
+    mismatchError: "音声ファイルを選択してください",
+    sizeError: "ファイルサイズは50MB以内にしてください",
+  },
+};
+
+function isMediaRecordType(
+  recordType: RecordType,
+): recordType is Exclude<RecordType, "text"> {
+  return recordType !== "text";
+}
+
+export function validateAttachRecordMediaInput(
+  input: AttachRecordMediaInput,
+): string | null {
+  if (input.filename.trim().length === 0) {
+    return "ファイル名を指定してください";
+  }
+
+  if (input.contentType.trim().length === 0) {
+    return "コンテンツタイプを指定してください";
+  }
+
+  return null;
+}
+
+/**
+ * 未添付のメディアレコードにファイルを添付する
+ * 1. レコードの存在・種別・未添付を確認
+ * 2. ファイルアップロード
+ * 3. Attachment メタデータ作成
+ *
+ * Attachment 作成に失敗した場合、アップロード済みファイルは削除するが
+ * レコードは既存のものなので削除しない（createMediaRecord との違い）
+ */
+export async function attachRecordMedia(
+  client: SupabaseClient<Database>,
+  input: AttachRecordMediaInput,
+): Promise<MediaRecordResult> {
+  const validationError = validateAttachRecordMediaInput(input);
+  if (validationError) {
+    throw new Error(validationError);
+  }
+
+  const record = await getRecord(client, input.recordId);
+  if (!record) {
+    throw new AttachMediaError("レコードが見つかりません");
+  }
+
+  if (!isMediaRecordType(record.recordType)) {
+    throw new AttachMediaError("テキストレコードにはメディアを添付できません");
+  }
+
+  const rules = MEDIA_TYPE_RULES[record.recordType];
+  if (!input.contentType.startsWith(rules.mimePrefix)) {
+    throw new AttachMediaError(rules.mismatchError);
+  }
+  if (input.file.size > rules.maxFileSize) {
+    throw new AttachMediaError(rules.sizeError);
+  }
+
+  const existingAttachments = await getAttachmentsByRecord(client, record.id);
+  if (existingAttachments.length > 0) {
+    throw new AttachMediaError(
+      "このレコードにはすでにメディアが添付されています",
+    );
+  }
+
+  const storagePath = buildStoragePath({
+    userId: input.userId,
+    conversationId: record.conversationId,
+    recordId: record.id,
+    filename: input.filename,
+  });
+
+  const uploadedPath = await uploadFile(client, {
+    path: storagePath,
+    file: input.file,
+    contentType: input.contentType,
+  });
+
+  let attachment: Attachment;
+  try {
+    attachment = await createAttachment(client, {
+      recordId: record.id,
+      filePath: uploadedPath,
+      mimeType: input.contentType,
+      fileSize: input.file.size,
+    });
+  } catch (attachmentError) {
+    await deleteFile(client, uploadedPath).catch(() => {});
+    throw attachmentError;
+  }
+
+  return { record, attachment };
+}
+
+/**
+ * attachment を持たないメディアレコード（= 未添付）の ID 集合を返す
+ */
+export async function getPendingMediaRecordIds(
+  client: SupabaseClient<Database>,
+  records: Record[],
+): Promise<Set<string>> {
+  const mediaRecords = records.filter((r) =>
+    MEDIA_RECORD_TYPES.has(r.recordType),
+  );
+
+  if (mediaRecords.length === 0) {
+    return new Set();
+  }
+
+  const attachments = await getAttachmentsByRecordIds(
+    client,
+    mediaRecords.map((record) => record.id),
+  );
+  const attachedRecordIds = new Set(
+    attachments.map((attachment) => attachment.recordId),
+  );
+
+  return new Set(
+    mediaRecords
+      .filter((record) => !attachedRecordIds.has(record.id))
+      .map((record) => record.id),
+  );
 }
 
 export async function addImageRecord(
