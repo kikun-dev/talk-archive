@@ -1,9 +1,12 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
-import type { Record as DomainRecord } from "@/types/domain";
+import { MAX_PARTICIPANT_NAME_LENGTH } from "@/lib/validationConstraints";
 import { getConversationParticipants } from "@/repositories/conversationParticipantRepository";
-import { getRecordsByConversation } from "@/repositories/recordRepository";
-import { importRecordsAtomic } from "@/repositories/importRepository";
+import {
+  getImportDedupCandidates,
+  importRecordsAtomic,
+  type ImportDedupCandidate,
+} from "@/repositories/importRepository";
 
 // --- パース ---
 
@@ -171,8 +174,17 @@ export function parseTalkImportJson(text: string): TalkImportParseResult {
     }
 
     const speaker = rawRecord.speaker;
-    if (typeof speaker !== "string" || speaker.trim().length === 0) {
+    if (typeof speaker !== "string") {
       rowErrors.push(`${rowLabel}: 発言者を入力してください`);
+      return;
+    }
+    const trimmedSpeaker = speaker.trim();
+    if (trimmedSpeaker.length === 0) {
+      rowErrors.push(`${rowLabel}: 発言者を入力してください`);
+      return;
+    }
+    if (trimmedSpeaker.length > MAX_PARTICIPANT_NAME_LENGTH) {
+      rowErrors.push(`${rowLabel}: 発言者は100文字以内で入力してください`);
       return;
     }
 
@@ -231,7 +243,7 @@ export function parseTalkImportJson(text: string): TalkImportParseResult {
     const hasAudio = rawHasAudio === undefined ? false : rawHasAudio;
 
     records.push({
-      speaker: speaker.trim(),
+      speaker: trimmedSpeaker,
       postedAt: new Date(postedAt).toISOString(),
       type,
       title,
@@ -260,15 +272,17 @@ export function buildRecordDedupKey(
   return `${participantId}|${normalizedPostedAt}|${recordType}|${normalizedContent}`;
 }
 
-function buildExistingDedupKeys(existingRecords: DomainRecord[]): Set<string> {
+function buildExistingDedupKeys(
+  existingRecords: ImportDedupCandidate[],
+): Set<string> {
   const keys = new Set<string>();
   for (const record of existingRecords) {
     keys.add(
       buildRecordDedupKey(
-        record.speakerParticipantId,
+        record.participantId,
         record.postedAt,
         record.recordType,
-        record.content,
+        record.contentPrefix,
       ),
     );
   }
@@ -354,7 +368,7 @@ export async function buildImportPreview(
 
   const [participants, existingRecords] = await Promise.all([
     getConversationParticipants(client, conversationId),
-    getRecordsByConversation(client, conversationId),
+    getImportDedupCandidates(client, conversationId),
   ]);
 
   const participantIdByName = new Map(

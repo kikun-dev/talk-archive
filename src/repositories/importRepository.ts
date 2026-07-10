@@ -1,6 +1,33 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
 
+export type ImportDedupCandidate = {
+  participantId: string;
+  postedAt: string;
+  recordType: string;
+  contentPrefix: string;
+};
+
+export async function getImportDedupCandidates(
+  client: SupabaseClient<Database>,
+  conversationId: string,
+): Promise<ImportDedupCandidate[]> {
+  const { data, error } = await client.rpc("get_import_dedup_candidates", {
+    p_conversation_id: conversationId,
+  });
+
+  if (error) {
+    throw error;
+  }
+
+  return data.map((row) => ({
+    participantId: row.participant_id,
+    postedAt: row.posted_at,
+    recordType: row.record_type,
+    contentPrefix: row.content_prefix,
+  }));
+}
+
 export type ImportRecordsAtomicRecordInput = {
   participantId: string | null;
   participantName: string | null;

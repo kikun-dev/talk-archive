@@ -12,6 +12,31 @@
 drop function if exists append_text_record(uuid, text, text);
 drop function if exists append_media_record(uuid, record_type, text, text, boolean);
 
+-- プレビューの重複判定に必要な値だけを返し、本文全文の転送を避ける。
+-- security invoker のため records の既存 RLS がそのまま適用される。
+create or replace function get_import_dedup_candidates(
+  p_conversation_id uuid
+)
+returns table (
+  participant_id uuid,
+  posted_at timestamptz,
+  record_type record_type,
+  content_prefix text
+)
+language sql
+stable
+security invoker
+set search_path = public
+as $$
+  select
+    r.speaker_participant_id,
+    r.posted_at,
+    r.record_type,
+    left(trim(coalesce(r.content, '')), 20)
+  from records r
+  where r.conversation_id = p_conversation_id;
+$$;
+
 create or replace function import_records_atomic(
   p_conversation_id uuid,
   p_new_participants jsonb, -- [{"name": "..."}]
@@ -155,3 +180,15 @@ begin
   );
 end;
 $$;
+
+-- security invoker RPC が既存 RLS の下で必要な操作だけを行えるようにする。
+-- 関数の既定 EXECUTE 権限（PUBLIC）は外し、認証済みユーザーに限定する。
+revoke execute on function get_import_dedup_candidates(uuid) from public;
+revoke execute on function import_records_atomic(uuid, jsonb, jsonb) from public;
+grant execute on function get_import_dedup_candidates(uuid) to authenticated;
+grant execute on function import_records_atomic(uuid, jsonb, jsonb) to authenticated;
+
+grant select on conversations to authenticated;
+grant update (id) on conversations to authenticated;
+grant select, insert on conversation_participants to authenticated;
+grant select, insert on records to authenticated;

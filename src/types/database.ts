@@ -372,6 +372,15 @@ export type Database = {
           isSetofReturn: true
         }
       }
+      get_import_dedup_candidates: {
+        Args: { p_conversation_id: string }
+        Returns: {
+          content_prefix: string
+          participant_id: string
+          posted_at: string
+          record_type: Database["public"]["Enums"]["record_type"]
+        }[]
+      }
       import_records_atomic: {
         Args: {
           p_conversation_id: string
@@ -552,4 +561,3 @@ export const Constants = {
     },
   },
 } as const
-

@@ -1,9 +1,53 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
-import { importRecordsAtomic } from "./importRepository";
+import {
+  getImportDedupCandidates,
+  importRecordsAtomic,
+} from "./importRepository";
 
 describe("importRepository", () => {
+  describe("getImportDedupCandidates", () => {
+    it("calls the projection RPC and maps its rows", async () => {
+      const rpcMock = vi.fn().mockResolvedValue({
+        data: [
+          {
+            participant_id: "part-1",
+            posted_at: "2026-01-01T00:00:00.000Z",
+            record_type: "text",
+            content_prefix: "12345678901234567890",
+          },
+        ],
+        error: null,
+      });
+      const client = { rpc: rpcMock } as unknown as SupabaseClient<Database>;
+
+      const result = await getImportDedupCandidates(client, "conv-1");
+
+      expect(rpcMock).toHaveBeenCalledWith("get_import_dedup_candidates", {
+        p_conversation_id: "conv-1",
+      });
+      expect(result).toEqual([
+        {
+          participantId: "part-1",
+          postedAt: "2026-01-01T00:00:00.000Z",
+          recordType: "text",
+          contentPrefix: "12345678901234567890",
+        },
+      ]);
+    });
+
+    it("throws on error", async () => {
+      const dbError = { message: "DB error", code: "42000" };
+      const rpcMock = vi.fn().mockResolvedValue({ data: null, error: dbError });
+      const client = { rpc: rpcMock } as unknown as SupabaseClient<Database>;
+
+      await expect(
+        getImportDedupCandidates(client, "conv-1"),
+      ).rejects.toEqual(dbError);
+    });
+  });
+
   describe("importRecordsAtomic", () => {
     let rpcMock: ReturnType<typeof vi.fn>;
     let client: SupabaseClient<Database>;

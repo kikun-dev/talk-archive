@@ -22,6 +22,7 @@ import {
 import { getConversationParticipants } from "@/repositories/conversationParticipantRepository";
 import { updateConversationParticipantThumbnail } from "@/repositories/conversationParticipantRepository";
 import { getRecordsByConversation } from "@/repositories/recordRepository";
+import { MAX_PARTICIPANT_NAME_LENGTH } from "@/lib/validationConstraints";
 import {
   buildConversationCoverPath,
   buildParticipantThumbnailPath,
@@ -155,7 +156,7 @@ export function validateConversationParticipants(
     if (trimmedName.length === 0) {
       return "参加者名を入力してください";
     }
-    if (trimmedName.length > 100) {
+    if (trimmedName.length > MAX_PARTICIPANT_NAME_LENGTH) {
       return "参加者名は100文字以内で入力してください";
     }
     if (normalizedNames.has(trimmedName)) {

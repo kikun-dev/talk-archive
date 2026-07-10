@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
-import type { ConversationParticipant, Record as DomainRecord } from "@/types/domain";
+import type { ConversationParticipant } from "@/types/domain";
+import type { ImportDedupCandidate } from "@/repositories/importRepository";
 import {
   parseTalkImportJson,
   buildRecordDedupKey,
@@ -15,15 +16,16 @@ import {
 } from "./importUseCases";
 
 vi.mock("@/repositories/conversationParticipantRepository");
-vi.mock("@/repositories/recordRepository");
 vi.mock("@/repositories/importRepository");
 
 import { getConversationParticipants } from "@/repositories/conversationParticipantRepository";
-import { getRecordsByConversation } from "@/repositories/recordRepository";
-import { importRecordsAtomic } from "@/repositories/importRepository";
+import {
+  getImportDedupCandidates,
+  importRecordsAtomic,
+} from "@/repositories/importRepository";
 
 const mockGetConversationParticipants = vi.mocked(getConversationParticipants);
-const mockGetRecordsByConversation = vi.mocked(getRecordsByConversation);
+const mockGetImportDedupCandidates = vi.mocked(getImportDedupCandidates);
 const mockImportRecordsAtomic = vi.mocked(importRecordsAtomic);
 
 const client = {} as SupabaseClient<Database>;
@@ -42,19 +44,14 @@ function participant(
   };
 }
 
-function domainRecord(overrides: Partial<DomainRecord> = {}): DomainRecord {
+function dedupCandidate(
+  overrides: Partial<ImportDedupCandidate> = {},
+): ImportDedupCandidate {
   return {
-    id: "rec-1",
-    conversationId: "conv-1",
-    recordType: "text",
-    title: null,
-    content: "こんにちは",
-    hasAudio: false,
-    speakerParticipantId: "part-1",
+    participantId: "part-1",
     postedAt: "2026-07-07T06:19:00.000Z",
-    position: 0,
-    createdAt: "2026-01-01T00:00:00Z",
-    updatedAt: "2026-01-01T00:00:00Z",
+    recordType: "text",
+    contentPrefix: "こんにちは",
     ...overrides,
   };
 }
@@ -151,6 +148,47 @@ describe("importUseCases", () => {
       const result = parseTalkImportJson(json);
       expect(result.records).toEqual([]);
       expect(result.rowErrors).toEqual(["1件目: 発言者を入力してください"]);
+    });
+
+    it("accepts a speaker name of exactly 100 characters after trimming", () => {
+      const speaker = "あ".repeat(100);
+      const json = JSON.stringify({
+        version: 1,
+        records: [
+          {
+            speaker: ` ${speaker} `,
+            postedAt: "2026-07-07T15:19:00+09:00",
+            type: "text",
+            content: "こんにちは",
+          },
+        ],
+      });
+
+      const result = parseTalkImportJson(json);
+
+      expect(result.rowErrors).toEqual([]);
+      expect(result.records[0].speaker).toBe(speaker);
+    });
+
+    it("collects a row error for a speaker name over 100 characters", () => {
+      const json = JSON.stringify({
+        version: 1,
+        records: [
+          {
+            speaker: "あ".repeat(101),
+            postedAt: "2026-07-07T15:19:00+09:00",
+            type: "text",
+            content: "こんにちは",
+          },
+        ],
+      });
+
+      const result = parseTalkImportJson(json);
+
+      expect(result.records).toEqual([]);
+      expect(result.rowErrors).toEqual([
+        "1件目: 発言者は100文字以内で入力してください",
+      ]);
     });
 
     it("collects a row error for invalid postedAt (no timezone)", () => {
@@ -498,7 +536,7 @@ describe("importUseCases", () => {
       mockGetConversationParticipants.mockResolvedValue([
         participant({ id: "part-1", name: "瀬戸口 心月" }),
       ]);
-      mockGetRecordsByConversation.mockResolvedValue([]);
+      mockGetImportDedupCandidates.mockResolvedValue([]);
 
       const records: TalkImportRecord[] = [
         {
@@ -545,12 +583,12 @@ describe("importUseCases", () => {
       mockGetConversationParticipants.mockResolvedValue([
         participant({ id: "part-1", name: "瀬戸口 心月" }),
       ]);
-      mockGetRecordsByConversation.mockResolvedValue([
-        domainRecord({
-          speakerParticipantId: "part-1",
+      mockGetImportDedupCandidates.mockResolvedValue([
+        dedupCandidate({
+          participantId: "part-1",
           postedAt: "2026-07-07T06:19:00.000Z",
           recordType: "text",
-          content: "こんにちは",
+          contentPrefix: "こんにちは",
         }),
       ]);
 
@@ -579,7 +617,7 @@ describe("importUseCases", () => {
       mockGetConversationParticipants.mockResolvedValue([
         participant({ id: "part-1", name: "瀬戸口 心月" }),
       ]);
-      mockGetRecordsByConversation.mockResolvedValue([]);
+      mockGetImportDedupCandidates.mockResolvedValue([]);
 
       const record: TalkImportRecord = {
         speaker: "瀬戸口 心月",
@@ -603,7 +641,7 @@ describe("importUseCases", () => {
 
     it("returns null period when there are no records", async () => {
       mockGetConversationParticipants.mockResolvedValue([]);
-      mockGetRecordsByConversation.mockResolvedValue([]);
+      mockGetImportDedupCandidates.mockResolvedValue([]);
 
       const preview = await buildImportPreview(client, "conv-1", parseResult([]));
 
@@ -615,7 +653,7 @@ describe("importUseCases", () => {
       mockGetConversationParticipants.mockResolvedValue([
         participant({ id: "part-1", name: "瀬戸口 心月" }),
       ]);
-      mockGetRecordsByConversation.mockResolvedValue([]);
+      mockGetImportDedupCandidates.mockResolvedValue([]);
 
       const records: TalkImportRecord[] = [
         {
@@ -697,7 +735,7 @@ describe("importUseCases", () => {
         speakerAssignments: {},
       });
 
-      expect(mockGetRecordsByConversation).not.toHaveBeenCalled();
+      expect(mockGetImportDedupCandidates).not.toHaveBeenCalled();
       expect(mockImportRecordsAtomic).toHaveBeenCalledTimes(1);
       expect(result).toEqual({
         createdCount: 0,
