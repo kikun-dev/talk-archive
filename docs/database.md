@@ -75,6 +75,21 @@ participant 編集は、既存 participant の ID を維持する差分更新で
 
 ---
 
+## attachments
+
+メディアレコード（image / video / audio）のファイル実体（Storage パス）を保持するテーブル。
+
+- `record_id` で records を参照する（text レコードは attachment を持たない）
+- **1 レコードにつき attachment は最大 1 件**。`attachments(record_id)` の一意制約
+  `attachments_record_id_key` で DB レベルで保証する（Issue #113 の Decision）
+- メディアレコードの状態は attachment の有無から導出する（状態カラムは持たない）:
+  - attachment 0 件 = **メディア未添付**（あとからファイルを添付できる）
+  - attachment 1 件 = 完成状態
+- 同時添付の競合は一意制約違反となり、アプリ側でユーザー向けエラーに変換する
+  （負けた側のアップロード済みファイルは削除する）
+
+---
+
 ## ストレージ設計
 
 メタデータ
