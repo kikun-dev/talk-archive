@@ -45,6 +45,8 @@ PRは小さくする。
 
 ## テスト方針
 
+- 原則 TDD（テストファースト）で実装する
+  - 先に失敗するテストを書く → 実装で通す → リファクタ（Red → Green → Refactor）
 - Unit test
 - Component test
 

@@ -31,3 +31,6 @@ yarn-error.log*
 .vscode
 .idea
 .vercel
+
+# Claude Code local settings
+.claude/settings.local.json
