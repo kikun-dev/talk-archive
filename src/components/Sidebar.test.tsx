@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { fireEvent, render, screen, within } from "@testing-library/react";
+import { APP_NAME } from "@/lib/brand";
 import { Sidebar } from "./Sidebar";
 
 vi.mock("@/app/login/actions", () => ({
@@ -10,7 +11,7 @@ describe("Sidebar", () => {
   it("renders app title as link to home", () => {
     render(<Sidebar userEmail="test@example.com" />);
 
-    const titleLinks = screen.getAllByRole("link", { name: "トークアーカイブ" });
+    const titleLinks = screen.getAllByRole("link", { name: APP_NAME });
     expect(titleLinks).toHaveLength(2);
     for (const titleLink of titleLinks) {
       expect(titleLink).toHaveAttribute("href", "/");
@@ -79,7 +80,7 @@ describe("Sidebar", () => {
     render(<Sidebar userEmail="test@example.com" />);
 
     const [mobileTitleLink] = screen.getAllByRole("link", {
-      name: "トークアーカイブ",
+      name: APP_NAME,
     });
     expect(mobileTitleLink.closest("div")).toHaveClass("shrink-0");
   });

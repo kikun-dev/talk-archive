@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
+import { APP_DESCRIPTION_LINES, APP_NAME } from "@/lib/brand";
 
 vi.mock("./actions", () => ({
   login: vi.fn(),
@@ -10,7 +11,16 @@ describe("LoginPage", () => {
     const { default: LoginPage } = await import("./page");
     render(<LoginPage />);
 
-    expect(screen.getByText("トークアーカイブ")).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: APP_NAME }),
+    ).toBeInTheDocument();
+    expect(APP_DESCRIPTION_LINES).toEqual([
+      "坂道メンバーから届いた言葉と時間を残す",
+      "私だけの記録帖。",
+    ]);
+    for (const line of APP_DESCRIPTION_LINES) {
+      expect(screen.getByText(line)).toHaveClass("block");
+    }
     expect(screen.getByLabelText("メールアドレス")).toBeInTheDocument();
     expect(screen.getByLabelText("パスワード")).toBeInTheDocument();
     expect(

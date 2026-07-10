@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
+import { BrandLogo } from "@/components/BrandLogo";
 import { LogoutButton } from "@/components/LogoutButton";
 
 type SidebarProps = {
@@ -25,13 +26,13 @@ function SidebarContent({
   return (
     <>
       {showTitle && (
-        <div className="border-b border-gray-200 p-4">
+        <div className="border-b border-gray-200 bg-white p-4">
           <Link
             href="/"
-            className="text-lg font-bold"
+            className="block w-full"
             onClick={onNavigate}
           >
-            トークアーカイブ
+            <BrandLogo />
           </Link>
         </div>
       )}
@@ -90,9 +91,9 @@ export function Sidebar({ userEmail }: SidebarProps) {
 
   return (
     <>
-      <div className="flex shrink-0 items-center justify-between border-b border-gray-200 bg-gray-50 px-4 py-3 lg:hidden">
-        <Link href="/" className="text-lg font-bold">
-          トークアーカイブ
+      <div className="flex shrink-0 items-center justify-between gap-3 border-b border-gray-200 bg-white px-4 py-2 lg:hidden">
+        <Link href="/" className="block w-40 sm:w-44">
+          <BrandLogo />
         </Link>
         <button
           type="button"
