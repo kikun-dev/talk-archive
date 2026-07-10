@@ -75,10 +75,10 @@ describe("TalkImportForm", () => {
     expect(
       screen.getByLabelText("インポートするJSONファイル"),
     ).toBeInTheDocument();
-    expect(screen.getByText("ファイル選択").closest("li")).toHaveAttribute(
-      "aria-current",
-      "step",
-    );
+    expect(
+      screen.getByText("JSON形式・最大5MB・5,000件まで"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("ファイルを選択")).toBeInTheDocument();
   });
 
   it("shows preview counts, period, type breakdown and row errors after preview succeeds", async () => {
@@ -110,10 +110,6 @@ describe("TalkImportForm", () => {
       screen.getByLabelText("重複スキップ予定: 2件"),
     ).toBeInTheDocument();
     expect(screen.getByText("対象ファイル: talk.json")).toBeInTheDocument();
-    expect(screen.getByText("内容確認").closest("li")).toHaveAttribute(
-      "aria-current",
-      "step",
-    );
     expect(screen.getByText(/テキスト 2/)).toBeInTheDocument();
     expect(screen.getByText(/画像 1/)).toBeInTheDocument();
     expect(
@@ -233,10 +229,6 @@ describe("TalkImportForm", () => {
 
     expect(await screen.findByLabelText("作成件数: 3件")).toBeInTheDocument();
     expect(screen.getByLabelText("スキップ件数: 2件")).toBeInTheDocument();
-    expect(screen.getByText("完了").closest("li")).toHaveAttribute(
-      "aria-current",
-      "step",
-    );
     expect(
       screen.getByText("新規追加された参加者: 新しい発言者"),
     ).toBeInTheDocument();

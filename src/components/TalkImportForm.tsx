@@ -22,12 +22,6 @@ type TalkImportFormProps = {
 
 type Stage = "select" | "preview" | "result";
 
-const stages: { key: Stage; label: string }[] = [
-  { key: "select", label: "ファイル選択" },
-  { key: "preview", label: "内容確認" },
-  { key: "result", label: "完了" },
-];
-
 const NEW_PARTICIPANT_VALUE = "new";
 
 const typeLabels: { key: keyof ImportPreview["typeCounts"]; label: string }[] = [
@@ -51,56 +45,6 @@ function formatPeriod(period: ImportPreview["period"]): string {
     return "-";
   }
   return `${formatDateTimeJst(period.start)} 〜 ${formatDateTimeJst(period.end)}`;
-}
-
-function ImportProgress({ stage }: { stage: Stage }) {
-  const currentIndex = stages.findIndex(({ key }) => key === stage);
-
-  return (
-    <nav aria-label="インポートの進捗">
-      <ol className="grid grid-cols-3">
-        {stages.map(({ key, label }, index) => {
-          const isCurrent = key === stage;
-          const isCompleted = index < currentIndex;
-
-          return (
-            <li
-              key={key}
-              aria-current={isCurrent ? "step" : undefined}
-              className="relative flex flex-col items-center gap-2 text-center"
-            >
-              {index > 0 && (
-                <span
-                  aria-hidden="true"
-                  className={`absolute top-4 right-1/2 h-px w-full ${
-                    isCurrent || isCompleted ? "bg-gray-900" : "bg-gray-200"
-                  }`}
-                />
-              )}
-              <span
-                className={`relative flex size-8 items-center justify-center rounded-full border text-xs font-semibold ${
-                  isCurrent
-                    ? "border-gray-900 bg-gray-900 text-white"
-                    : isCompleted
-                      ? "border-gray-900 bg-white text-gray-900"
-                      : "border-gray-300 bg-white text-gray-500"
-                }`}
-              >
-                {index + 1}
-              </span>
-              <span
-                className={`text-xs font-medium ${
-                  isCurrent || isCompleted ? "text-gray-900" : "text-gray-500"
-                }`}
-              >
-                {label}
-              </span>
-            </li>
-          );
-        })}
-      </ol>
-    </nav>
-  );
 }
 
 export function TalkImportForm({
@@ -201,9 +145,7 @@ export function TalkImportForm({
     const createdParticipantNames = Object.keys(result.createdParticipants);
 
     return (
-      <div className="space-y-8">
-        <ImportProgress stage="result" />
-
+      <div className="space-y-6">
         <section className="border-l-4 border-green-600 bg-green-50 px-4 py-5 sm:px-6">
           <h2 className="text-base font-semibold text-gray-900">
             インポートが完了しました
@@ -248,9 +190,7 @@ export function TalkImportForm({
     const canExecute = preview.importableCount > 0;
 
     return (
-      <div className="space-y-8">
-        <ImportProgress stage="preview" />
-
+      <div className="space-y-6">
         <section aria-labelledby="import-summary-heading" className="space-y-4">
           <div>
             <h2
@@ -419,10 +359,8 @@ export function TalkImportForm({
   }
 
   return (
-    <div className="space-y-8">
-      <ImportProgress stage="select" />
-
-      <div className="border-2 border-dashed border-gray-300 bg-gray-50 px-4 py-10 text-center sm:px-8">
+    <div className="space-y-4">
+      <div className="border border-gray-300 bg-gray-50 px-4 py-8 text-center shadow-sm sm:px-8 sm:py-10">
         <input
           key={fileInputKey}
           id={fileInputId}
@@ -436,14 +374,16 @@ export function TalkImportForm({
         <p className="text-sm font-semibold text-gray-900">
           インポートするJSONファイル
         </p>
-        <p className="mt-1 text-xs text-gray-500">JSON / 最大5MB・5,000件</p>
+        <p className="mt-1 text-xs text-gray-500">
+          JSON形式・最大5MB・5,000件まで
+        </p>
         <label
           htmlFor={fileInputId}
-          className={`mt-5 inline-flex min-h-10 cursor-pointer items-center rounded bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800 peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-gray-900 ${
+          className={`mt-5 inline-flex min-h-10 cursor-pointer items-center rounded bg-gray-900 px-5 py-2 text-sm font-medium text-white shadow-sm hover:bg-gray-800 peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-gray-900 ${
             isPending ? "pointer-events-none opacity-50" : ""
           }`}
         >
-          JSONファイルを選択
+          ファイルを選択
         </label>
         {isPending && (
           <p role="status" className="mt-3 text-xs font-medium text-gray-600">
