@@ -9,6 +9,7 @@ import {
 } from "@/usecases/recordUseCases";
 import { ConversationSubpageLayout } from "@/components/ConversationSubpageLayout";
 import { MediaGallery } from "@/components/MediaGallery";
+import { APP_NAME } from "@/lib/brand";
 
 type ConversationMediaPageProps = {
   params: Promise<{ id: string }>;
@@ -26,8 +27,8 @@ export async function generateMetadata({
   const conversation = await getCachedConversationWithParticipants(id);
   return {
     title: conversation
-      ? `メディア一覧 - ${conversation.title} | トークアーカイブ`
-      : "トークアーカイブ",
+      ? `メディア一覧 - ${conversation.title}`
+      : { absolute: APP_NAME },
   };
 }
 

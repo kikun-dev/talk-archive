@@ -1,7 +1,9 @@
 "use client";
 
 import { useActionState } from "react";
+import { BrandLogo } from "@/components/BrandLogo";
 import { FormError } from "@/components/FormError";
+import { APP_DESCRIPTION_LINES } from "@/lib/brand";
 import { login } from "./actions";
 
 type LoginState = { error: string } | undefined;
@@ -15,11 +17,20 @@ export default function LoginPage() {
   );
 
   return (
-    <div className="flex min-h-screen items-center justify-center">
+    <div className="flex min-h-screen items-center justify-center px-4">
       <div className="w-full max-w-sm space-y-6">
-        <h1 className="text-center text-2xl font-bold">
-          トークアーカイブ
-        </h1>
+        <div className="space-y-3">
+          <h1 className="mx-auto w-full max-w-xs">
+            <BrandLogo sizes="320px" />
+          </h1>
+          <p className="text-center text-sm leading-6 text-gray-600">
+            {APP_DESCRIPTION_LINES.map((line) => (
+              <span key={line} className="block">
+                {line}
+              </span>
+            ))}
+          </p>
+        </div>
         <form action={formAction} className="space-y-4">
           <div>
             <label

@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
 export const metadata: Metadata = {
-  title: "検索 | トークアーカイブ",
+  title: "検索",
 };
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { searchRecords } from "@/usecases/searchUseCases";

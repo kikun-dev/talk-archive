@@ -9,6 +9,7 @@ import {
 import { getMediaUrlsForRecords } from "@/usecases/recordUseCases";
 import { getDisplayName } from "@/usecases/userSettingsUseCases";
 import { ChatView } from "@/components/ChatView";
+import { APP_NAME } from "@/lib/brand";
 import type { MediaUrl } from "@/usecases/recordUseCases";
 
 type ConversationDetailPageProps = {
@@ -27,8 +28,8 @@ export async function generateMetadata({
   const conversation = await getCachedConversationWithRecords(id);
   return {
     title: conversation
-      ? `${conversation.title} | トークアーカイブ`
-      : "トークアーカイブ",
+      ? conversation.title
+      : { absolute: APP_NAME },
   };
 }
 
