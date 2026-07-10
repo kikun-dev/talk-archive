@@ -63,7 +63,7 @@ export type Database = {
           {
             foreignKeyName: "attachments_record_id_fkey"
             columns: ["record_id"]
-            isOneToOne: false
+            isOneToOne: true
             referencedRelation: "records"
             referencedColumns: ["id"]
           },
@@ -198,7 +198,7 @@ export type Database = {
           has_audio?: boolean
           id?: string
           position?: number
-          posted_at: string
+          posted_at?: string
           record_type: Database["public"]["Enums"]["record_type"]
           speaker_participant_id: string
           title?: string | null
@@ -310,6 +310,12 @@ export type Database = {
           title: string | null
           updated_at: string
         }[]
+        SetofOptions: {
+          from: "*"
+          to: "records"
+          isOneToOne: false
+          isSetofReturn: true
+        }
       }
       append_text_record: {
         Args: {
@@ -332,6 +338,12 @@ export type Database = {
           title: string | null
           updated_at: string
         }[]
+        SetofOptions: {
+          from: "*"
+          to: "records"
+          isOneToOne: false
+          isSetofReturn: true
+        }
       }
       create_conversation_with_metadata: {
         Args: {
@@ -353,9 +365,21 @@ export type Database = {
           updated_at: string
           user_id: string
         }[]
+        SetofOptions: {
+          from: "*"
+          to: "conversations"
+          isOneToOne: false
+          isSetofReturn: true
+        }
       }
-      show_limit: { Args: never; Returns: number }
-      show_trgm: { Args: { "": string }; Returns: string[] }
+      import_records_atomic: {
+        Args: {
+          p_conversation_id: string
+          p_new_participants: Json
+          p_records: Json
+        }
+        Returns: Json
+      }
       update_conversation_with_metadata: {
         Args: {
           p_active_periods: Json
@@ -382,6 +406,12 @@ export type Database = {
           updated_at: string
           user_id: string
         }[]
+        SetofOptions: {
+          from: "*"
+          to: "conversations"
+          isOneToOne: false
+          isSetofReturn: true
+        }
       }
     }
     Enums: {
@@ -522,3 +552,4 @@ export const Constants = {
     },
   },
 } as const
+
