@@ -21,7 +21,7 @@ describe("root metadata", () => {
         {
           url: "/favicon.png",
           type: "image/png",
-          sizes: "1254x1254",
+          sizes: "512x512",
         },
       ],
     });
