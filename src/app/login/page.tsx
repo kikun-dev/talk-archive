@@ -21,7 +21,7 @@ export default function LoginPage() {
       <div className="w-full max-w-sm space-y-6">
         <div className="space-y-3">
           <h1 className="mx-auto w-full max-w-xs">
-            <BrandLogo />
+            <BrandLogo sizes="320px" />
           </h1>
           <p className="text-center text-sm leading-6 text-gray-600">
             {APP_DESCRIPTION_LINES.map((line) => (

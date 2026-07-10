@@ -14,6 +14,11 @@ describe("LoginPage", () => {
     expect(
       screen.getByRole("heading", { name: APP_NAME }),
     ).toBeInTheDocument();
+    // ログインのロゴは max-w-xs（320px）で表示されるため、sizes も 320px を通知する
+    expect(screen.getByRole("img", { name: APP_NAME })).toHaveAttribute(
+      "sizes",
+      "320px",
+    );
     expect(APP_DESCRIPTION_LINES).toEqual([
       "坂道メンバーから届いた言葉と時間を残す",
       "私だけの記録帖。",

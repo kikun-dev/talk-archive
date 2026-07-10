@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { APP_DESCRIPTION, APP_NAME } from "@/lib/brand";
+import { APP_NAME } from "@/lib/brand";
 
 vi.mock("next/font/google", () => ({
   Geist: () => ({ variable: "font-sans" }),
@@ -14,7 +14,9 @@ describe("root metadata", () => {
       default: APP_NAME,
       template: `%s | ${APP_NAME}`,
     });
-    expect(metadata.description).toBe(APP_DESCRIPTION);
+    expect(metadata.description).toBe(
+      "坂道メンバーから届いた言葉と時間を残す、私だけの記録帖。",
+    );
     expect(metadata.applicationName).toBe(APP_NAME);
     expect(metadata.icons).toEqual({
       icon: [
