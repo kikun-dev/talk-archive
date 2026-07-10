@@ -21,7 +21,7 @@ import {
   addPendingMediaRecord,
   validateAttachRecordMediaInput,
   attachRecordMedia,
-  getPendingMediaRecordIds,
+  getMediaDisplayInfoForRecords,
 } from "./recordUseCases";
 
 vi.mock("@/repositories/recordRepository");
@@ -1201,37 +1201,87 @@ describe("recordUseCases", () => {
       );
       expect(mockDeleteRecord).not.toHaveBeenCalled();
     });
+
+    it("converts a unique constraint violation into a user-facing AttachMediaError and rolls back the upload", async () => {
+      mockGetRecord.mockResolvedValue(pendingVideoRecord);
+      mockGetAttachmentsByRecord.mockResolvedValue([]);
+      mockBuildStoragePath.mockReturnValue(
+        "user-1/conv-1/rec-pend-1/video.mp4",
+      );
+      mockUploadFile.mockResolvedValue("user-1/conv-1/rec-pend-1/video.mp4");
+      mockCreateAttachment.mockRejectedValue({ code: "23505" });
+      mockDeleteFile.mockResolvedValue(undefined);
+
+      await expect(attachRecordMedia(client, attachInput)).rejects.toThrow(
+        "このレコードにはすでにメディアが添付されています",
+      );
+
+      expect(mockDeleteFile).toHaveBeenCalledWith(
+        client,
+        "user-1/conv-1/rec-pend-1/video.mp4",
+      );
+      expect(mockDeleteRecord).not.toHaveBeenCalled();
+    });
   });
 
-  describe("getPendingMediaRecordIds", () => {
-    it("returns ids of media records without attachments", async () => {
-      const attachedImage = { ...imageRecord, id: "rec-img-attached" };
-      const pendingAudio: Record = {
-        ...imageRecord,
-        id: "rec-audio-pending",
-        recordType: "audio",
-      };
-      mockGetAttachmentsByRecordIds.mockResolvedValue([
-        { ...baseAttachment, recordId: "rec-img-attached" },
-      ]);
+  describe("getMediaDisplayInfoForRecords", () => {
+    const attachedImage: Record = { ...imageRecord, id: "rec-img-attached" };
+    const pendingAudio: Record = {
+      ...imageRecord,
+      id: "rec-audio-pending",
+      recordType: "audio",
+    };
 
-      const result = await getPendingMediaRecordIds(client, [
+    it("returns mediaUrls and pendingMediaRecordIds derived from a single attachment fetch", async () => {
+      mockGetAttachmentsByRecordIds.mockResolvedValue([
+        {
+          ...baseAttachment,
+          recordId: "rec-img-attached",
+          filePath: "path/photo.jpg",
+          mimeType: "image/jpeg",
+        },
+      ]);
+      mockGetFileUrls.mockResolvedValue(
+        new Map([["path/photo.jpg", "https://example.supabase.co/signed-url"]]),
+      );
+
+      const result = await getMediaDisplayInfoForRecords(client, [
         baseRecord,
         attachedImage,
         pendingAudio,
       ]);
 
-      expect(result).toEqual(new Set(["rec-audio-pending"]));
+      expect(result.mediaUrls.get("rec-img-attached")).toEqual({
+        url: "https://example.supabase.co/signed-url",
+        mimeType: "image/jpeg",
+      });
+      expect(result.pendingMediaRecordIds).toEqual(
+        new Set(["rec-audio-pending"]),
+      );
+    });
+
+    it("fetches attachments exactly once", async () => {
+      mockGetAttachmentsByRecordIds.mockResolvedValue([
+        { ...baseAttachment, recordId: "rec-img-attached" },
+      ]);
+      mockGetFileUrls.mockResolvedValue(
+        new Map([[baseAttachment.filePath, "https://example.supabase.co/signed-url"]]),
+      );
+
+      await getMediaDisplayInfoForRecords(client, [attachedImage, pendingAudio]);
+
+      expect(mockGetAttachmentsByRecordIds).toHaveBeenCalledTimes(1);
       expect(mockGetAttachmentsByRecordIds).toHaveBeenCalledWith(client, [
         "rec-img-attached",
         "rec-audio-pending",
       ]);
     });
 
-    it("returns an empty set without querying when there are no media records", async () => {
-      const result = await getPendingMediaRecordIds(client, [baseRecord]);
+    it("returns empty results without querying when there are no media records", async () => {
+      const result = await getMediaDisplayInfoForRecords(client, [baseRecord]);
 
-      expect(result).toEqual(new Set());
+      expect(result.mediaUrls).toEqual(new Map());
+      expect(result.pendingMediaRecordIds).toEqual(new Set());
       expect(mockGetAttachmentsByRecordIds).not.toHaveBeenCalled();
     });
   });

@@ -9,6 +9,11 @@ import {
   type ActionState,
 } from "@/app/(app)/conversations/[id]/actions";
 import { formatMessageDateTimeJst } from "@/lib/dateTime";
+import {
+  MEDIA_FILE_LIMITS,
+  validateMediaFileSelection,
+  type MediaFileKind,
+} from "@/lib/mediaFileSelection";
 import { FormError } from "@/components/FormError";
 import { useToast } from "@/components/ToastProvider";
 import type { Record } from "@/types/domain";
@@ -67,18 +72,6 @@ function MediaContent({
   }
 }
 
-const PENDING_MEDIA_LABELS: { [key: string]: string } = {
-  image: "画像",
-  video: "動画",
-  audio: "音声",
-};
-
-const PENDING_MEDIA_ACCEPTS: { [key: string]: string } = {
-  image: "image/*",
-  video: "video/*",
-  audio: "audio/*",
-};
-
 function PendingMediaContent({
   record,
   conversationId,
@@ -87,6 +80,11 @@ function PendingMediaContent({
   conversationId: string;
 }) {
   const [isAttaching, setIsAttaching] = useState(false);
+  const [fileError, setFileError] = useState<string | null>(null);
+
+  // 添付フォームは image/video/audio レコードにのみ表示されるため MediaFileKind に絞れる
+  const kind = record.recordType as MediaFileKind;
+  const limits = MEDIA_FILE_LIMITS[kind];
 
   const [state, formAction, isPending] = useActionState<ActionState, FormData>(
     async (_prevState, formData) => {
@@ -104,13 +102,30 @@ function PendingMediaContent({
     undefined,
   );
 
-  const typeLabel = PENDING_MEDIA_LABELS[record.recordType] ?? "メディア";
+  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    setFileError(null);
+    const file = e.target.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    const validationError = validateMediaFileSelection(kind, file);
+    if (validationError) {
+      setFileError(validationError);
+      e.target.value = "";
+    }
+  }
+
+  function handleCancel() {
+    setIsAttaching(false);
+    setFileError(null);
+  }
 
   return (
     <div className="mt-1">
       <div className="flex items-center gap-2">
         <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800">
-          {typeLabel}未添付
+          {limits.typeLabel}未添付
         </span>
         {!isAttaching && (
           <button
@@ -128,11 +143,12 @@ function PendingMediaContent({
             name="file"
             type="file"
             required
-            accept={PENDING_MEDIA_ACCEPTS[record.recordType]}
+            accept={limits.accept}
             aria-label="添付ファイル"
+            onChange={handleFileChange}
             className="block w-full text-xs"
           />
-          <FormError message={state?.error} />
+          <FormError message={fileError ?? state?.error} />
           <div className="flex gap-2">
             <button
               type="submit"
@@ -143,7 +159,7 @@ function PendingMediaContent({
             </button>
             <button
               type="button"
-              onClick={() => setIsAttaching(false)}
+              onClick={handleCancel}
               className="rounded border border-gray-300 px-3 py-1 text-xs text-gray-700 hover:bg-gray-50"
             >
               キャンセル

@@ -11,6 +11,11 @@ import {
   type ActionState,
 } from "@/app/(app)/conversations/[id]/actions";
 import { getCurrentJstDateTimeLocal } from "@/lib/dateTime";
+import {
+  MEDIA_FILE_LIMITS,
+  validateMediaFileSelection,
+  type MediaFileKind,
+} from "@/lib/mediaFileSelection";
 import { FormError } from "@/components/FormError";
 import type { ConversationParticipant, RecordType } from "@/types/domain";
 
@@ -27,9 +32,6 @@ const tabs: { type: ComposerTab; label: string }[] = [
   { type: "video", label: "動画" },
   { type: "audio", label: "音声" },
 ];
-
-const MAX_IMAGE_SIZE = 10 * 1024 * 1024;
-const MAX_MEDIA_SIZE = 50 * 1024 * 1024;
 
 export function ChatComposer({
   conversationId,
@@ -99,30 +101,11 @@ export function ChatComposer({
       return;
     }
 
-    const maxSize = activeTab === "image" ? MAX_IMAGE_SIZE : MAX_MEDIA_SIZE;
-    const maxLabel = activeTab === "image" ? "10MB" : "50MB";
-
-    if (file.size > maxSize) {
-      setClientError(`ファイルサイズは${maxLabel}以内にしてください`);
-      setPreviewUrl(null);
-      e.target.value = "";
-      return;
-    }
-
-    const expectedPrefix =
-      activeTab === "image"
-        ? "image/"
-        : activeTab === "video"
-          ? "video/"
-          : "audio/";
-    if (!file.type.startsWith(expectedPrefix)) {
-      const typeLabel =
-        activeTab === "image"
-          ? "画像"
-          : activeTab === "video"
-            ? "動画"
-            : "音声";
-      setClientError(`${typeLabel}ファイルを選択してください`);
+    // ファイル入力は image/video/audio タブでのみ表示されるため activeTab は MediaFileKind
+    const kind = activeTab as MediaFileKind;
+    const validationError = validateMediaFileSelection(kind, file);
+    if (validationError) {
+      setClientError(validationError);
       setPreviewUrl(null);
       e.target.value = "";
       return;
@@ -251,7 +234,7 @@ export function ChatComposer({
               <input
                 name="file"
                 type="file"
-                accept="image/*"
+                accept={MEDIA_FILE_LIMITS.image.accept}
                 required
                 aria-label="画像ファイル"
                 onChange={handleFileChange}
@@ -277,7 +260,7 @@ export function ChatComposer({
               <input
                 name="file"
                 type="file"
-                accept="video/*"
+                accept={MEDIA_FILE_LIMITS.video.accept}
                 required
                 aria-label="動画ファイル"
                 onChange={handleFileChange}
@@ -301,7 +284,7 @@ export function ChatComposer({
           <input
             name="file"
             type="file"
-            accept="audio/*"
+            accept={MEDIA_FILE_LIMITS.audio.accept}
             required
             aria-label="音声ファイル"
             onChange={handleFileChange}

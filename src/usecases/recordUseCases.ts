@@ -390,6 +390,19 @@ function isMediaRecordType(
   return recordType !== "text";
 }
 
+/**
+ * Postgres の一意制約違反（error code "23505"）かどうかを型安全に判定する
+ * Supabase の PostgrestError はこの形状で code プロパティを持つ
+ */
+function isUniqueViolation(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error as { code: unknown }).code === "23505"
+  );
+}
+
 export function validateAttachRecordMediaInput(
   input: AttachRecordMediaInput,
 ): string | null {
@@ -469,40 +482,15 @@ export async function attachRecordMedia(
     });
   } catch (attachmentError) {
     await deleteFile(client, uploadedPath).catch(() => {});
+    if (isUniqueViolation(attachmentError)) {
+      throw new AttachMediaError(
+        "このレコードにはすでにメディアが添付されています",
+      );
+    }
     throw attachmentError;
   }
 
   return { record, attachment };
-}
-
-/**
- * attachment を持たないメディアレコード（= 未添付）の ID 集合を返す
- */
-export async function getPendingMediaRecordIds(
-  client: SupabaseClient<Database>,
-  records: Record[],
-): Promise<Set<string>> {
-  const mediaRecords = records.filter((r) =>
-    MEDIA_RECORD_TYPES.has(r.recordType),
-  );
-
-  if (mediaRecords.length === 0) {
-    return new Set();
-  }
-
-  const attachments = await getAttachmentsByRecordIds(
-    client,
-    mediaRecords.map((record) => record.id),
-  );
-  const attachedRecordIds = new Set(
-    attachments.map((attachment) => attachment.recordId),
-  );
-
-  return new Set(
-    mediaRecords
-      .filter((record) => !attachedRecordIds.has(record.id))
-      .map((record) => record.id),
-  );
 }
 
 export async function addImageRecord(
@@ -542,21 +530,13 @@ export type MediaUrl = {
 };
 
 /**
- * メディアレコードの Signed URL を一括取得する
- * recordId → MediaUrl のマップを返す
+ * メディアレコードの ID ごとに最初の attachment を引いたマップを返す
+ * （1レコードにつき attachment は高々1件の前提。attachRecordMedia 参照）
  */
-export async function getMediaUrlsForRecords(
+async function getFirstAttachmentByRecordId(
   client: SupabaseClient<Database>,
-  records: Record[],
-): Promise<Map<string, MediaUrl>> {
-  const mediaRecords = records.filter((r) =>
-    MEDIA_RECORD_TYPES.has(r.recordType),
-  );
-
-  if (mediaRecords.length === 0) {
-    return new Map();
-  }
-
+  mediaRecords: Record[],
+): Promise<Map<string, Attachment>> {
   const attachments = await getAttachmentsByRecordIds(
     client,
     mediaRecords.map((record) => record.id),
@@ -567,7 +547,17 @@ export async function getMediaUrlsForRecords(
       firstAttachmentByRecordId.set(attachment.recordId, attachment);
     }
   }
+  return firstAttachmentByRecordId;
+}
 
+/**
+ * 添付済みのメディアレコードについて Signed URL のマップを構築する
+ */
+async function buildMediaUrls(
+  client: SupabaseClient<Database>,
+  mediaRecords: Record[],
+  firstAttachmentByRecordId: Map<string, Attachment>,
+): Promise<Map<string, MediaUrl>> {
   const pathToRecordId = new Map<string, { recordId: string; mimeType: string }>();
   for (const record of mediaRecords) {
     const attachment = firstAttachmentByRecordId.get(record.id);
@@ -593,6 +583,70 @@ export async function getMediaUrlsForRecords(
     }
   }
   return map;
+}
+
+/**
+ * メディアレコードの Signed URL を一括取得する
+ * recordId → MediaUrl のマップを返す
+ */
+export async function getMediaUrlsForRecords(
+  client: SupabaseClient<Database>,
+  records: Record[],
+): Promise<Map<string, MediaUrl>> {
+  const mediaRecords = records.filter((r) =>
+    MEDIA_RECORD_TYPES.has(r.recordType),
+  );
+
+  if (mediaRecords.length === 0) {
+    return new Map();
+  }
+
+  const firstAttachmentByRecordId = await getFirstAttachmentByRecordId(
+    client,
+    mediaRecords,
+  );
+  return buildMediaUrls(client, mediaRecords, firstAttachmentByRecordId);
+}
+
+export type MediaDisplayInfo = {
+  mediaUrls: Map<string, MediaUrl>;
+  pendingMediaRecordIds: Set<string>;
+};
+
+/**
+ * メディアレコードの表示に必要な情報（Signed URL と未添付 ID 集合）をまとめて返す
+ * attachment の取得は1回のみ行い、そこから両方を導出する
+ */
+export async function getMediaDisplayInfoForRecords(
+  client: SupabaseClient<Database>,
+  records: Record[],
+): Promise<MediaDisplayInfo> {
+  const mediaRecords = records.filter((r) =>
+    MEDIA_RECORD_TYPES.has(r.recordType),
+  );
+
+  if (mediaRecords.length === 0) {
+    return { mediaUrls: new Map(), pendingMediaRecordIds: new Set() };
+  }
+
+  const firstAttachmentByRecordId = await getFirstAttachmentByRecordId(
+    client,
+    mediaRecords,
+  );
+
+  const pendingMediaRecordIds = new Set(
+    mediaRecords
+      .filter((record) => !firstAttachmentByRecordId.has(record.id))
+      .map((record) => record.id),
+  );
+
+  const mediaUrls = await buildMediaUrls(
+    client,
+    mediaRecords,
+    firstAttachmentByRecordId,
+  );
+
+  return { mediaUrls, pendingMediaRecordIds };
 }
 
 export function filterMediaRecords(records: Record[]): Record[] {

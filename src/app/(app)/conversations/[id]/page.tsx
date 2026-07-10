@@ -6,10 +6,7 @@ import {
   getConversationWithRecords,
   getParticipantThumbnailUrls,
 } from "@/usecases/conversationUseCases";
-import {
-  getMediaUrlsForRecords,
-  getPendingMediaRecordIds,
-} from "@/usecases/recordUseCases";
+import { getMediaDisplayInfoForRecords } from "@/usecases/recordUseCases";
 import { getDisplayName } from "@/usecases/userSettingsUseCases";
 import { ChatView } from "@/components/ChatView";
 import { APP_NAME } from "@/lib/brand";
@@ -56,13 +53,14 @@ export default async function ConversationDetailPage({
     notFound();
   }
 
-  const [mediaUrlMap, participantThumbnailUrlMap, displayName, pendingMediaRecordIdSet] =
+  const [mediaDisplayInfo, participantThumbnailUrlMap, displayName] =
     await Promise.all([
-      getMediaUrlsForRecords(supabase, conversation.records),
+      getMediaDisplayInfoForRecords(supabase, conversation.records),
       getParticipantThumbnailUrls(supabase, conversation.participants),
       getDisplayName(supabase, user.id),
-      getPendingMediaRecordIds(supabase, conversation.records),
     ]);
+  const { mediaUrls: mediaUrlMap, pendingMediaRecordIds: pendingMediaRecordIdSet } =
+    mediaDisplayInfo;
 
   const mediaUrls: { [recordId: string]: MediaUrl } = {};
   if (mediaUrlMap) {

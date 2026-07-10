@@ -10,6 +10,8 @@ vi.mock("@/app/(app)/conversations/[id]/actions", () => ({
   attachRecordMediaAction: vi.fn(),
 }));
 
+import { attachRecordMediaAction } from "@/app/(app)/conversations/[id]/actions";
+
 const textRecord: Record = {
   id: "rec-1",
   conversationId: "conv-1",
@@ -390,5 +392,70 @@ describe("ChatMessage", () => {
     fireEvent.click(screen.getByRole("button", { name: "キャンセル" }));
 
     expect(screen.queryByLabelText("添付ファイル")).not.toBeInTheDocument();
+  });
+
+  it("shows a validation error and blocks submission when the selected file is the wrong type", () => {
+    renderPending();
+
+    fireEvent.click(screen.getByRole("button", { name: "ファイルを添付" }));
+    const fileInput = screen.getByLabelText("添付ファイル");
+
+    const wrongTypeFile = new File(["data"], "photo.jpg", {
+      type: "image/jpeg",
+    });
+    fireEvent.change(fileInput, { target: { files: [wrongTypeFile] } });
+
+    expect(
+      screen.getByText("動画ファイルを選択してください"),
+    ).toBeInTheDocument();
+    expect(fileInput).toHaveValue("");
+
+    fireEvent.click(screen.getByRole("button", { name: "添付する" }));
+
+    expect(vi.mocked(attachRecordMediaAction)).not.toHaveBeenCalled();
+  });
+
+  it("shows a validation error when the selected file exceeds the size limit", () => {
+    renderPending();
+
+    fireEvent.click(screen.getByRole("button", { name: "ファイルを添付" }));
+    const fileInput = screen.getByLabelText("添付ファイル");
+
+    const oversizedFile = new File(["data"], "video.mp4", {
+      type: "video/mp4",
+    });
+    Object.defineProperty(oversizedFile, "size", {
+      value: 50 * 1024 * 1024 + 1,
+    });
+    fireEvent.change(fileInput, { target: { files: [oversizedFile] } });
+
+    expect(
+      screen.getByText("ファイルサイズは50MB以内にしてください"),
+    ).toBeInTheDocument();
+    expect(fileInput).toHaveValue("");
+  });
+
+  it("clears the validation error once a valid file is selected", () => {
+    renderPending();
+
+    fireEvent.click(screen.getByRole("button", { name: "ファイルを添付" }));
+    const fileInput = screen.getByLabelText("添付ファイル");
+
+    fireEvent.change(fileInput, {
+      target: { files: [new File(["data"], "photo.jpg", { type: "image/jpeg" })] },
+    });
+    expect(
+      screen.getByText("動画ファイルを選択してください"),
+    ).toBeInTheDocument();
+
+    fireEvent.change(fileInput, {
+      target: {
+        files: [new File(["data"], "video.mp4", { type: "video/mp4" })],
+      },
+    });
+
+    expect(
+      screen.queryByText("動画ファイルを選択してください"),
+    ).not.toBeInTheDocument();
   });
 });
