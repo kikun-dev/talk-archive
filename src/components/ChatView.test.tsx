@@ -17,6 +17,8 @@ vi.mock("@/app/(app)/conversations/[id]/actions", () => ({
   addAudioRecordAction: vi.fn(),
   updateParticipantThumbnailAction: vi.fn(),
   updateConversationCoverImageAction: vi.fn(),
+  addPendingMediaRecordAction: vi.fn(),
+  attachRecordMediaAction: vi.fn(),
 }));
 
 const conversation: ConversationWithRecords = {
@@ -271,5 +273,42 @@ describe("ChatView", () => {
     expect(
       screen.getAllByRole("img", { name: "メンバーAのサムネイル" }).length,
     ).toBeGreaterThan(0);
+  });
+
+  // --- メディア未添付レコード（#113） ---
+
+  it("marks records listed in pendingMediaRecordIds with a pending badge", () => {
+    const conversationWithPending: ConversationWithRecords = {
+      ...conversation,
+      records: [
+        ...conversation.records,
+        {
+          id: "rec-pend-1",
+          conversationId: "conv-1",
+          recordType: "video",
+          title: null,
+          content: null,
+          hasAudio: true,
+          speakerParticipantId: "part-1",
+          postedAt: "2026-01-03T10:00:00Z",
+          position: 2,
+          createdAt: "2026-01-03T10:00:00Z",
+          updatedAt: "2026-01-03T10:00:00Z",
+        },
+      ],
+    };
+
+    render(
+      <ToastProvider>
+        <ChatView
+          conversation={conversationWithPending}
+          mediaUrls={{}}
+          pendingMediaRecordIds={["rec-pend-1"]}
+          displayName=""
+        />
+      </ToastProvider>,
+    );
+
+    expect(screen.getByText("動画未添付")).toBeInTheDocument();
   });
 });

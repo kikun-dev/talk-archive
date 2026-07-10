@@ -8,6 +8,7 @@ vi.mock("@/app/(app)/conversations/[id]/actions", () => ({
   addImageRecordAction: vi.fn(),
   addVideoRecordAction: vi.fn(),
   addAudioRecordAction: vi.fn(),
+  addPendingMediaRecordAction: vi.fn(),
 }));
 
 const twoParticipants: ConversationParticipant[] = [
@@ -195,5 +196,69 @@ describe("ChatComposer", () => {
       "flex-col",
       "sm:flex-row",
     );
+  });
+
+  // --- メディア未添付レコード（#113） ---
+
+  it("shows the pending-media checkbox on media tabs only", () => {
+    render(
+      <ChatComposer
+        conversationId="conv-1"
+        participants={twoParticipants}
+      />,
+    );
+
+    // テキストタブには出ない
+    expect(
+      screen.queryByLabelText("ファイルはあとで添付する"),
+    ).not.toBeInTheDocument();
+
+    for (const tab of ["画像", "動画", "音声"]) {
+      fireEvent.click(screen.getByText(tab));
+      expect(
+        screen.getByLabelText("ファイルはあとで添付する"),
+      ).toBeInTheDocument();
+    }
+  });
+
+  it("hides the file input while pending-media is checked", () => {
+    render(
+      <ChatComposer
+        conversationId="conv-1"
+        participants={twoParticipants}
+      />,
+    );
+
+    fireEvent.click(screen.getByText("動画"));
+    expect(screen.getByLabelText("動画ファイル")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByLabelText("ファイルはあとで添付する"));
+    expect(screen.queryByLabelText("動画ファイル")).not.toBeInTheDocument();
+
+    // レコード種別が action に渡るよう hidden フィールドを持つ
+    expect(
+      document.querySelector('input[name="recordType"][value="video"]'),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByLabelText("ファイルはあとで添付する"));
+    expect(screen.getByLabelText("動画ファイル")).toBeInTheDocument();
+  });
+
+  it("resets the pending-media checkbox when switching tabs", () => {
+    render(
+      <ChatComposer
+        conversationId="conv-1"
+        participants={twoParticipants}
+      />,
+    );
+
+    fireEvent.click(screen.getByText("動画"));
+    fireEvent.click(screen.getByLabelText("ファイルはあとで添付する"));
+
+    fireEvent.click(screen.getByText("画像"));
+    expect(
+      screen.getByLabelText("ファイルはあとで添付する"),
+    ).not.toBeChecked();
+    expect(screen.getByLabelText("画像ファイル")).toBeInTheDocument();
   });
 });

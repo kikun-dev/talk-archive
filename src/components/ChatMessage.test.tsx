@@ -7,6 +7,7 @@ import type { Record } from "@/types/domain";
 vi.mock("@/app/(app)/conversations/[id]/actions", () => ({
   updateRecordAction: vi.fn(),
   deleteRecordAction: vi.fn(),
+  attachRecordMediaAction: vi.fn(),
 }));
 
 const textRecord: Record = {
@@ -310,5 +311,84 @@ describe("ChatMessage", () => {
     expect(screen.getByLabelText("テキスト")).toHaveValue(
       "こんにちは{{MY_NAME}}さん",
     );
+  });
+
+  // --- メディア未添付レコード（#113） ---
+
+  const pendingVideoRecord: Record = {
+    ...textRecord,
+    id: "rec-pend-1",
+    recordType: "video",
+    title: null,
+    content: null,
+  };
+
+  function renderPending(record: Record = pendingVideoRecord) {
+    return render(
+      <ToastProvider>
+        <ChatMessage
+          record={record}
+          participantName="メンバーA"
+          conversationId="conv-1"
+          displayName=""
+          isPendingMedia
+        />
+      </ToastProvider>,
+    );
+  }
+
+  it("shows a pending badge for media records without attachment", () => {
+    renderPending();
+
+    expect(screen.getByText("動画未添付")).toBeInTheDocument();
+  });
+
+  it("does not show a pending badge when not pending", () => {
+    render(
+      <ToastProvider>
+        <ChatMessage
+          record={pendingVideoRecord}
+          participantName="メンバーA"
+          conversationId="conv-1"
+          displayName=""
+        />
+      </ToastProvider>,
+    );
+
+    expect(screen.queryByText("動画未添付")).not.toBeInTheDocument();
+  });
+
+  it("reveals an attach form with type-scoped accept when the attach button is clicked", () => {
+    renderPending();
+
+    expect(screen.queryByLabelText("添付ファイル")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "ファイルを添付" }));
+
+    const fileInput = screen.getByLabelText("添付ファイル");
+    expect(fileInput).toHaveAttribute("accept", "video/*");
+    expect(
+      screen.getByRole("button", { name: "添付する" }),
+    ).toBeInTheDocument();
+  });
+
+  it("uses an image accept filter for pending image records", () => {
+    renderPending({ ...pendingVideoRecord, recordType: "image" });
+
+    expect(screen.getByText("画像未添付")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "ファイルを添付" }));
+    expect(screen.getByLabelText("添付ファイル")).toHaveAttribute(
+      "accept",
+      "image/*",
+    );
+  });
+
+  it("hides the attach form when cancelled", () => {
+    renderPending();
+
+    fireEvent.click(screen.getByRole("button", { name: "ファイルを添付" }));
+    fireEvent.click(screen.getByRole("button", { name: "キャンセル" }));
+
+    expect(screen.queryByLabelText("添付ファイル")).not.toBeInTheDocument();
   });
 });

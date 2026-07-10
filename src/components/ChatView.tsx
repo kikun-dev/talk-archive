@@ -22,6 +22,8 @@ type ChatViewProps = {
   mediaUrls: { [recordId: string]: MediaUrl };
   participantThumbnailUrls?: { [participantId: string]: string };
   displayName: string;
+  // attachment 未添付のメディアレコード ID（#113）
+  pendingMediaRecordIds?: string[];
 };
 
 function buildParticipantMap(
@@ -92,10 +94,15 @@ export function ChatView({
   mediaUrls,
   participantThumbnailUrls = {},
   displayName,
+  pendingMediaRecordIds = [],
 }: ChatViewProps) {
   const participantMap = useMemo(
     () => buildParticipantMap(conversation.participants, participantThumbnailUrls),
     [conversation.participants, participantThumbnailUrls],
+  );
+  const pendingMediaRecordIdSet = useMemo(
+    () => new Set(pendingMediaRecordIds),
+    [pendingMediaRecordIds],
   );
   const dateGroups = useMemo(
     () => groupRecordsByDate(conversation.records),
@@ -366,6 +373,7 @@ export function ChatView({
                         mediaUrl={mediaUrls[record.id]}
                         isEditMode={isEditMode}
                         displayName={displayName}
+                        isPendingMedia={pendingMediaRecordIdSet.has(record.id)}
                       />
                     );
                   })}
