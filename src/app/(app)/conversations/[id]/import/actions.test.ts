@@ -1112,6 +1112,60 @@ describe("executeEmlImportAction", () => {
       expect(result.result.attachFailedCount).toBe(0);
     });
 
+    it("normalizes a parameterized Content-Type (e.g. image/jpeg; charset=binary) to the bare media type for contentType and filename", async () => {
+      mockSupabaseClient({ id: "user-1" });
+      const formData = buildFormDataWithFiles([{ name: "remote-image.eml" }]);
+      const remoteMessage = parsedMessage({
+        remoteImageUrl: "https://example.com/1.jpg",
+      });
+      parseEmlFileMock.mockResolvedValue(remoteMessage);
+      const imageRecord = {
+        speaker: "sender@example.com",
+        postedAt: "2020-10-12T06:16:14.000Z",
+        type: "image" as const,
+        title: "件名",
+        content: null,
+        hasAudio: false,
+      };
+      toTalkImportRecordMock.mockReturnValue(imageRecord);
+      executeImportMock.mockResolvedValue({
+        createdCount: 1,
+        skippedCount: 0,
+        createdParticipants: {},
+        createdRecords: [{ record: imageRecord, id: "record-remote" }],
+      });
+      attachRecordMediaMock.mockResolvedValue({});
+      vi.stubGlobal(
+        "fetch",
+        vi
+          .fn()
+          .mockResolvedValue(
+            buildFetchResponse({ contentType: "image/jpeg; charset=binary" }),
+          ),
+      );
+
+      const { executeEmlImportAction } = await import("./actions");
+      const result = await executeEmlImportAction(
+        "conv-1",
+        formData,
+        VALID_PARTICIPANT_ID,
+      );
+
+      expect(attachRecordMediaMock).toHaveBeenCalledTimes(1);
+      expect(attachRecordMediaMock).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          contentType: "image/jpeg",
+          filename: "image-1.jpeg",
+        }),
+      );
+      if ("error" in result) {
+        throw new Error("expected a result");
+      }
+      expect(result.result.attachedCount).toBe(1);
+      expect(result.result.attachFailedCount).toBe(0);
+    });
+
     it("counts attachFailedCount without calling attachRecordMedia when the fetch response is not ok", async () => {
       mockSupabaseClient({ id: "user-1" });
       const formData = buildFormDataWithFiles([{ name: "remote-image.eml" }]);

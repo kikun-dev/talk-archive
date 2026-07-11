@@ -381,6 +381,11 @@ type FetchedRemoteImage = { blob: Blob; contentType: string };
  * として扱う: fetch 自体の失敗（ネットワークエラー・タイムアウト）・レスポンスが
  * ok でない・Content-Type が image/ で始まらない・本体サイズが MAX_EML_FILE_SIZE
  * （10MB）を超える
+ *
+ * Content-Type レスポンスヘッダはパラメータ付きのことがある（例:
+ * `image/jpeg; charset=binary`）ため、メディアタイプのみに正規化してから
+ * image/ 判定・戻り値（＝attachRecordMedia の contentType と guessImageFilename の
+ * 拡張子導出）に使う
  */
 async function fetchRemoteImage(
   url: string,
@@ -393,7 +398,8 @@ async function fetchRemoteImage(
     return null;
   }
 
-  const contentType = response.headers.get("content-type") ?? "";
+  const rawContentType = response.headers.get("content-type") ?? "";
+  const contentType = rawContentType.split(";")[0].trim().toLowerCase();
   if (!contentType.startsWith("image/")) {
     return null;
   }
