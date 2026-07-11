@@ -14,7 +14,9 @@ argument-hint: "<DB変更の内容>"
 
 - ファイル名: `YYYYMMDDHHMMSS_snake_case_summary.sql`（UTC タイムスタンプ。既存 migration の命名に合わせる）
   - `npx supabase migration new <summary>` で生成するか、現在時刻から手動で命名する
-    （Supabase CLI は依存に含まれないため、既存スクリプトと同様に `npx` 経由で実行する — `scripts/generate-db-types.mjs` 参照）
+    （Supabase CLI は devDependencies にバージョン固定で追加済みのため、`npx supabase ...` は
+    常にその固定版を実行する — `scripts/generate-db-types.mjs` 参照。バージョンを上げる場合は
+    `pnpm add -D -E supabase@<version>` で明示的に固定し直す）
   - 既存ファイルより新しいタイムスタンプになっていることを確認する
 - データ投入は migration ではなく `supabase/seed.sql` に置く
 - ファイル冒頭に目的をコメントで書く（既存 migration のスタイルに合わせる）
@@ -44,6 +46,10 @@ argument-hint: "<DB変更の内容>"
   （ローカル Supabase が起動していなければ `npx supabase start`）
 - スキーマを変えたら Database 型を再生成する: `pnpm db:gen-types`
   （`src/types/database.ts` が更新される）
+  - RPC の引数を追加・変更した場合、`scripts/generate-db-types.mjs` の
+    `NULLABLE_RPC_ARGUMENTS`（既知の CLI リグレッション対応の後処理マップ。
+    詳細は `docs/development.md` の「DB型生成」節）を更新する必要がないか確認する。
+    対象外の引数が見つからない場合はスクリプトがエラーで停止するため、その場合は必ず対応する
 - `pnpm typecheck && pnpm lint && pnpm test` と、関連画面の手動確認を行う
 - **本番へ反映**: `npx supabase db push` は本番 DB への書き込みのため **ユーザーが実行する**
 
