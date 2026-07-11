@@ -21,6 +21,7 @@ import {
 import {
   MAX_EML_FILE_SIZE,
   MAX_EML_FILE_COUNT,
+  MAX_EML_TOTAL_SIZE,
 } from "@/usecases/emlImportUseCases";
 
 type TalkImportFormProps = {
@@ -72,6 +73,10 @@ function emlFileCountExceededErrorMessage(): string {
 
 function emlFileSizeExceededErrorMessage(filename: string): string {
   return `${filename}: ファイルサイズは10MB以内にしてください`;
+}
+
+function emlTotalSizeExceededErrorMessage(): string {
+  return `ファイルの合計サイズは${MAX_EML_TOTAL_SIZE / (1024 * 1024)}MB以内にしてください。ファイルを分割してください`;
 }
 
 export function TalkImportForm({
@@ -208,6 +213,13 @@ export function TalkImportForm({
     const oversizedFile = files.find((file) => file.size > MAX_EML_FILE_SIZE);
     if (oversizedFile) {
       setError(emlFileSizeExceededErrorMessage(oversizedFile.name));
+      setFileInputKey((key) => key + 1);
+      return;
+    }
+
+    const totalSize = files.reduce((sum, file) => sum + file.size, 0);
+    if (totalSize > MAX_EML_TOTAL_SIZE) {
+      setError(emlTotalSizeExceededErrorMessage());
       setFileInputKey((key) => key + 1);
       return;
     }

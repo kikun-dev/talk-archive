@@ -33,6 +33,16 @@ export const MAX_EML_FILE_SIZE = 10 * 1024 * 1024;
 /** 一度にインポートできる最大ファイル数（#115） */
 export const MAX_EML_FILE_COUNT = 200;
 
+/**
+ * .eml ファイル合計サイズの上限（50MB、#128）
+ * Server Actions のリクエストボディサイズ上限（bodySizeLimit: 60MB、next.config.ts）から、
+ * multipart エンコードのオーバーヘッドと speakerAssignmentsJson 等の他フィールド分の
+ * 余裕を差し引いた値。各ファイル10MB以下という制約だけでは、例えば9MB×7件のように
+ * 画面上の検証（件数・各ファイルサイズ）を通過したうえでリクエスト全体が60MBの上限に
+ * 抵触し、アプリのエラー表示に到達できないケースを防ぐ
+ */
+export const MAX_EML_TOTAL_SIZE = 50 * 1024 * 1024;
+
 function isMailbox(address: Address | undefined): address is {
   name: string;
   address: string;

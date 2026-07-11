@@ -77,6 +77,13 @@ function emlFile(name = "mail1.eml") {
   return new File(["raw"], name, { type: "message/rfc822" });
 }
 
+/** File の size を Object.defineProperty で偽装する（実データは確保しない、#128） */
+function emlFileWithSize(name: string, size: number): File {
+  const file = new File(["raw"], name, { type: "message/rfc822" });
+  Object.defineProperty(file, "size", { value: size });
+  return file;
+}
+
 const basePreview: PreviewTalkImportResult = {
   preview: {
     totalCount: 5,
@@ -532,6 +539,28 @@ describe("TalkImportForm", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "big.eml: ファイルサイズは10MB以内にしてください",
+    );
+    expect(previewEmlImportActionMock).not.toHaveBeenCalled();
+    expect(screen.getByLabelText("インポートする.emlファイル")).not.toBe(
+      initialInput,
+    );
+  });
+
+  it("rejects files whose total size exceeds MAX_EML_TOTAL_SIZE without calling the preview action, and resets the input (#128)", async () => {
+    render(
+      <TalkImportForm conversationId="conv-1" participants={participants} />,
+    );
+    switchToEmlMode();
+
+    const initialInput = screen.getByLabelText("インポートする.emlファイル");
+    // 各9MB(<=10MB) x 6件 = 54MB > 50MB
+    const files = Array.from({ length: 6 }, (_, index) =>
+      emlFileWithSize(`mail${index}.eml`, 9 * 1024 * 1024),
+    );
+    fireEvent.change(initialInput, { target: { files } });
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "ファイルの合計サイズは50MB以内にしてください。ファイルを分割してください",
     );
     expect(previewEmlImportActionMock).not.toHaveBeenCalled();
     expect(screen.getByLabelText("インポートする.emlファイル")).not.toBe(

@@ -412,6 +412,13 @@ export async function buildImportPreview(
 export type ExecuteImportInput = {
   records: TalkImportRecord[];
   speakerAssignments: { [speakerName: string]: string };
+  /**
+   * 新規参加者作成時に speaker の代わりに使う表示名候補（任意、#128）
+   * 例: .eml インポートでは speaker に From アドレスが入るため、
+   * local part 由来の表示名候補（senderNameSuggestion）をここに渡す。
+   * JSON インポート経路は渡さない（speaker をそのまま使う従来どおりの挙動）
+   */
+  newParticipantNameBySpeaker?: { [speakerName: string]: string };
 };
 
 export type ImportResult = {
@@ -434,6 +441,26 @@ function isValidUuid(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
     value,
   );
+}
+
+/**
+ * 新規参加者作成時に使う表示名を解決する（#128）
+ * newParticipantNameBySpeaker に speaker のエントリがあれば trim + 100文字に slice した値を、
+ * trim後に空、またはエントリが存在しない場合は speaker 自身を返す
+ */
+function resolveNewParticipantName(
+  speaker: string,
+  newParticipantNameBySpeaker: { [speakerName: string]: string } | undefined,
+): string {
+  const candidate = newParticipantNameBySpeaker?.[speaker];
+  if (candidate === undefined) {
+    return speaker;
+  }
+  const trimmed = candidate.trim();
+  if (trimmed.length === 0) {
+    return speaker;
+  }
+  return trimmed.slice(0, MAX_PARTICIPANT_NAME_LENGTH);
 }
 
 /**
@@ -506,7 +533,13 @@ export async function executeImport(
 
   const participantKeyFor = (record: TalkImportRecord): string => {
     const resolved = resolvedSpeakers.get(record.speaker);
-    return resolved?.kind === "existing" ? resolved.participantId : record.speaker;
+    if (resolved?.kind === "existing") {
+      return resolved.participantId;
+    }
+    return resolveNewParticipantName(
+      record.speaker,
+      input.newParticipantNameBySpeaker,
+    );
   };
 
   const { unique, duplicateCount: jsonDuplicateCount } = partitionByDuplicate(
@@ -536,7 +569,12 @@ export async function executeImport(
     ...new Set(
       sorted
         .filter((record) => resolvedSpeakers.get(record.speaker)?.kind === "new")
-        .map((record) => record.speaker),
+        .map((record) =>
+          resolveNewParticipantName(
+            record.speaker,
+            input.newParticipantNameBySpeaker,
+          ),
+        ),
     ),
   ];
 
@@ -548,7 +586,12 @@ export async function executeImport(
       const isExisting = resolved?.kind === "existing";
       return {
         participantId: isExisting ? resolved.participantId : null,
-        participantName: isExisting ? null : record.speaker,
+        participantName: isExisting
+          ? null
+          : resolveNewParticipantName(
+              record.speaker,
+              input.newParticipantNameBySpeaker,
+            ),
         recordType: record.type,
         title: record.title,
         content: record.content,

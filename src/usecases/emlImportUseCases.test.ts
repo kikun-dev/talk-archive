@@ -6,6 +6,7 @@ import {
   EmlImportError,
   MAX_EML_FILE_SIZE,
   MAX_EML_FILE_COUNT,
+  MAX_EML_TOTAL_SIZE,
   type ParsedEmlMessage,
 } from "./emlImportUseCases";
 
@@ -400,5 +401,6 @@ describe("constants", () => {
   it("exposes the eml file size and count limits", () => {
     expect(MAX_EML_FILE_SIZE).toBe(10 * 1024 * 1024);
     expect(MAX_EML_FILE_COUNT).toBe(200);
+    expect(MAX_EML_TOTAL_SIZE).toBe(50 * 1024 * 1024);
   });
 });

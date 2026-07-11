@@ -20,6 +20,7 @@ import {
   EmlImportError,
   MAX_EML_FILE_SIZE,
   MAX_EML_FILE_COUNT,
+  MAX_EML_TOTAL_SIZE,
   type ParsedEmlMessage,
 } from "@/usecases/emlImportUseCases";
 import { attachRecordMedia } from "@/usecases/recordUseCases";
@@ -167,6 +168,7 @@ export async function executeTalkImportAction(
 
 const NO_EML_FILES_ERROR_MESSAGE = "ファイルを選択してください";
 const EML_FILE_COUNT_EXCEEDED_ERROR_MESSAGE = `一度にインポートできるのは${MAX_EML_FILE_COUNT}件までです。ファイルを分割してください`;
+const EML_TOTAL_SIZE_EXCEEDED_ERROR_MESSAGE = `ファイルの合計サイズは${MAX_EML_TOTAL_SIZE / (1024 * 1024)}MB以内にしてください。ファイルを分割してください`;
 
 function eachFileSizeErrorMessage(filename: string): string {
   return `${filename}: ファイルサイズは10MB以内にしてください`;
@@ -197,6 +199,11 @@ async function parseEmlFilesFromFormData(
   }
   if (files.length > MAX_EML_FILE_COUNT) {
     return { error: EML_FILE_COUNT_EXCEEDED_ERROR_MESSAGE };
+  }
+
+  const totalSize = files.reduce((sum, file) => sum + file.size, 0);
+  if (totalSize > MAX_EML_TOTAL_SIZE) {
+    return { error: EML_TOTAL_SIZE_EXCEEDED_ERROR_MESSAGE };
   }
 
   const parsed: ParsedEmlFile[] = [];
@@ -385,9 +392,18 @@ export async function executeEmlImportAction(
       messageByRecord.set(record, parsed[index].message);
     });
 
+    // 新規参加者作成時、speaker（From アドレス）の代わりに local part 由来の
+    // 表示名候補（senderNameSuggestion）を使う（#128）
+    const newParticipantNameBySpeaker: { [speakerName: string]: string } = {};
+    for (const { message } of parsed) {
+      newParticipantNameBySpeaker[message.senderAddress] =
+        message.senderNameSuggestion;
+    }
+
     const result = await executeImport(supabase, conversationId, {
       records,
       speakerAssignments,
+      newParticipantNameBySpeaker,
     });
 
     let attachedCount = 0;
