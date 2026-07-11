@@ -64,6 +64,10 @@ describe("importRepository", () => {
           created_record_count: 2,
           skipped_record_count: 1,
           created_participants: { "新しい人": "part-new-1" },
+          created_record_ids: [
+            { index: 0, id: "record-1" },
+            { index: 1, id: "record-2" },
+          ],
         },
         error: null,
       });
@@ -121,7 +125,30 @@ describe("importRepository", () => {
         createdRecordCount: 2,
         skippedRecordCount: 1,
         createdParticipants: { "新しい人": "part-new-1" },
+        createdRecordIds: [
+          { index: 0, id: "record-1" },
+          { index: 1, id: "record-2" },
+        ],
       });
+    });
+
+    it("defaults createdRecordIds to an empty array when the RPC omits it", async () => {
+      rpcMock.mockResolvedValue({
+        data: {
+          created_record_count: 0,
+          skipped_record_count: 0,
+          created_participants: {},
+        },
+        error: null,
+      });
+
+      const result = await importRecordsAtomic(client, {
+        conversationId: "conv-1",
+        newParticipants: [],
+        records: [],
+      });
+
+      expect(result.createdRecordIds).toEqual([]);
     });
 
     it("throws on error", async () => {

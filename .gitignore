@@ -34,3 +34,6 @@ yarn-error.log*
 
 # Claude Code local settings
 .claude/settings.local.json
+
+# ローカル検証用の一時ファイル（個人メールサンプル等）
+.tmp/

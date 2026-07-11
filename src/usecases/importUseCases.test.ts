@@ -716,6 +716,7 @@ describe("importUseCases", () => {
         createdCount: 0,
         skippedCount: 0,
         createdParticipants: {},
+        createdRecords: [],
       });
       expect(mockImportRecordsAtomic).not.toHaveBeenCalled();
     });
@@ -741,6 +742,7 @@ describe("importUseCases", () => {
         createdCount: 0,
         skippedCount: 1,
         createdParticipants: {},
+        createdRecords: [],
       });
     });
 
@@ -768,7 +770,50 @@ describe("importUseCases", () => {
         // JSON内部重複 1件 + RPC skipped 2件
         skippedCount: 3,
         createdParticipants: {},
+        createdRecords: [],
       });
+    });
+
+    it("maps the RPC's createdRecordIds back to the sorted input records that produced them", async () => {
+      mockGetConversationParticipants.mockResolvedValue([
+        participant({ id: "part-1", name: "瀬戸口 心月" }),
+      ]);
+      // RPC index 1 はスキップされたので created_record_ids に含まれない前提
+      mockImportRecordsAtomic.mockResolvedValue({
+        createdRecordCount: 2,
+        skippedRecordCount: 1,
+        createdParticipants: {},
+        createdRecordIds: [
+          { index: 0, id: "record-a" },
+          { index: 2, id: "record-c" },
+        ],
+      });
+
+      const first: TalkImportRecord = {
+        ...validRecord,
+        postedAt: "2026-07-07T06:19:00.000Z",
+        content: "1件目",
+      };
+      const second: TalkImportRecord = {
+        ...validRecord,
+        postedAt: "2026-07-08T06:19:00.000Z",
+        content: "2件目",
+      };
+      const third: TalkImportRecord = {
+        ...validRecord,
+        postedAt: "2026-07-09T06:19:00.000Z",
+        content: "3件目",
+      };
+
+      const result = await executeImport(client, "conv-1", {
+        records: [first, second, third],
+        speakerAssignments: {},
+      });
+
+      expect(result.createdRecords).toEqual([
+        { record: first, id: "record-a" },
+        { record: third, id: "record-c" },
+      ]);
     });
 
     it("sorts records by postedAt ascending before calling the RPC and resolves existing participants", async () => {

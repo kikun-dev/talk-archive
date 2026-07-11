@@ -48,6 +48,8 @@ export type ImportRecordsAtomicResult = {
   createdRecordCount: number;
   skippedRecordCount: number;
   createdParticipants: { [name: string]: string };
+  /** p_records 内の index（0始まり）→ 作成された record id。スキップされた index は含まない */
+  createdRecordIds?: { index: number; id: string }[];
 };
 
 /**
@@ -80,11 +82,13 @@ export async function importRecordsAtomic(
     created_record_count: number;
     skipped_record_count: number;
     created_participants: { [name: string]: string };
+    created_record_ids?: { index: number; id: string }[];
   };
 
   return {
     createdRecordCount: result.created_record_count,
     skippedRecordCount: result.skipped_record_count,
     createdParticipants: result.created_participants,
+    createdRecordIds: result.created_record_ids ?? [],
   };
 }

@@ -418,6 +418,12 @@ export type ImportResult = {
   createdCount: number;
   skippedCount: number;
   createdParticipants: { [name: string]: string };
+  /**
+   * 実際に作成された record と、その元になった入力 TalkImportRecord の対応。
+   * RPC の created_record_ids（p_records内index → id）を、RPC呼び出し時に渡した
+   * sorted 配列（= p_records と同じ順序）へ引き当てて構築する（#115: eml インポートの画像添付で使用）
+   */
+  createdRecords: { record: TalkImportRecord; id: string }[];
 };
 
 type ResolvedSpeaker =
@@ -520,6 +526,7 @@ export async function executeImport(
       createdCount: 0,
       skippedCount: jsonDuplicateCount,
       createdParticipants: {},
+      createdRecords: [],
     };
   }
 
@@ -551,9 +558,15 @@ export async function executeImport(
     }),
   });
 
+  const createdRecords = (result.createdRecordIds ?? []).map(({ index, id }) => ({
+    record: sorted[index],
+    id,
+  }));
+
   return {
     createdCount: result.createdRecordCount,
     skippedCount: jsonDuplicateCount + result.skippedRecordCount,
     createdParticipants: result.createdParticipants,
+    createdRecords,
   };
 }

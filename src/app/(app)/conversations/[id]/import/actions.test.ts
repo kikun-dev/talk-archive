@@ -20,6 +20,13 @@ const executeImportMock = vi.fn();
 
 class ImportErrorMock extends Error {}
 
+const parseEmlFileMock = vi.fn();
+const toTalkImportRecordMock = vi.fn();
+
+class EmlImportErrorMock extends Error {}
+
+const attachRecordMediaMock = vi.fn();
+
 vi.mock("@/lib/supabase/server", () => ({
   createSupabaseServerClient: createSupabaseServerClientMock,
 }));
@@ -38,6 +45,18 @@ vi.mock("@/usecases/importUseCases", () => ({
   executeImport: executeImportMock,
   ImportError: ImportErrorMock,
   MAX_IMPORT_FILE_SIZE: 5 * 1024 * 1024,
+}));
+
+vi.mock("@/usecases/emlImportUseCases", () => ({
+  parseEmlFile: parseEmlFileMock,
+  toTalkImportRecord: toTalkImportRecordMock,
+  EmlImportError: EmlImportErrorMock,
+  MAX_EML_FILE_SIZE: 10 * 1024 * 1024,
+  MAX_EML_FILE_COUNT: 200,
+}));
+
+vi.mock("@/usecases/recordUseCases", () => ({
+  attachRecordMedia: attachRecordMediaMock,
 }));
 
 function mockSupabaseClient(user: { id: string } | null) {
@@ -294,5 +313,463 @@ describe("executeTalkImportAction", () => {
     expect(result).toEqual({ error: "ファイルサイズは5MB以内にしてください" });
     expect(parseTalkImportJsonMock).not.toHaveBeenCalled();
     expect(executeImportMock).not.toHaveBeenCalled();
+  });
+});
+
+// --- .eml インポート（#115） ---
+
+function buildFormDataWithFiles(
+  files: { name: string; size?: number }[],
+): FormData {
+  const formData = new FormData();
+  for (const { name, size } of files) {
+    const content = size !== undefined ? new Uint8Array(size) : "eml content";
+    formData.append("files", new File([content], name));
+  }
+  return formData;
+}
+
+function parsedMessage(
+  overrides: Partial<{
+    senderAddress: string;
+    senderNameSuggestion: string;
+    postedAt: string;
+    title: string | null;
+    content: string | null;
+    image: { filename: string; mimeType: string; data: Uint8Array } | null;
+    extraImageCount: number;
+  }> = {},
+) {
+  return {
+    senderAddress: "sender@example.com",
+    senderNameSuggestion: "sender",
+    postedAt: "2020-10-12T06:16:14.000Z",
+    title: "件名",
+    content: "本文",
+    image: null,
+    extraImageCount: 0,
+    ...overrides,
+  };
+}
+
+describe("previewEmlImportAction", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("redirects to login when not authenticated", async () => {
+    mockSupabaseClient(null);
+    const formData = buildFormDataWithFiles([{ name: "a.eml" }]);
+
+    const { previewEmlImportAction } = await import("./actions");
+    await expect(
+      previewEmlImportAction("conv-1", formData),
+    ).rejects.toThrow("NEXT_REDIRECT: /login");
+  });
+
+  it("returns an error when no files are provided", async () => {
+    mockSupabaseClient({ id: "user-1" });
+    const formData = new FormData();
+
+    const { previewEmlImportAction } = await import("./actions");
+    const result = await previewEmlImportAction("conv-1", formData);
+
+    expect(result).toEqual({ error: "ファイルを選択してください" });
+    expect(parseEmlFileMock).not.toHaveBeenCalled();
+  });
+
+  it("returns an error when the number of files exceeds MAX_EML_FILE_COUNT", async () => {
+    mockSupabaseClient({ id: "user-1" });
+    const formData = buildFormDataWithFiles(
+      Array.from({ length: 201 }, (_, i) => ({ name: `${i}.eml` })),
+    );
+
+    const { previewEmlImportAction } = await import("./actions");
+    const result = await previewEmlImportAction("conv-1", formData);
+
+    expect(result).toEqual({
+      error: "一度にインポートできるのは200件までです。ファイルを分割してください",
+    });
+    expect(parseEmlFileMock).not.toHaveBeenCalled();
+  });
+
+  it("treats an oversized file as a row error and still processes the others", async () => {
+    mockSupabaseClient({ id: "user-1" });
+    const formData = buildFormDataWithFiles([
+      { name: "big.eml", size: 10 * 1024 * 1024 + 1 },
+      { name: "ok.eml" },
+    ]);
+    parseEmlFileMock.mockResolvedValue(parsedMessage());
+    toTalkImportRecordMock.mockReturnValue({
+      speaker: "sender@example.com",
+      postedAt: "2020-10-12T06:16:14.000Z",
+      type: "text",
+      title: "件名",
+      content: "本文",
+      hasAudio: false,
+    });
+    buildImportPreviewMock.mockResolvedValue({
+      totalCount: 2,
+      importableCount: 1,
+      duplicateCount: 0,
+      period: null,
+      typeCounts: { text: 1, image: 0, video: 0, audio: 0 },
+      unknownSpeakers: [],
+    });
+
+    const { previewEmlImportAction } = await import("./actions");
+    const result = await previewEmlImportAction("conv-1", formData);
+
+    expect(parseEmlFileMock).toHaveBeenCalledTimes(1);
+    expect(parseEmlFileMock).toHaveBeenCalledWith(expect.anything(), "ok.eml");
+    if ("error" in result) {
+      throw new Error("expected a preview result");
+    }
+    expect(result.preview.rowErrors).toEqual([
+      "big.eml: ファイルサイズは10MB以内にしてください",
+    ]);
+  });
+
+  it("collects EmlImportError messages as row errors and still builds a preview from the rest", async () => {
+    mockSupabaseClient({ id: "user-1" });
+    const formData = buildFormDataWithFiles([
+      { name: "broken.eml" },
+      { name: "ok.eml" },
+    ]);
+    parseEmlFileMock.mockImplementation(async (_raw: unknown, filename: string) => {
+      if (filename === "broken.eml") {
+        throw new EmlImportErrorMock(
+          `${filename}: 差出人のメールアドレスを取得できませんでした`,
+        );
+      }
+      return parsedMessage();
+    });
+    toTalkImportRecordMock.mockReturnValue({
+      speaker: "sender@example.com",
+      postedAt: "2020-10-12T06:16:14.000Z",
+      type: "text",
+      title: "件名",
+      content: "本文",
+      hasAudio: false,
+    });
+    buildImportPreviewMock.mockResolvedValue({
+      totalCount: 2,
+      importableCount: 1,
+      duplicateCount: 0,
+      period: null,
+      typeCounts: { text: 1, image: 0, video: 0, audio: 0 },
+      unknownSpeakers: [],
+    });
+
+    const { previewEmlImportAction } = await import("./actions");
+    const result = await previewEmlImportAction("conv-1", formData);
+
+    if ("error" in result) {
+      throw new Error("expected a preview result");
+    }
+    expect(result.preview.rowErrors).toEqual([
+      "broken.eml: 差出人のメールアドレスを取得できませんでした",
+    ]);
+    expect(buildImportPreviewMock).toHaveBeenCalledWith(
+      expect.anything(),
+      "conv-1",
+      expect.objectContaining({ totalCount: 2 }),
+    );
+  });
+
+  it("summarizes senders, imageCount, and extraImageWarnings from the parsed messages", async () => {
+    mockSupabaseClient({ id: "user-1" });
+    const formData = buildFormDataWithFiles([
+      { name: "a.eml" },
+      { name: "b.eml" },
+      { name: "c.eml" },
+    ]);
+    parseEmlFileMock.mockImplementation(async (_raw: unknown, filename: string) => {
+      if (filename === "a.eml") {
+        return parsedMessage({
+          senderAddress: "alice@example.com",
+          senderNameSuggestion: "alice",
+          image: { filename: "photo.png", mimeType: "image/png", data: new Uint8Array() },
+          extraImageCount: 2,
+        });
+      }
+      if (filename === "b.eml") {
+        return parsedMessage({
+          senderAddress: "alice@example.com",
+          senderNameSuggestion: "alice",
+        });
+      }
+      return parsedMessage({
+        senderAddress: "bob@example.com",
+        senderNameSuggestion: "bob",
+      });
+    });
+    toTalkImportRecordMock.mockReturnValue({
+      speaker: "sender@example.com",
+      postedAt: "2020-10-12T06:16:14.000Z",
+      type: "text",
+      title: "件名",
+      content: "本文",
+      hasAudio: false,
+    });
+    buildImportPreviewMock.mockResolvedValue({
+      totalCount: 3,
+      importableCount: 3,
+      duplicateCount: 0,
+      period: null,
+      typeCounts: { text: 2, image: 1, video: 0, audio: 0 },
+      unknownSpeakers: [],
+    });
+
+    const { previewEmlImportAction } = await import("./actions");
+    const result = await previewEmlImportAction("conv-1", formData);
+
+    if ("error" in result) {
+      throw new Error("expected a preview result");
+    }
+    expect(result.preview.senders).toEqual(
+      expect.arrayContaining([
+        { address: "alice@example.com", nameSuggestion: "alice", messageCount: 2 },
+        { address: "bob@example.com", nameSuggestion: "bob", messageCount: 1 },
+      ]),
+    );
+    expect(result.preview.imageCount).toBe(1);
+    expect(result.preview.extraImageWarnings).toEqual([
+      "a.eml: 2枚目以降の画像 2枚は取り込まれません",
+    ]);
+  });
+
+  it("returns a generic error for unexpected failures", async () => {
+    mockSupabaseClient({ id: "user-1" });
+    const formData = buildFormDataWithFiles([{ name: "a.eml" }]);
+    parseEmlFileMock.mockResolvedValue(parsedMessage());
+    toTalkImportRecordMock.mockReturnValue({
+      speaker: "sender@example.com",
+      postedAt: "2020-10-12T06:16:14.000Z",
+      type: "text",
+      title: "件名",
+      content: "本文",
+      hasAudio: false,
+    });
+    buildImportPreviewMock.mockRejectedValue(new Error("boom"));
+
+    const { previewEmlImportAction } = await import("./actions");
+    const result = await previewEmlImportAction("conv-1", formData);
+
+    expect(result).toEqual({
+      error:
+        "メールファイルの解析に失敗しました。時間をおいて再度お試しください。",
+    });
+  });
+});
+
+describe("executeEmlImportAction", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("redirects to login when not authenticated", async () => {
+    mockSupabaseClient(null);
+    const formData = buildFormDataWithFiles([{ name: "a.eml" }]);
+
+    const { executeEmlImportAction } = await import("./actions");
+    await expect(
+      executeEmlImportAction("conv-1", formData, "{}"),
+    ).rejects.toThrow("NEXT_REDIRECT: /login");
+  });
+
+  it("returns an error when no files are provided", async () => {
+    mockSupabaseClient({ id: "user-1" });
+    const formData = new FormData();
+
+    const { executeEmlImportAction } = await import("./actions");
+    const result = await executeEmlImportAction("conv-1", formData, "{}");
+
+    expect(result).toEqual({ error: "ファイルを選択してください" });
+    expect(executeImportMock).not.toHaveBeenCalled();
+  });
+
+  it("returns an error when speakerAssignmentsJson is not valid JSON", async () => {
+    mockSupabaseClient({ id: "user-1" });
+    const formData = buildFormDataWithFiles([{ name: "a.eml" }]);
+    parseEmlFileMock.mockResolvedValue(parsedMessage());
+    toTalkImportRecordMock.mockReturnValue({
+      speaker: "sender@example.com",
+      postedAt: "2020-10-12T06:16:14.000Z",
+      type: "text",
+      title: "件名",
+      content: "本文",
+      hasAudio: false,
+    });
+
+    const { executeEmlImportAction } = await import("./actions");
+    const result = await executeEmlImportAction("conv-1", formData, "not json");
+
+    expect(result).toEqual({ error: "発言者の割り当てのデータが不正です" });
+    expect(executeImportMock).not.toHaveBeenCalled();
+  });
+
+  it("executes the import and attaches images to their created records via createdRecords", async () => {
+    mockSupabaseClient({ id: "user-1" });
+    const formData = buildFormDataWithFiles([
+      { name: "with-image.eml" },
+      { name: "text-only.eml" },
+    ]);
+
+    const imageMessage = parsedMessage({
+      senderAddress: "alice@example.com",
+      image: { filename: "photo.png", mimeType: "image/png", data: new Uint8Array([1, 2, 3]) },
+    });
+    const textMessage = parsedMessage({ senderAddress: "bob@example.com" });
+
+    parseEmlFileMock.mockImplementation(async (_raw: unknown, filename: string) =>
+      filename === "with-image.eml" ? imageMessage : textMessage,
+    );
+
+    const imageRecord = {
+      speaker: "alice@example.com",
+      postedAt: "2020-10-12T06:16:14.000Z",
+      type: "image" as const,
+      title: "件名",
+      content: "本文",
+      hasAudio: false,
+    };
+    const textRecord = {
+      speaker: "bob@example.com",
+      postedAt: "2020-10-12T06:16:14.000Z",
+      type: "text" as const,
+      title: "件名",
+      content: "本文",
+      hasAudio: false,
+    };
+    toTalkImportRecordMock.mockImplementation((message: { senderAddress: string }) =>
+      message.senderAddress === "alice@example.com" ? imageRecord : textRecord,
+    );
+
+    executeImportMock.mockResolvedValue({
+      createdCount: 2,
+      skippedCount: 0,
+      createdParticipants: {},
+      createdRecords: [
+        { record: imageRecord, id: "record-image" },
+        { record: textRecord, id: "record-text" },
+      ],
+    });
+    attachRecordMediaMock.mockResolvedValue({});
+
+    const { executeEmlImportAction } = await import("./actions");
+    const result = await executeEmlImportAction(
+      "conv-1",
+      formData,
+      JSON.stringify({ "alice@example.com": "new", "bob@example.com": "new" }),
+    );
+
+    expect(executeImportMock).toHaveBeenCalledWith(expect.anything(), "conv-1", {
+      records: [imageRecord, textRecord],
+      speakerAssignments: { "alice@example.com": "new", "bob@example.com": "new" },
+    });
+    expect(attachRecordMediaMock).toHaveBeenCalledTimes(1);
+    expect(attachRecordMediaMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        userId: "user-1",
+        recordId: "record-image",
+        filename: "photo.png",
+        contentType: "image/png",
+      }),
+    );
+    expect(revalidatePathMock).toHaveBeenCalledWith("/conversations/conv-1");
+    if ("error" in result) {
+      throw new Error("expected a result");
+    }
+    expect(result.result.attachedCount).toBe(1);
+    expect(result.result.attachFailedCount).toBe(0);
+    expect(result.result.createdCount).toBe(2);
+  });
+
+  it("counts attachFailedCount without aborting other attachments when attachRecordMedia throws", async () => {
+    mockSupabaseClient({ id: "user-1" });
+    const formData = buildFormDataWithFiles([{ name: "with-image.eml" }]);
+    const imageMessage = parsedMessage({
+      image: { filename: "photo.png", mimeType: "image/png", data: new Uint8Array([1, 2, 3]) },
+    });
+    parseEmlFileMock.mockResolvedValue(imageMessage);
+    const imageRecord = {
+      speaker: "sender@example.com",
+      postedAt: "2020-10-12T06:16:14.000Z",
+      type: "image" as const,
+      title: "件名",
+      content: "本文",
+      hasAudio: false,
+    };
+    toTalkImportRecordMock.mockReturnValue(imageRecord);
+    executeImportMock.mockResolvedValue({
+      createdCount: 1,
+      skippedCount: 0,
+      createdParticipants: {},
+      createdRecords: [{ record: imageRecord, id: "record-image" }],
+    });
+    attachRecordMediaMock.mockRejectedValue(new Error("storage down"));
+
+    const { executeEmlImportAction } = await import("./actions");
+    const result = await executeEmlImportAction(
+      "conv-1",
+      formData,
+      JSON.stringify({ "sender@example.com": "new" }),
+    );
+
+    if ("error" in result) {
+      throw new Error("expected a result");
+    }
+    expect(result.result.attachedCount).toBe(0);
+    expect(result.result.attachFailedCount).toBe(1);
+    expect(result.result.createdCount).toBe(1);
+  });
+
+  it("passes through the ImportError message", async () => {
+    mockSupabaseClient({ id: "user-1" });
+    const formData = buildFormDataWithFiles([{ name: "a.eml" }]);
+    parseEmlFileMock.mockResolvedValue(parsedMessage());
+    toTalkImportRecordMock.mockReturnValue({
+      speaker: "sender@example.com",
+      postedAt: "2020-10-12T06:16:14.000Z",
+      type: "text",
+      title: "件名",
+      content: "本文",
+      hasAudio: false,
+    });
+    executeImportMock.mockRejectedValue(
+      new ImportErrorMock("発言者「sender@example.com」の割り当てを指定してください"),
+    );
+
+    const { executeEmlImportAction } = await import("./actions");
+    const result = await executeEmlImportAction("conv-1", formData, "{}");
+
+    expect(result).toEqual({
+      error: "発言者「sender@example.com」の割り当てを指定してください",
+    });
+    expect(revalidatePathMock).not.toHaveBeenCalled();
+  });
+
+  it("returns a generic error for unexpected failures", async () => {
+    mockSupabaseClient({ id: "user-1" });
+    const formData = buildFormDataWithFiles([{ name: "a.eml" }]);
+    parseEmlFileMock.mockResolvedValue(parsedMessage());
+    toTalkImportRecordMock.mockReturnValue({
+      speaker: "sender@example.com",
+      postedAt: "2020-10-12T06:16:14.000Z",
+      type: "text",
+      title: "件名",
+      content: "本文",
+      hasAudio: false,
+    });
+    executeImportMock.mockRejectedValue(new Error("boom"));
+
+    const { executeEmlImportAction } = await import("./actions");
+    const result = await executeEmlImportAction("conv-1", formData, "{}");
+
+    expect(result).toEqual({
+      error: "インポートに失敗しました。時間をおいて再度お試しください。",
+    });
   });
 });

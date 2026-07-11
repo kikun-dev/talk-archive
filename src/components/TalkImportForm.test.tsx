@@ -204,6 +204,7 @@ describe("TalkImportForm", () => {
         createdCount: 3,
         skippedCount: 2,
         createdParticipants: { "新しい発言者": "part-new-1" },
+        createdRecords: [],
       },
     });
 
