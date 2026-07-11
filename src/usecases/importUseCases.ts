@@ -59,6 +59,15 @@ function isJsonObject(value: unknown): value is { [key: string]: unknown } {
 }
 
 /**
+ * PostgreSQL の jsonb/text カラムは U+0000（NUL）を保存できず、
+ * import_records_atomic RPC でバッチ全体が失敗するため、DB へ渡る文字列は
+ * 入力境界でこの検証を通す（#128）
+ */
+function containsNulCharacter(value: string): boolean {
+  return value.includes("\0");
+}
+
+/**
  * ISO 8601 の厳格な形式（YYYY-MM-DDTHH:MM[:SS[.SSS]](Z|±HH:MM)）にのみ一致する。
  * スペース区切りや英語月名などは拒否する（#124）
  */
@@ -183,6 +192,15 @@ export function parseTalkImportJson(text: string): TalkImportParseResult {
       rowErrors.push(`${rowLabel}: 発言者を入力してください`);
       return;
     }
+    // 未知 speaker は UI 既定値 "new" で p_new_participants[].name / participant_name に
+    // 入るため、content / title と同様に NUL 混入を行エラーとして検知する
+    // （#128 第4ラウンドレビュー対応 P1）
+    if (containsNulCharacter(trimmedSpeaker)) {
+      rowErrors.push(
+        `${rowLabel}: 発言者名に使用できない文字（U+0000）が含まれています`,
+      );
+      return;
+    }
     if (trimmedSpeaker.length > MAX_PARTICIPANT_NAME_LENGTH) {
       rowErrors.push(`${rowLabel}: 発言者は100文字以内で入力してください`);
       return;
@@ -214,6 +232,15 @@ export function parseTalkImportJson(text: string): TalkImportParseResult {
         ? null
         : rawContent.trim();
 
+    // JSON は talk-extract スキルの機械生成であり、混入は入力側の異常のため、
+    // 黙って除去せず行エラーとして表面化させる（#128 第3ラウンドレビュー対応 P1）
+    if (content !== null && containsNulCharacter(content)) {
+      rowErrors.push(
+        `${rowLabel}: 本文に使用できない文字（U+0000）が含まれています`,
+      );
+      return;
+    }
+
     if (type === "text" && (content === null || content.length === 0)) {
       rowErrors.push(`${rowLabel}: テキストを入力してください`);
       return;
@@ -230,6 +257,12 @@ export function parseTalkImportJson(text: string): TalkImportParseResult {
     }
     const title =
       rawTitle === undefined || rawTitle === null ? null : rawTitle.trim();
+    if (title !== null && containsNulCharacter(title)) {
+      rowErrors.push(
+        `${rowLabel}: タイトルに使用できない文字（U+0000）が含まれています`,
+      );
+      return;
+    }
     if (title !== null && title.length > MAX_TITLE_LENGTH) {
       rowErrors.push(`${rowLabel}: タイトルは200文字以内で入力してください`);
       return;
@@ -353,18 +386,34 @@ function buildPeriod(
   return { start, end };
 }
 
+export type BuildImportPreviewOptions = {
+  /**
+   * speaker 名（.eml では From アドレス） → participantId の明示割り当て。
+   * 指定された speaker は「新規参加者として追加」ではなく既存 participant への
+   * 割り当てとして重複判定キーを組み立てる（実行時 executeImport の解決と一致させるため、#128）
+   */
+  speakerAssignments?: { [speakerName: string]: string };
+};
+
 /**
  * インポート内容のプレビューを構築する
  * 既存 participants / records を取得し、重複件数・期間・種別内訳・未知 speaker を集計する
  * totalCount は parseResult.totalCount（行エラーで除外されたレコードを含む入力全体の件数）を使う。
  * importableCount / duplicateCount は正常にパースできた records のみを対象に算出する（#124）
+ *
+ * options.speakerAssignments が指定された場合、重複判定キーの participant 部分は
+ * 「assignments の participantId → 名前完全一致 → speaker そのまま」の順で解決する。
+ * これは実行時（executeImport の resolveSpeakers）と同じ解決順であり、.eml インポートの
+ * ように speaker に From アドレスが入る場合でもプレビューと実行の重複判定を一致させる（#128）
  */
 export async function buildImportPreview(
   client: SupabaseClient<Database>,
   conversationId: string,
   parseResult: TalkImportParseResult,
+  options?: BuildImportPreviewOptions,
 ): Promise<ImportPreview> {
   const { records, totalCount } = parseResult;
+  const speakerAssignments = options?.speakerAssignments ?? {};
 
   const [participants, existingRecords] = await Promise.all([
     getConversationParticipants(client, conversationId),
@@ -374,12 +423,44 @@ export async function buildImportPreview(
   const participantIdByName = new Map(
     participants.map((participant) => [participant.name, participant.id]),
   );
+  const validParticipantIds = new Set(
+    participants.map((participant) => participant.id),
+  );
   const existingKeys = buildExistingDedupKeys(existingRecords);
+
+  const resolveParticipantKey = (speaker: string): string => {
+    const assignment = speakerAssignments[speaker];
+
+    if (assignment === "new") {
+      return speaker;
+    }
+
+    if (typeof assignment === "string" && assignment.length > 0) {
+      if (!isValidUuid(assignment) || !validParticipantIds.has(assignment)) {
+        throw new ImportError(`発言者「${speaker}」の割り当てが不正です`);
+      }
+      return assignment;
+    }
+
+    return participantIdByName.get(speaker) ?? speaker;
+  };
 
   const unknownSpeakers = new Set<string>();
   const typeCounts = { text: 0, image: 0, video: 0, audio: 0 };
+  const participantKeyBySpeaker = new Map<string, string>();
   for (const record of records) {
-    if (!participantIdByName.has(record.speaker)) {
+    if (!participantKeyBySpeaker.has(record.speaker)) {
+      participantKeyBySpeaker.set(
+        record.speaker,
+        resolveParticipantKey(record.speaker),
+      );
+    }
+
+    const hasAssignment = Object.prototype.hasOwnProperty.call(
+      speakerAssignments,
+      record.speaker,
+    );
+    if (!hasAssignment && !participantIdByName.has(record.speaker)) {
       unknownSpeakers.add(record.speaker);
     }
     typeCounts[record.type]++;
@@ -389,7 +470,7 @@ export async function buildImportPreview(
     records,
     (record) =>
       buildRecordDedupKey(
-        participantIdByName.get(record.speaker) ?? record.speaker,
+        participantKeyBySpeaker.get(record.speaker) ?? record.speaker,
         record.postedAt,
         record.type,
         record.content,
@@ -418,6 +499,12 @@ export type ImportResult = {
   createdCount: number;
   skippedCount: number;
   createdParticipants: { [name: string]: string };
+  /**
+   * 実際に作成された record と、その元になった入力 TalkImportRecord の対応。
+   * RPC の created_record_ids（p_records内index → id）を、RPC呼び出し時に渡した
+   * sorted 配列（= p_records と同じ順序）へ引き当てて構築する（#115: eml インポートの画像添付で使用）
+   */
+  createdRecords: { record: TalkImportRecord; id: string }[];
 };
 
 type ResolvedSpeaker =
@@ -435,11 +522,16 @@ function isValidUuid(value: string): boolean {
  * assignments で明示された割り当て（"new" または既存 participantId）を優先し、
  * 割り当てがなければ既存 participant の完全一致名で解決する。
  * どちらでも解決できない speaker があれば ImportError を投げる
+ *
+ * 明示割り当てが UUID 形式であっても、validParticipantIds（このトークの参加者集合）に
+ * 含まれなければ不正として弾く。別トークの participantId・存在しない participantId を
+ * 誤って（あるいは悪意を持って）渡された場合に、RPC 呼び出し前の入力境界で検証する（#128）
  */
 function resolveSpeakers(
   records: TalkImportRecord[],
   speakerAssignments: { [speakerName: string]: string },
   participantIdByName: Map<string, string>,
+  validParticipantIds: Set<string>,
 ): Map<string, ResolvedSpeaker> {
   const speakerNames = [...new Set(records.map((record) => record.speaker))];
   const resolved = new Map<string, ResolvedSpeaker>();
@@ -453,7 +545,7 @@ function resolveSpeakers(
     }
 
     if (typeof assignment === "string" && assignment.length > 0) {
-      if (!isValidUuid(assignment)) {
+      if (!isValidUuid(assignment) || !validParticipantIds.has(assignment)) {
         throw new ImportError(`発言者「${name}」の割り当てが不正です`);
       }
       resolved.set(name, { kind: "existing", participantId: assignment });
@@ -491,11 +583,15 @@ export async function executeImport(
   const participantIdByName = new Map(
     participants.map((participant) => [participant.name, participant.id]),
   );
+  const validParticipantIds = new Set(
+    participants.map((participant) => participant.id),
+  );
 
   const resolvedSpeakers = resolveSpeakers(
     input.records,
     input.speakerAssignments,
     participantIdByName,
+    validParticipantIds,
   );
 
   const participantKeyFor = (record: TalkImportRecord): string => {
@@ -520,6 +616,7 @@ export async function executeImport(
       createdCount: 0,
       skippedCount: jsonDuplicateCount,
       createdParticipants: {},
+      createdRecords: [],
     };
   }
 
@@ -551,9 +648,15 @@ export async function executeImport(
     }),
   });
 
+  const createdRecords = (result.createdRecordIds ?? []).map(({ index, id }) => ({
+    record: sorted[index],
+    id,
+  }));
+
   return {
     createdCount: result.createdRecordCount,
     skippedCount: jsonDuplicateCount + result.skippedRecordCount,
     createdParticipants: result.createdParticipants,
+    createdRecords,
   };
 }

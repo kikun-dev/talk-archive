@@ -110,6 +110,25 @@ describe("ConversationImportPage", () => {
     ).toBeInTheDocument();
   });
 
+  // #128 レビュー対応（P2）: JSON / .eml 両方を包含する見出しにする
+  it("uses a heading that covers both JSON and .eml import, not the JSON-only wording", async () => {
+    mockSupabaseUser({ id: "user-1" });
+
+    const { default: ConversationImportPage } = await import("./page");
+    render(
+      await ConversationImportPage({
+        params: Promise.resolve({ id: "conv-1" }),
+      }),
+    );
+
+    expect(
+      screen.getByRole("heading", { name: "トークインポート" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: "トークJSONインポート" }),
+    ).not.toBeInTheDocument();
+  });
+
   it("builds metadata title from the conversation title", async () => {
     mockSupabaseUser({ id: "user-1" });
 
