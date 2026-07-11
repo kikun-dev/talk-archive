@@ -191,6 +191,60 @@ describe("importUseCases", () => {
       ]);
     });
 
+    // #128 第4ラウンドレビュー対応（P1）: 未知 speaker は UI 既定値 "new" で
+    // p_new_participants[].name / participant_name に入るため、content / title と
+    // 同様に PostgreSQL の jsonb/text カラムが保存できない U+0000（NUL）を行エラーとして
+    // 検知し、正常な行を含むバッチ全体が失敗するのを防ぐ
+    it("collects a row error when speaker contains U+0000 (NUL), which PostgreSQL's jsonb/text columns cannot store", () => {
+      const json = JSON.stringify({
+        version: 1,
+        records: [
+          {
+            speaker: `瀬戸口${String.fromCharCode(0)}心月`,
+            postedAt: "2026-07-07T15:19:00+09:00",
+            type: "text",
+            content: "こんにちは",
+          },
+        ],
+      });
+
+      const result = parseTalkImportJson(json);
+
+      expect(result.records).toEqual([]);
+      expect(result.rowErrors).toEqual([
+        "1件目: 発言者名に使用できない文字（U+0000）が含まれています",
+      ]);
+    });
+
+    it("skips only the record whose speaker contains U+0000 and keeps importing the other valid records", () => {
+      const json = JSON.stringify({
+        version: 1,
+        records: [
+          {
+            speaker: "瀬戸口 心月",
+            postedAt: "2026-07-07T15:19:00+09:00",
+            type: "text",
+            content: "OK",
+          },
+          {
+            speaker: `NG${String.fromCharCode(0)}`,
+            postedAt: "2026-07-08T15:19:00+09:00",
+            type: "text",
+            content: "NG",
+          },
+        ],
+      });
+
+      const result = parseTalkImportJson(json);
+
+      expect(result.records).toHaveLength(1);
+      expect(result.records[0].speaker).toBe("瀬戸口 心月");
+      expect(result.rowErrors).toEqual([
+        "2件目: 発言者名に使用できない文字（U+0000）が含まれています",
+      ]);
+      expect(result.totalCount).toBe(2);
+    });
+
     it("collects a row error for invalid postedAt (no timezone)", () => {
       const json = JSON.stringify({
         version: 1,
@@ -1016,6 +1070,42 @@ describe("importUseCases", () => {
           speakerAssignments: { "瀬戸口 心月": nonExistentParticipantId },
         }),
       ).rejects.toThrow(ImportError);
+      expect(mockImportRecordsAtomic).not.toHaveBeenCalled();
+    });
+
+    // #128 第4ラウンドレビュー対応（P1）: parseTalkImportJson が U+0000 を含む speaker を
+    // 行エラーとして除外するため、そのようなレコードしかない JSON は records が空になり、
+    // RPC（importRecordsAtomic）は呼ばれない
+    it("does not call the RPC when the only records are ones whose speaker was excluded for containing U+0000 by parseTalkImportJson", async () => {
+      const json = JSON.stringify({
+        version: 1,
+        records: [
+          {
+            speaker: `NG${String.fromCharCode(0)}`,
+            postedAt: "2026-07-07T15:19:00+09:00",
+            type: "text",
+            content: "こんにちは",
+          },
+        ],
+      });
+      const parseResult = parseTalkImportJson(json);
+      expect(parseResult.records).toEqual([]);
+
+      mockGetConversationParticipants.mockResolvedValue([
+        participant({ id: "part-1", name: "瀬戸口 心月" }),
+      ]);
+
+      const result = await executeImport(client, "conv-1", {
+        records: parseResult.records,
+        speakerAssignments: {},
+      });
+
+      expect(result).toEqual({
+        createdCount: 0,
+        skippedCount: 0,
+        createdParticipants: {},
+        createdRecords: [],
+      });
       expect(mockImportRecordsAtomic).not.toHaveBeenCalled();
     });
   });

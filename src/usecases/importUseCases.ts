@@ -59,6 +59,15 @@ function isJsonObject(value: unknown): value is { [key: string]: unknown } {
 }
 
 /**
+ * PostgreSQL の jsonb/text カラムは U+0000（NUL）を保存できず、
+ * import_records_atomic RPC でバッチ全体が失敗するため、DB へ渡る文字列は
+ * 入力境界でこの検証を通す（#128）
+ */
+function containsNulCharacter(value: string): boolean {
+  return value.includes("\0");
+}
+
+/**
  * ISO 8601 の厳格な形式（YYYY-MM-DDTHH:MM[:SS[.SSS]](Z|±HH:MM)）にのみ一致する。
  * スペース区切りや英語月名などは拒否する（#124）
  */
@@ -183,6 +192,15 @@ export function parseTalkImportJson(text: string): TalkImportParseResult {
       rowErrors.push(`${rowLabel}: 発言者を入力してください`);
       return;
     }
+    // 未知 speaker は UI 既定値 "new" で p_new_participants[].name / participant_name に
+    // 入るため、content / title と同様に NUL 混入を行エラーとして検知する
+    // （#128 第4ラウンドレビュー対応 P1）
+    if (containsNulCharacter(trimmedSpeaker)) {
+      rowErrors.push(
+        `${rowLabel}: 発言者名に使用できない文字（U+0000）が含まれています`,
+      );
+      return;
+    }
     if (trimmedSpeaker.length > MAX_PARTICIPANT_NAME_LENGTH) {
       rowErrors.push(`${rowLabel}: 発言者は100文字以内で入力してください`);
       return;
@@ -214,11 +232,9 @@ export function parseTalkImportJson(text: string): TalkImportParseResult {
         ? null
         : rawContent.trim();
 
-    // PostgreSQL の jsonb/text カラムは U+0000（NUL）を保存できず
-    // import_records_atomic RPC でバッチ全体が失敗する。JSON は talk-extract スキルの
-    // 機械生成であり、混入は入力側の異常のため、黙って除去せず行エラーとして表面化させる
-    // （#128 第3ラウンドレビュー対応 P1）
-    if (content !== null && content.includes("\0")) {
+    // JSON は talk-extract スキルの機械生成であり、混入は入力側の異常のため、
+    // 黙って除去せず行エラーとして表面化させる（#128 第3ラウンドレビュー対応 P1）
+    if (content !== null && containsNulCharacter(content)) {
       rowErrors.push(
         `${rowLabel}: 本文に使用できない文字（U+0000）が含まれています`,
       );
@@ -241,7 +257,7 @@ export function parseTalkImportJson(text: string): TalkImportParseResult {
     }
     const title =
       rawTitle === undefined || rawTitle === null ? null : rawTitle.trim();
-    if (title !== null && title.includes("\0")) {
+    if (title !== null && containsNulCharacter(title)) {
       rowErrors.push(
         `${rowLabel}: タイトルに使用できない文字（U+0000）が含まれています`,
       );
