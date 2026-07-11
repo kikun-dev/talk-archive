@@ -237,7 +237,11 @@ export function TalkImportForm({
         formData.append("files", file);
       }
 
-      const response = await previewEmlImportAction(conversationId, formData);
+      const response = await previewEmlImportAction(
+        conversationId,
+        formData,
+        emlParticipantId,
+      );
       if ("error" in response) {
         setError(response.error);
         return;
@@ -705,35 +709,11 @@ export function TalkImportForm({
           )}
 
           <section className="space-y-2">
-            {participants.length === 1 && (
-              <p className="text-sm text-gray-700">
-                <span className="font-medium text-gray-900">割り当て先:</span>{" "}
-                {participants[0].name}
-              </p>
-            )}
-            {participants.length >= 2 && (
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
-                <label
-                  htmlFor={emlParticipantSelectId}
-                  className="text-sm font-medium text-gray-700"
-                >
-                  割り当て先
-                </label>
-                <select
-                  id={emlParticipantSelectId}
-                  aria-label="割り当て先"
-                  value={emlParticipantId}
-                  onChange={(event) => setEmlParticipantId(event.target.value)}
-                  className="min-h-10 w-full rounded border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 sm:w-auto sm:max-w-xs"
-                >
-                  {participants.map((participant) => (
-                    <option key={participant.id} value={participant.id}>
-                      {participant.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
+            <p className="text-sm text-gray-700">
+              <span className="font-medium text-gray-900">割り当て先:</span>{" "}
+              {participants.find((participant) => participant.id === emlParticipantId)
+                ?.name ?? ""}
+            </p>
           </section>
 
           <FormError message={error} />
@@ -850,8 +830,41 @@ export function TalkImportForm({
             インポートする.emlファイル
           </p>
           <p className="mt-1 text-xs text-gray-500">
-            eml形式・複数選択可・1通10MBまで・最大200通まで
+            eml形式・複数選択可・1通10MBまで・最大200通まで・合計50MBまで
           </p>
+
+          <div className="mt-4 flex flex-col items-center gap-2 sm:flex-row sm:justify-center sm:gap-4">
+            {participants.length === 1 ? (
+              <p className="text-sm text-gray-700">
+                <span className="font-medium text-gray-900">割り当て先:</span>{" "}
+                {participants[0].name}
+              </p>
+            ) : (
+              <>
+                <label
+                  htmlFor={emlParticipantSelectId}
+                  className="text-sm font-medium text-gray-700"
+                >
+                  割り当て先
+                </label>
+                <select
+                  id={emlParticipantSelectId}
+                  aria-label="割り当て先"
+                  value={emlParticipantId}
+                  onChange={(event) => setEmlParticipantId(event.target.value)}
+                  disabled={isPending}
+                  className="min-h-10 w-full rounded border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 sm:w-auto sm:max-w-xs"
+                >
+                  {participants.map((participant) => (
+                    <option key={participant.id} value={participant.id}>
+                      {participant.name}
+                    </option>
+                  ))}
+                </select>
+              </>
+            )}
+          </div>
+
           <label
             htmlFor={emlFileInputId}
             className={`mt-5 inline-flex min-h-10 cursor-pointer items-center rounded bg-gray-900 px-5 py-2 text-sm font-medium text-white shadow-sm hover:bg-gray-800 peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-gray-900 ${

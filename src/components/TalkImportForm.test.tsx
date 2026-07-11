@@ -22,7 +22,11 @@ const executeTalkImportActionMock = vi.fn<
   ) => Promise<ExecuteTalkImportResult>
 >();
 const previewEmlImportActionMock = vi.fn<
-  (conversationId: string, formData: FormData) => Promise<PreviewEmlImportResult>
+  (
+    conversationId: string,
+    formData: FormData,
+    participantId: string,
+  ) => Promise<PreviewEmlImportResult>
 >();
 const executeEmlImportActionMock = vi.fn<
   (
@@ -42,7 +46,7 @@ vi.mock("@/app/(app)/conversations/[id]/import/actions", () => ({
       ...(args as [string, string, string]),
     ),
   previewEmlImportAction: (...args: unknown[]) =>
-    previewEmlImportActionMock(...(args as [string, FormData])),
+    previewEmlImportActionMock(...(args as [string, FormData, string])),
   executeEmlImportAction: (...args: unknown[]) =>
     executeEmlImportActionMock(...(args as [string, FormData, string])),
 }));
@@ -373,6 +377,20 @@ describe("TalkImportForm", () => {
     ).not.toBeInTheDocument();
   });
 
+  // #128 レビュー対応（P2）: 説明文に合計サイズ上限（50MB）を明記する
+  it("mentions the total size limit (50MB) alongside the per-file and count limits in the .eml file selection description", () => {
+    render(
+      <TalkImportForm conversationId="conv-1" participants={participants} />,
+    );
+    switchToEmlMode();
+
+    expect(
+      screen.getByText(
+        "eml形式・複数選択可・1通10MBまで・最大200通まで・合計50MBまで",
+      ),
+    ).toBeInTheDocument();
+  });
+
   it("resets error state when switching from JSON mode to mail mode", async () => {
     render(
       <TalkImportForm conversationId="conv-1" participants={participants} />,
@@ -395,7 +413,9 @@ describe("TalkImportForm", () => {
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
-  it("auto-assigns to the sole participant, shows it statically, and passes its id to executeEmlImportAction (#128)", async () => {
+  // #128 レビュー対応（P1）: 割り当て先の表示/セレクトはファイル選択ステージに置き、
+  // プレビュー実行前に確定させる。プレビューステージには静的テキストで表示する
+  it("auto-assigns to the sole participant, shows it statically on the file-selection stage (no select), passes its id to previewEmlImportAction, and shows it statically on the preview stage too (#128)", async () => {
     previewEmlImportActionMock.mockResolvedValue(baseEmlPreview);
     executeEmlImportActionMock.mockResolvedValue({
       result: {
@@ -412,17 +432,27 @@ describe("TalkImportForm", () => {
       <TalkImportForm conversationId="conv-1" participants={participants} />,
     );
     switchToEmlMode();
+
+    // ファイル選択ステージ: 静的表示のみで、セレクトは出ない
+    expect(await findByExactText("割り当て先: メンバーA")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("combobox", { name: /割り当て先/ }),
+    ).not.toBeInTheDocument();
+
     const file = emlFile();
     selectEmlFiles([file]);
 
     await waitFor(() =>
-      expect(previewEmlImportActionMock).toHaveBeenCalledTimes(1),
+      expect(previewEmlImportActionMock).toHaveBeenCalledWith(
+        "conv-1",
+        expect.any(FormData),
+        "part-1",
+      ),
     );
-    const [calledConversationId, calledFormData] =
-      previewEmlImportActionMock.mock.calls[0];
-    expect(calledConversationId).toBe("conv-1");
+    const [, calledFormData] = previewEmlImportActionMock.mock.calls[0];
     expect(calledFormData.getAll("files")).toEqual([file]);
 
+    // プレビューステージ: 引き続き静的表示のみ
     expect(await findByExactText("割り当て先: メンバーA")).toBeInTheDocument();
     expect(
       screen.queryByRole("combobox", { name: /割り当て先/ }),
@@ -441,7 +471,7 @@ describe("TalkImportForm", () => {
     );
   });
 
-  it("shows a participant select defaulting to the first participant when there are multiple participants, and passes the selected id to executeEmlImportAction (#128)", async () => {
+  it("shows a participant select on the file-selection stage (defaulting to the first participant) when there are multiple participants, passes the selected id to previewEmlImportAction, shows it statically (no select) on the preview stage, and passes it to executeEmlImportAction (#128)", async () => {
     previewEmlImportActionMock.mockResolvedValue(baseEmlPreview);
     executeEmlImportActionMock.mockResolvedValue({
       result: {
@@ -458,8 +488,8 @@ describe("TalkImportForm", () => {
       <TalkImportForm conversationId="conv-1" participants={twoParticipants} />,
     );
     switchToEmlMode();
-    selectEmlFiles([emlFile()]);
 
+    // ファイル選択ステージ: セレクトが出て、既定値は先頭の参加者
     const select = await screen.findByRole("combobox", {
       name: "割り当て先",
     });
@@ -468,6 +498,22 @@ describe("TalkImportForm", () => {
     expect(screen.getByRole("option", { name: "メンバーB" })).toBeInTheDocument();
 
     fireEvent.change(select, { target: { value: "part-2" } });
+
+    selectEmlFiles([emlFile()]);
+
+    await waitFor(() =>
+      expect(previewEmlImportActionMock).toHaveBeenCalledWith(
+        "conv-1",
+        expect.any(FormData),
+        "part-2",
+      ),
+    );
+
+    // プレビューステージ: セレクトは出ず、選択済みの割り当て先が静的表示される
+    expect(await findByExactText("割り当て先: メンバーB")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("combobox", { name: /割り当て先/ }),
+    ).not.toBeInTheDocument();
 
     fireEvent.click(
       await screen.findByRole("button", { name: "インポート実行" }),

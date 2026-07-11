@@ -289,6 +289,111 @@ describe("parseEmlFile", () => {
     expect(result.extraImageCount).toBe(0);
   });
 
+  // #128 レビュー対応（P1）: 異常な HTML 数値文字参照（範囲外・サロゲート範囲等）で
+  // String.fromCodePoint が RangeError を投げ、バッチ全体（Promise.all 相当）が
+  // 失敗することを防ぐ。デコード前にコードポイントを検証し、無効な場合は元の表記のまま残す
+  describe("malformed HTML numeric character references (#128)", () => {
+    it("does not throw and leaves the original notation when the code point exceeds 0x10FFFF", async () => {
+      const raw = buildAlternativeEml({
+        textBody: null,
+        htmlBody: "<p>先頭&#x110000;末尾</p>",
+      });
+
+      const result = await parseEmlFile(raw, "test.eml");
+
+      expect(result.content).toBe("先頭&#x110000;末尾");
+    });
+
+    it("does not throw and leaves the original notation for a decimal reference exceeding 0x10FFFF (1114112)", async () => {
+      const raw = buildAlternativeEml({
+        textBody: null,
+        htmlBody: "<p>先頭&#1114112;末尾</p>",
+      });
+
+      const result = await parseEmlFile(raw, "test.eml");
+
+      expect(result.content).toBe("先頭&#1114112;末尾");
+    });
+
+    it("does not throw and leaves the original notation for a surrogate-range code point (0xD800)", async () => {
+      const raw = buildAlternativeEml({
+        textBody: null,
+        htmlBody: "<p>先頭&#xD800;末尾</p>",
+      });
+
+      const result = await parseEmlFile(raw, "test.eml");
+
+      expect(result.content).toBe("先頭&#xD800;末尾");
+    });
+
+    it("does not throw and leaves the original notation for the top of the surrogate range (0xDFFF)", async () => {
+      const raw = buildAlternativeEml({
+        textBody: null,
+        htmlBody: "<p>先頭&#xDFFF;末尾</p>",
+      });
+
+      const result = await parseEmlFile(raw, "test.eml");
+
+      expect(result.content).toBe("先頭&#xDFFF;末尾");
+    });
+
+    it("still decodes a valid boundary code point just below the surrogate range (0xD7FF)", async () => {
+      const raw = buildAlternativeEml({
+        textBody: null,
+        htmlBody: "<p>先頭&#xD7FF;末尾</p>",
+      });
+
+      const result = await parseEmlFile(raw, "test.eml");
+
+      expect(result.content).toBe(`先頭${String.fromCodePoint(0xd7ff)}末尾`);
+    });
+
+    it("still decodes the maximum valid code point (0x10FFFF)", async () => {
+      const raw = buildAlternativeEml({
+        textBody: null,
+        htmlBody: "<p>先頭&#x10FFFF;末尾</p>",
+      });
+
+      const result = await parseEmlFile(raw, "test.eml");
+
+      expect(result.content).toBe(`先頭${String.fromCodePoint(0x10ffff)}末尾`);
+    });
+
+    it("leaves the rest of the body intact when only one of several numeric references is malformed", async () => {
+      const raw = buildAlternativeEml({
+        textBody: null,
+        htmlBody: "<p>正常&#65;範囲外&#x110000;正常&#66;</p>",
+      });
+
+      const result = await parseEmlFile(raw, "test.eml");
+
+      expect(result.content).toBe("正常A範囲外&#x110000;正常B");
+    });
+
+    it("wraps unexpected content-normalization failures in EmlImportError with the filename (defense in depth against decode failures)", async () => {
+      const fromCodePointSpy = vi
+        .spyOn(String, "fromCodePoint")
+        .mockImplementation(() => {
+          throw new Error("unexpected decode failure");
+        });
+
+      const raw = buildAlternativeEml({
+        textBody: null,
+        htmlBody: "<p>&#65;</p>",
+      });
+
+      await expect(parseEmlFile(raw, "broken-body.eml")).rejects.toThrow(
+        EmlImportError,
+      );
+      fromCodePointSpy.mockImplementation(() => {
+        throw new Error("unexpected decode failure");
+      });
+      await expect(parseEmlFile(raw, "broken-body.eml")).rejects.toThrow(
+        "broken-body.eml: 本文の解析に失敗しました",
+      );
+    });
+  });
+
   it("decodes ISO-2022-JP encoded subject and body correctly", async () => {
     const raw = buildIso2022JpEml();
 

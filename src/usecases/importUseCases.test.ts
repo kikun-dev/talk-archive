@@ -881,14 +881,16 @@ describe("importUseCases", () => {
     });
 
     it("resolves speakers assigned to an existing participant id explicitly", async () => {
-      mockGetConversationParticipants.mockResolvedValue([]);
+      const existingParticipantId = "22222222-2222-2222-2222-222222222222";
+      mockGetConversationParticipants.mockResolvedValue([
+        participant({ id: existingParticipantId, name: "他の参加者" }),
+      ]);
       mockImportRecordsAtomic.mockResolvedValue({
         createdRecordCount: 1,
         skippedRecordCount: 0,
         createdParticipants: {},
       });
 
-      const existingParticipantId = "22222222-2222-2222-2222-222222222222";
       const result = await executeImport(client, "conv-1", {
         records: [validRecord],
         speakerAssignments: { "瀬戸口 心月": existingParticipantId },
@@ -910,6 +912,219 @@ describe("importUseCases", () => {
         }),
       ).rejects.toThrow(ImportError);
       expect(mockImportRecordsAtomic).not.toHaveBeenCalled();
+    });
+
+    // #128 レビュー対応（P1）: participantId が UUID 形式でも、このトークの参加者
+    // 集合に含まれなければ不正として弾く（別トーク・存在しない participantId 対策）
+    it("throws ImportError when the assigned participant id is a valid UUID but does not belong to this conversation (e.g. another conversation's participant)", async () => {
+      mockGetConversationParticipants.mockResolvedValue([
+        participant({ id: "part-1", name: "瀬戸口 心月" }),
+      ]);
+
+      const otherConversationParticipantId = "33333333-3333-3333-3333-333333333333";
+      await expect(
+        executeImport(client, "conv-1", {
+          records: [validRecord],
+          speakerAssignments: {
+            "瀬戸口 心月": otherConversationParticipantId,
+          },
+        }),
+      ).rejects.toThrow('発言者「瀬戸口 心月」の割り当てが不正です');
+      expect(mockImportRecordsAtomic).not.toHaveBeenCalled();
+    });
+
+    it("throws ImportError when the assigned participant id is a well-formed UUID that does not exist at all", async () => {
+      mockGetConversationParticipants.mockResolvedValue([]);
+
+      const nonExistentParticipantId = "44444444-4444-4444-4444-444444444444";
+      await expect(
+        executeImport(client, "conv-1", {
+          records: [validRecord],
+          speakerAssignments: { "瀬戸口 心月": nonExistentParticipantId },
+        }),
+      ).rejects.toThrow(ImportError);
+      expect(mockImportRecordsAtomic).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("buildImportPreview with speakerAssignments (options, #128 レビュー対応 P1)", () => {
+    const PART_1 = "11111111-1111-1111-1111-111111111111";
+    const PART_2 = "22222222-2222-2222-2222-222222222222";
+
+    function parseResult(records: TalkImportRecord[]): TalkImportParseResult {
+      return {
+        records,
+        defaultYear: null,
+        rowErrors: [],
+        totalCount: records.length,
+      };
+    }
+
+    it("counts a duplicate against an existing record for the assigned participant, matching what executeImport would do", async () => {
+      mockGetConversationParticipants.mockResolvedValue([
+        participant({ id: PART_1, name: "瀬戸口 心月" }),
+      ]);
+      mockGetImportDedupCandidates.mockResolvedValue([
+        dedupCandidate({
+          participantId: PART_1,
+          postedAt: "2026-07-07T06:19:00.000Z",
+          recordType: "text",
+          contentPrefix: "こんにちは",
+        }),
+      ]);
+
+      // eml のレコードは speaker に From アドレスがそのまま入る（未知 speaker 扱い）
+      const records: TalkImportRecord[] = [
+        {
+          speaker: "sender@example.com",
+          postedAt: "2026-07-07T06:19:00.000Z",
+          type: "text",
+          title: null,
+          content: "こんにちは",
+          hasAudio: false,
+        },
+      ];
+
+      const preview = await buildImportPreview(
+        client,
+        "conv-1",
+        parseResult(records),
+        { speakerAssignments: { "sender@example.com": PART_1 } },
+      );
+
+      expect(preview.duplicateCount).toBe(1);
+      expect(preview.importableCount).toBe(0);
+      expect(preview.unknownSpeakers).toEqual([]);
+    });
+
+    it("counts records from different From addresses assigned to the same participant as duplicates of each other when content matches, matching executeImport's resolution", async () => {
+      mockGetConversationParticipants.mockResolvedValue([
+        participant({ id: PART_1, name: "瀬戸口 心月" }),
+      ]);
+      mockGetImportDedupCandidates.mockResolvedValue([]);
+
+      const records: TalkImportRecord[] = [
+        {
+          speaker: "alice@example.com",
+          postedAt: "2026-07-07T06:19:00.000Z",
+          type: "text",
+          title: null,
+          content: "こんにちは",
+          hasAudio: false,
+        },
+        {
+          speaker: "bob@example.com",
+          postedAt: "2026-07-07T06:19:00.000Z",
+          type: "text",
+          title: null,
+          content: "こんにちは",
+          hasAudio: false,
+        },
+      ];
+
+      const preview = await buildImportPreview(
+        client,
+        "conv-1",
+        parseResult(records),
+        {
+          speakerAssignments: {
+            "alice@example.com": PART_1,
+            "bob@example.com": PART_1,
+          },
+        },
+      );
+
+      expect(preview.totalCount).toBe(2);
+      expect(preview.duplicateCount).toBe(1);
+      expect(preview.importableCount).toBe(1);
+      expect(preview.unknownSpeakers).toEqual([]);
+    });
+
+    it("does not treat an assigned speaker as unknown, but keeps counting speakers without an assignment or existing participant as unknown", async () => {
+      mockGetConversationParticipants.mockResolvedValue([
+        participant({ id: PART_1, name: "瀬戸口 心月" }),
+      ]);
+      mockGetImportDedupCandidates.mockResolvedValue([]);
+
+      const records: TalkImportRecord[] = [
+        {
+          speaker: "assigned@example.com",
+          postedAt: "2026-07-07T06:19:00.000Z",
+          type: "text",
+          title: null,
+          content: "A",
+          hasAudio: false,
+        },
+        {
+          speaker: "not-assigned@example.com",
+          postedAt: "2026-07-08T06:19:00.000Z",
+          type: "text",
+          title: null,
+          content: "B",
+          hasAudio: false,
+        },
+      ];
+
+      const preview = await buildImportPreview(
+        client,
+        "conv-1",
+        parseResult(records),
+        { speakerAssignments: { "assigned@example.com": PART_1 } },
+      );
+
+      expect(preview.unknownSpeakers).toEqual(["not-assigned@example.com"]);
+    });
+
+    it("throws ImportError when an assignment references a participant id that does not belong to this conversation (mirrors executeImport's validation, #128)", async () => {
+      mockGetConversationParticipants.mockResolvedValue([
+        participant({ id: PART_1, name: "瀬戸口 心月" }),
+      ]);
+      mockGetImportDedupCandidates.mockResolvedValue([]);
+
+      const records: TalkImportRecord[] = [
+        {
+          speaker: "sender@example.com",
+          postedAt: "2026-07-07T06:19:00.000Z",
+          type: "text",
+          title: null,
+          content: "こんにちは",
+          hasAudio: false,
+        },
+      ];
+
+      await expect(
+        buildImportPreview(client, "conv-1", parseResult(records), {
+          speakerAssignments: { "sender@example.com": PART_2 },
+        }),
+      ).rejects.toThrow('発言者「sender@example.com」の割り当てが不正です');
+    });
+
+    it("leaves the JSON import path (no options argument) unaffected — regression check", async () => {
+      mockGetConversationParticipants.mockResolvedValue([
+        participant({ id: PART_1, name: "瀬戸口 心月" }),
+      ]);
+      mockGetImportDedupCandidates.mockResolvedValue([]);
+
+      const records: TalkImportRecord[] = [
+        {
+          speaker: "瀬戸口 心月",
+          postedAt: "2026-07-07T06:19:00.000Z",
+          type: "text",
+          title: null,
+          content: "こんにちは",
+          hasAudio: false,
+        },
+      ];
+
+      const preview = await buildImportPreview(
+        client,
+        "conv-1",
+        parseResult(records),
+      );
+
+      expect(preview.duplicateCount).toBe(0);
+      expect(preview.importableCount).toBe(1);
+      expect(preview.unknownSpeakers).toEqual([]);
     });
   });
 });

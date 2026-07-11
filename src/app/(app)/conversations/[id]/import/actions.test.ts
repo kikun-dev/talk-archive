@@ -380,7 +380,7 @@ describe("previewEmlImportAction", () => {
 
     const { previewEmlImportAction } = await import("./actions");
     await expect(
-      previewEmlImportAction("conv-1", formData),
+      previewEmlImportAction("conv-1", formData, VALID_PARTICIPANT_ID),
     ).rejects.toThrow("NEXT_REDIRECT: /login");
   });
 
@@ -389,7 +389,7 @@ describe("previewEmlImportAction", () => {
     const formData = new FormData();
 
     const { previewEmlImportAction } = await import("./actions");
-    const result = await previewEmlImportAction("conv-1", formData);
+    const result = await previewEmlImportAction("conv-1", formData, VALID_PARTICIPANT_ID);
 
     expect(result).toEqual({ error: "ファイルを選択してください" });
     expect(parseEmlFileMock).not.toHaveBeenCalled();
@@ -402,7 +402,7 @@ describe("previewEmlImportAction", () => {
     );
 
     const { previewEmlImportAction } = await import("./actions");
-    const result = await previewEmlImportAction("conv-1", formData);
+    const result = await previewEmlImportAction("conv-1", formData, VALID_PARTICIPANT_ID);
 
     expect(result).toEqual({
       error: "一度にインポートできるのは200件までです。ファイルを分割してください",
@@ -421,7 +421,7 @@ describe("previewEmlImportAction", () => {
     );
 
     const { previewEmlImportAction } = await import("./actions");
-    const result = await previewEmlImportAction("conv-1", formData);
+    const result = await previewEmlImportAction("conv-1", formData, VALID_PARTICIPANT_ID);
 
     expect(result).toEqual({
       error:
@@ -458,7 +458,7 @@ describe("previewEmlImportAction", () => {
     });
 
     const { previewEmlImportAction } = await import("./actions");
-    const result = await previewEmlImportAction("conv-1", formData);
+    const result = await previewEmlImportAction("conv-1", formData, VALID_PARTICIPANT_ID);
 
     expect(parseEmlFileMock).toHaveBeenCalledTimes(5);
     expect("error" in result).toBe(false);
@@ -489,7 +489,7 @@ describe("previewEmlImportAction", () => {
     });
 
     const { previewEmlImportAction } = await import("./actions");
-    const result = await previewEmlImportAction("conv-1", formData);
+    const result = await previewEmlImportAction("conv-1", formData, VALID_PARTICIPANT_ID);
 
     expect(parseEmlFileMock).toHaveBeenCalledTimes(1);
     expect(parseEmlFileMock).toHaveBeenCalledWith(expect.anything(), "ok.eml");
@@ -533,7 +533,7 @@ describe("previewEmlImportAction", () => {
     });
 
     const { previewEmlImportAction } = await import("./actions");
-    const result = await previewEmlImportAction("conv-1", formData);
+    const result = await previewEmlImportAction("conv-1", formData, VALID_PARTICIPANT_ID);
 
     if ("error" in result) {
       throw new Error("expected a preview result");
@@ -545,6 +545,7 @@ describe("previewEmlImportAction", () => {
       expect.anything(),
       "conv-1",
       expect.objectContaining({ totalCount: 2 }),
+      { speakerAssignments: { "sender@example.com": VALID_PARTICIPANT_ID } },
     );
   });
 
@@ -590,7 +591,7 @@ describe("previewEmlImportAction", () => {
     });
 
     const { previewEmlImportAction } = await import("./actions");
-    const result = await previewEmlImportAction("conv-1", formData);
+    const result = await previewEmlImportAction("conv-1", formData, VALID_PARTICIPANT_ID);
 
     if ("error" in result) {
       throw new Error("expected a preview result");
@@ -622,12 +623,140 @@ describe("previewEmlImportAction", () => {
     buildImportPreviewMock.mockRejectedValue(new Error("boom"));
 
     const { previewEmlImportAction } = await import("./actions");
-    const result = await previewEmlImportAction("conv-1", formData);
+    const result = await previewEmlImportAction("conv-1", formData, VALID_PARTICIPANT_ID);
 
     expect(result).toEqual({
       error:
         "メールファイルの解析に失敗しました。時間をおいて再度お試しください。",
     });
+  });
+
+  // #128 レビュー対応（P1）: プレビューと実行の重複排除を一致させるため、
+  // previewEmlImportAction にも割り当て先 participantId を渡し、同じ検証を行う
+  it("returns an error when participantId is empty", async () => {
+    mockSupabaseClient({ id: "user-1" });
+    const formData = buildFormDataWithFiles([{ name: "a.eml" }]);
+
+    const { previewEmlImportAction } = await import("./actions");
+    const result = await previewEmlImportAction("conv-1", formData, "");
+
+    expect(result).toEqual({ error: "参加者の割り当てが不正です" });
+    expect(buildImportPreviewMock).not.toHaveBeenCalled();
+  });
+
+  it("returns an error when participantId is not a valid UUID", async () => {
+    mockSupabaseClient({ id: "user-1" });
+    const formData = buildFormDataWithFiles([{ name: "a.eml" }]);
+
+    const { previewEmlImportAction } = await import("./actions");
+    const result = await previewEmlImportAction(
+      "conv-1",
+      formData,
+      "not-a-uuid",
+    );
+
+    expect(result).toEqual({ error: "参加者の割り当てが不正です" });
+    expect(buildImportPreviewMock).not.toHaveBeenCalled();
+  });
+
+  it("builds speakerAssignments mapping every distinct senderAddress to participantId and passes it to buildImportPreview, so the preview's duplicate detection matches what executeEmlImportAction will do (#128)", async () => {
+    mockSupabaseClient({ id: "user-1" });
+    const formData = buildFormDataWithFiles([
+      { name: "a.eml" },
+      { name: "b.eml" },
+    ]);
+    parseEmlFileMock.mockImplementation(async (_raw: unknown, filename: string) =>
+      filename === "a.eml"
+        ? parsedMessage({ senderAddress: "alice@example.com" })
+        : parsedMessage({ senderAddress: "bob@example.com" }),
+    );
+    toTalkImportRecordMock.mockReturnValue({
+      speaker: "sender@example.com",
+      postedAt: "2020-10-12T06:16:14.000Z",
+      type: "text",
+      title: "件名",
+      content: "本文",
+      hasAudio: false,
+    });
+    buildImportPreviewMock.mockResolvedValue({
+      totalCount: 2,
+      importableCount: 2,
+      duplicateCount: 0,
+      period: null,
+      typeCounts: { text: 2, image: 0, video: 0, audio: 0 },
+      unknownSpeakers: [],
+    });
+
+    const { previewEmlImportAction } = await import("./actions");
+    await previewEmlImportAction("conv-1", formData, VALID_PARTICIPANT_ID);
+
+    expect(buildImportPreviewMock).toHaveBeenCalledWith(
+      expect.anything(),
+      "conv-1",
+      expect.anything(),
+      {
+        speakerAssignments: {
+          "alice@example.com": VALID_PARTICIPANT_ID,
+          "bob@example.com": VALID_PARTICIPANT_ID,
+        },
+      },
+    );
+  });
+
+  // #128 レビュー対応（P2/防御二重化）: 1通の本文解析エラー（parseEmlFile が
+  // EmlImportError に変換した「本文の解析に失敗しました」）が、正常な他のメールの
+  // プレビュー生成を止めないことを action 層でも確認する
+  it("continues building the preview from the remaining messages when one .eml fails body normalization (mixed batch, #128)", async () => {
+    mockSupabaseClient({ id: "user-1" });
+    const formData = buildFormDataWithFiles([
+      { name: "broken-body.eml" },
+      { name: "ok.eml" },
+    ]);
+    parseEmlFileMock.mockImplementation(async (_raw: unknown, filename: string) => {
+      if (filename === "broken-body.eml") {
+        throw new EmlImportErrorMock(
+          `${filename}: 本文の解析に失敗しました`,
+        );
+      }
+      return parsedMessage({ senderAddress: "ok@example.com" });
+    });
+    toTalkImportRecordMock.mockReturnValue({
+      speaker: "ok@example.com",
+      postedAt: "2020-10-12T06:16:14.000Z",
+      type: "text",
+      title: "件名",
+      content: "本文",
+      hasAudio: false,
+    });
+    buildImportPreviewMock.mockResolvedValue({
+      totalCount: 2,
+      importableCount: 1,
+      duplicateCount: 0,
+      period: null,
+      typeCounts: { text: 1, image: 0, video: 0, audio: 0 },
+      unknownSpeakers: [],
+    });
+
+    const { previewEmlImportAction } = await import("./actions");
+    const result = await previewEmlImportAction(
+      "conv-1",
+      formData,
+      VALID_PARTICIPANT_ID,
+    );
+
+    if ("error" in result) {
+      throw new Error("expected a preview result");
+    }
+    expect(result.preview.rowErrors).toEqual([
+      "broken-body.eml: 本文の解析に失敗しました",
+    ]);
+    expect(result.preview.importableCount).toBe(1);
+    expect(buildImportPreviewMock).toHaveBeenCalledWith(
+      expect.anything(),
+      "conv-1",
+      expect.objectContaining({ totalCount: 2 }),
+      { speakerAssignments: { "ok@example.com": VALID_PARTICIPANT_ID } },
+    );
   });
 });
 

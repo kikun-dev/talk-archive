@@ -51,7 +51,7 @@ export default async function ConversationImportPage({
   return (
     <ConversationSubpageLayout
       conversationId={conversation.id}
-      title="トークJSONインポート"
+      title="トークインポート"
     >
       <TalkImportForm
         conversationId={conversation.id}

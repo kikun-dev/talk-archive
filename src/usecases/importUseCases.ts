@@ -353,18 +353,34 @@ function buildPeriod(
   return { start, end };
 }
 
+export type BuildImportPreviewOptions = {
+  /**
+   * speaker 名（.eml では From アドレス） → participantId の明示割り当て。
+   * 指定された speaker は「新規参加者として追加」ではなく既存 participant への
+   * 割り当てとして重複判定キーを組み立てる（実行時 executeImport の解決と一致させるため、#128）
+   */
+  speakerAssignments?: { [speakerName: string]: string };
+};
+
 /**
  * インポート内容のプレビューを構築する
  * 既存 participants / records を取得し、重複件数・期間・種別内訳・未知 speaker を集計する
  * totalCount は parseResult.totalCount（行エラーで除外されたレコードを含む入力全体の件数）を使う。
  * importableCount / duplicateCount は正常にパースできた records のみを対象に算出する（#124）
+ *
+ * options.speakerAssignments が指定された場合、重複判定キーの participant 部分は
+ * 「assignments の participantId → 名前完全一致 → speaker そのまま」の順で解決する。
+ * これは実行時（executeImport の resolveSpeakers）と同じ解決順であり、.eml インポートの
+ * ように speaker に From アドレスが入る場合でもプレビューと実行の重複判定を一致させる（#128）
  */
 export async function buildImportPreview(
   client: SupabaseClient<Database>,
   conversationId: string,
   parseResult: TalkImportParseResult,
+  options?: BuildImportPreviewOptions,
 ): Promise<ImportPreview> {
   const { records, totalCount } = parseResult;
+  const speakerAssignments = options?.speakerAssignments ?? {};
 
   const [participants, existingRecords] = await Promise.all([
     getConversationParticipants(client, conversationId),
@@ -374,12 +390,44 @@ export async function buildImportPreview(
   const participantIdByName = new Map(
     participants.map((participant) => [participant.name, participant.id]),
   );
+  const validParticipantIds = new Set(
+    participants.map((participant) => participant.id),
+  );
   const existingKeys = buildExistingDedupKeys(existingRecords);
+
+  const resolveParticipantKey = (speaker: string): string => {
+    const assignment = speakerAssignments[speaker];
+
+    if (assignment === "new") {
+      return speaker;
+    }
+
+    if (typeof assignment === "string" && assignment.length > 0) {
+      if (!isValidUuid(assignment) || !validParticipantIds.has(assignment)) {
+        throw new ImportError(`発言者「${speaker}」の割り当てが不正です`);
+      }
+      return assignment;
+    }
+
+    return participantIdByName.get(speaker) ?? speaker;
+  };
 
   const unknownSpeakers = new Set<string>();
   const typeCounts = { text: 0, image: 0, video: 0, audio: 0 };
+  const participantKeyBySpeaker = new Map<string, string>();
   for (const record of records) {
-    if (!participantIdByName.has(record.speaker)) {
+    if (!participantKeyBySpeaker.has(record.speaker)) {
+      participantKeyBySpeaker.set(
+        record.speaker,
+        resolveParticipantKey(record.speaker),
+      );
+    }
+
+    const hasAssignment = Object.prototype.hasOwnProperty.call(
+      speakerAssignments,
+      record.speaker,
+    );
+    if (!hasAssignment && !participantIdByName.has(record.speaker)) {
       unknownSpeakers.add(record.speaker);
     }
     typeCounts[record.type]++;
@@ -389,7 +437,7 @@ export async function buildImportPreview(
     records,
     (record) =>
       buildRecordDedupKey(
-        participantIdByName.get(record.speaker) ?? record.speaker,
+        participantKeyBySpeaker.get(record.speaker) ?? record.speaker,
         record.postedAt,
         record.type,
         record.content,
@@ -441,11 +489,16 @@ function isValidUuid(value: string): boolean {
  * assignments で明示された割り当て（"new" または既存 participantId）を優先し、
  * 割り当てがなければ既存 participant の完全一致名で解決する。
  * どちらでも解決できない speaker があれば ImportError を投げる
+ *
+ * 明示割り当てが UUID 形式であっても、validParticipantIds（このトークの参加者集合）に
+ * 含まれなければ不正として弾く。別トークの participantId・存在しない participantId を
+ * 誤って（あるいは悪意を持って）渡された場合に、RPC 呼び出し前の入力境界で検証する（#128）
  */
 function resolveSpeakers(
   records: TalkImportRecord[],
   speakerAssignments: { [speakerName: string]: string },
   participantIdByName: Map<string, string>,
+  validParticipantIds: Set<string>,
 ): Map<string, ResolvedSpeaker> {
   const speakerNames = [...new Set(records.map((record) => record.speaker))];
   const resolved = new Map<string, ResolvedSpeaker>();
@@ -459,7 +512,7 @@ function resolveSpeakers(
     }
 
     if (typeof assignment === "string" && assignment.length > 0) {
-      if (!isValidUuid(assignment)) {
+      if (!isValidUuid(assignment) || !validParticipantIds.has(assignment)) {
         throw new ImportError(`発言者「${name}」の割り当てが不正です`);
       }
       resolved.set(name, { kind: "existing", participantId: assignment });
@@ -497,11 +550,15 @@ export async function executeImport(
   const participantIdByName = new Map(
     participants.map((participant) => [participant.name, participant.id]),
   );
+  const validParticipantIds = new Set(
+    participants.map((participant) => participant.id),
+  );
 
   const resolvedSpeakers = resolveSpeakers(
     input.records,
     input.speakerAssignments,
     participantIdByName,
+    validParticipantIds,
   );
 
   const participantKeyFor = (record: TalkImportRecord): string => {

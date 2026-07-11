@@ -84,16 +84,40 @@ function normalizeTitle(subject: string | undefined): string | null {
   return trimmed.slice(0, MAX_TITLE_LENGTH);
 }
 
+const SURROGATE_RANGE_START = 0xd800;
+const SURROGATE_RANGE_END = 0xdfff;
+const MAX_CODE_POINT = 0x10ffff;
+
+/**
+ * String.fromCodePoint に渡して安全な Unicode コードポイントかどうかを検証する
+ * 整数でない・負・0x10FFFF 超・サロゲート範囲（0xD800〜0xDFFF）はすべて無効とし、
+ * RangeError を未然に防ぐ（#128: 異常な HTML 数値文字参照でバッチ全体が失敗する不具合対応）
+ */
+function isValidCodePoint(codePoint: number): boolean {
+  return (
+    Number.isInteger(codePoint) &&
+    codePoint >= 0 &&
+    codePoint <= MAX_CODE_POINT &&
+    !(codePoint >= SURROGATE_RANGE_START && codePoint <= SURROGATE_RANGE_END)
+  );
+}
+
 // html-entities.js は postal-mime の公開 API（package.json の exports）に含まれず
 // 深いパスからの import はできないため、フォールバック用に最小限のデコードを自前で持つ
 function decodeHtmlEntities(text: string): string {
   return text
-    .replace(/&#x([0-9a-fA-F]+);/g, (_, hex: string) =>
-      String.fromCodePoint(parseInt(hex, 16)),
-    )
-    .replace(/&#(\d+);/g, (_, dec: string) =>
-      String.fromCodePoint(parseInt(dec, 10)),
-    )
+    .replace(/&#x([0-9a-fA-F]+);/g, (match, hex: string) => {
+      const codePoint = parseInt(hex, 16);
+      return isValidCodePoint(codePoint)
+        ? String.fromCodePoint(codePoint)
+        : match;
+    })
+    .replace(/&#(\d+);/g, (match, dec: string) => {
+      const codePoint = parseInt(dec, 10);
+      return isValidCodePoint(codePoint)
+        ? String.fromCodePoint(codePoint)
+        : match;
+    })
     .replace(/&nbsp;/gi, " ")
     .replace(/&amp;/gi, "&")
     .replace(/&lt;/gi, "<")
@@ -215,7 +239,17 @@ export async function parseEmlFile(
   }
 
   const title = normalizeTitle(email.subject);
-  const content = normalizeContent(email.text, email.html);
+
+  // normalizeContent（HTML タグ除去・エンティティ復元を含む）は decodeHtmlEntities 側で
+  // 既知の異常入力（範囲外コードポイント等）を防いでいるが、想定外の失敗が起きても
+  // 1ファイルの異常でバッチ全体を落とさないよう、防御を二重化する（#128）
+  let content: string | null;
+  try {
+    content = normalizeContent(email.text, email.html);
+  } catch {
+    throw new EmlImportError(`${filename}: 本文の解析に失敗しました`);
+  }
+
   const { image, extraImageCount } = extractImage(email.attachments);
 
   // 本文空・画像なしは text record（content 非null必須の CHECK 制約

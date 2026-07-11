@@ -287,10 +287,17 @@ export type PreviewEmlImportResult =
  * .eml ファイル（複数）をパースし、取り込みプレビューを返す
  * JSON インポートと同じ buildImportPreview を再利用し、.eml 固有の情報
  * （差出人サマリ・画像付きメール数・2枚目以降の画像警告）を追加で返す
+ *
+ * participantId: このバッチ全体を割り当てる予定の参加者 ID（#128 レビュー対応 P1）。
+ * executeEmlImportAction と同じ検証（trim・空・不正 UUID → 「参加者の割り当てが不正です」）
+ * を行ったうえで、選択された .eml 群に登場する全 From アドレスをこの participantId に
+ * 割り当てる speakerAssignments を組み立て、buildImportPreview に渡す。
+ * これにより、プレビュー時点の重複判定が実行時（executeImport の speaker 解決）と一致する
  */
 export async function previewEmlImportAction(
   conversationId: string,
   formData: FormData,
+  participantId: string,
 ): Promise<PreviewEmlImportResult> {
   const supabase = await createSupabaseServerClient();
   const {
@@ -306,6 +313,11 @@ export async function previewEmlImportAction(
     return outcome;
   }
 
+  const trimmedParticipantId = participantId.trim();
+  if (trimmedParticipantId.length === 0 || !isValidUuid(trimmedParticipantId)) {
+    return { error: "参加者の割り当てが不正です" };
+  }
+
   try {
     const { parsed, rowErrors, totalCount } = outcome;
     const records: TalkImportRecord[] = parsed.map(({ message }) =>
@@ -318,10 +330,16 @@ export async function previewEmlImportAction(
       totalCount,
     };
 
+    const speakerAssignments: { [speakerName: string]: string } = {};
+    for (const { message } of parsed) {
+      speakerAssignments[message.senderAddress] = trimmedParticipantId;
+    }
+
     const preview = await buildImportPreview(
       supabase,
       conversationId,
       parseResult,
+      { speakerAssignments },
     );
 
     return {
