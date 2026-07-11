@@ -349,7 +349,6 @@ function buildFormDataWithFakeSizes(
 function parsedMessage(
   overrides: Partial<{
     senderAddress: string;
-    senderNameSuggestion: string;
     postedAt: string;
     title: string | null;
     content: string | null;
@@ -359,7 +358,6 @@ function parsedMessage(
 ) {
   return {
     senderAddress: "sender@example.com",
-    senderNameSuggestion: "sender",
     postedAt: "2020-10-12T06:16:14.000Z",
     title: "件名",
     content: "本文",
@@ -368,6 +366,8 @@ function parsedMessage(
     ...overrides,
   };
 }
+
+const VALID_PARTICIPANT_ID = "11111111-1111-1111-1111-111111111111";
 
 describe("previewEmlImportAction", () => {
   beforeEach(() => {
@@ -559,7 +559,6 @@ describe("previewEmlImportAction", () => {
       if (filename === "a.eml") {
         return parsedMessage({
           senderAddress: "alice@example.com",
-          senderNameSuggestion: "alice",
           image: { filename: "photo.png", mimeType: "image/png", data: new Uint8Array() },
           extraImageCount: 2,
         });
@@ -567,12 +566,10 @@ describe("previewEmlImportAction", () => {
       if (filename === "b.eml") {
         return parsedMessage({
           senderAddress: "alice@example.com",
-          senderNameSuggestion: "alice",
         });
       }
       return parsedMessage({
         senderAddress: "bob@example.com",
-        senderNameSuggestion: "bob",
       });
     });
     toTalkImportRecordMock.mockReturnValue({
@@ -600,8 +597,8 @@ describe("previewEmlImportAction", () => {
     }
     expect(result.preview.senders).toEqual(
       expect.arrayContaining([
-        { address: "alice@example.com", nameSuggestion: "alice", messageCount: 2 },
-        { address: "bob@example.com", nameSuggestion: "bob", messageCount: 1 },
+        { address: "alice@example.com", messageCount: 2 },
+        { address: "bob@example.com", messageCount: 1 },
       ]),
     );
     expect(result.preview.imageCount).toBe(1);
@@ -645,7 +642,7 @@ describe("executeEmlImportAction", () => {
 
     const { executeEmlImportAction } = await import("./actions");
     await expect(
-      executeEmlImportAction("conv-1", formData, "{}"),
+      executeEmlImportAction("conv-1", formData, VALID_PARTICIPANT_ID),
     ).rejects.toThrow("NEXT_REDIRECT: /login");
   });
 
@@ -654,13 +651,17 @@ describe("executeEmlImportAction", () => {
     const formData = new FormData();
 
     const { executeEmlImportAction } = await import("./actions");
-    const result = await executeEmlImportAction("conv-1", formData, "{}");
+    const result = await executeEmlImportAction(
+      "conv-1",
+      formData,
+      VALID_PARTICIPANT_ID,
+    );
 
     expect(result).toEqual({ error: "ファイルを選択してください" });
     expect(executeImportMock).not.toHaveBeenCalled();
   });
 
-  it("returns an error when speakerAssignmentsJson is not valid JSON", async () => {
+  it("returns an error when participantId is empty", async () => {
     mockSupabaseClient({ id: "user-1" });
     const formData = buildFormDataWithFiles([{ name: "a.eml" }]);
     parseEmlFileMock.mockResolvedValue(parsedMessage());
@@ -674,9 +675,33 @@ describe("executeEmlImportAction", () => {
     });
 
     const { executeEmlImportAction } = await import("./actions");
-    const result = await executeEmlImportAction("conv-1", formData, "not json");
+    const result = await executeEmlImportAction("conv-1", formData, "");
 
-    expect(result).toEqual({ error: "発言者の割り当てのデータが不正です" });
+    expect(result).toEqual({ error: "参加者の割り当てが不正です" });
+    expect(executeImportMock).not.toHaveBeenCalled();
+  });
+
+  it("returns an error when participantId is not a valid UUID", async () => {
+    mockSupabaseClient({ id: "user-1" });
+    const formData = buildFormDataWithFiles([{ name: "a.eml" }]);
+    parseEmlFileMock.mockResolvedValue(parsedMessage());
+    toTalkImportRecordMock.mockReturnValue({
+      speaker: "sender@example.com",
+      postedAt: "2020-10-12T06:16:14.000Z",
+      type: "text",
+      title: "件名",
+      content: "本文",
+      hasAudio: false,
+    });
+
+    const { executeEmlImportAction } = await import("./actions");
+    const result = await executeEmlImportAction(
+      "conv-1",
+      formData,
+      "not-a-uuid",
+    );
+
+    expect(result).toEqual({ error: "参加者の割り当てが不正です" });
     expect(executeImportMock).not.toHaveBeenCalled();
   });
 
@@ -732,15 +757,14 @@ describe("executeEmlImportAction", () => {
     const result = await executeEmlImportAction(
       "conv-1",
       formData,
-      JSON.stringify({ "alice@example.com": "new", "bob@example.com": "new" }),
+      VALID_PARTICIPANT_ID,
     );
 
     expect(executeImportMock).toHaveBeenCalledWith(expect.anything(), "conv-1", {
       records: [imageRecord, textRecord],
-      speakerAssignments: { "alice@example.com": "new", "bob@example.com": "new" },
-      newParticipantNameBySpeaker: {
-        "alice@example.com": "sender",
-        "bob@example.com": "sender",
+      speakerAssignments: {
+        "alice@example.com": VALID_PARTICIPANT_ID,
+        "bob@example.com": VALID_PARTICIPANT_ID,
       },
     });
     expect(attachRecordMediaMock).toHaveBeenCalledTimes(1);
@@ -790,7 +814,7 @@ describe("executeEmlImportAction", () => {
     const result = await executeEmlImportAction(
       "conv-1",
       formData,
-      JSON.stringify({ "sender@example.com": "new" }),
+      VALID_PARTICIPANT_ID,
     );
 
     if ("error" in result) {
@@ -818,7 +842,11 @@ describe("executeEmlImportAction", () => {
     );
 
     const { executeEmlImportAction } = await import("./actions");
-    const result = await executeEmlImportAction("conv-1", formData, "{}");
+    const result = await executeEmlImportAction(
+      "conv-1",
+      formData,
+      VALID_PARTICIPANT_ID,
+    );
 
     expect(result).toEqual({
       error: "発言者「sender@example.com」の割り当てを指定してください",
@@ -841,34 +869,51 @@ describe("executeEmlImportAction", () => {
     executeImportMock.mockRejectedValue(new Error("boom"));
 
     const { executeEmlImportAction } = await import("./actions");
-    const result = await executeEmlImportAction("conv-1", formData, "{}");
+    const result = await executeEmlImportAction(
+      "conv-1",
+      formData,
+      VALID_PARTICIPANT_ID,
+    );
 
     expect(result).toEqual({
       error: "インポートに失敗しました。時間をおいて再度お試しください。",
     });
   });
 
-  it("passes a senderAddress -> senderNameSuggestion map as newParticipantNameBySpeaker, so the default 'new' selection creates a participant named after the suggested name (#128)", async () => {
+  it("maps every distinct senderAddress found in the parsed messages to the given participantId (#128 簡素化: From は取り違え防止の警告用途のみ)", async () => {
     mockSupabaseClient({ id: "user-1" });
-    const formData = buildFormDataWithFiles([{ name: "a.eml" }]);
-    const message = parsedMessage({
-      senderAddress: "nogizaka46-minami_umezawa@example.com",
-      senderNameSuggestion: "minami_umezawa",
-    });
-    parseEmlFileMock.mockResolvedValue(message);
-    const record = {
-      speaker: "nogizaka46-minami_umezawa@example.com",
+    const formData = buildFormDataWithFiles([
+      { name: "a.eml" },
+      { name: "b.eml" },
+    ]);
+    parseEmlFileMock.mockImplementation(async (_raw: unknown, filename: string) =>
+      filename === "a.eml"
+        ? parsedMessage({ senderAddress: "alice@example.com" })
+        : parsedMessage({ senderAddress: "bob@example.com" }),
+    );
+    const aliceRecord = {
+      speaker: "alice@example.com",
       postedAt: "2020-10-12T06:16:14.000Z",
       type: "text" as const,
       title: "件名",
       content: "本文",
       hasAudio: false,
     };
-    toTalkImportRecordMock.mockReturnValue(record);
+    const bobRecord = {
+      speaker: "bob@example.com",
+      postedAt: "2020-10-12T06:16:14.000Z",
+      type: "text" as const,
+      title: "件名",
+      content: "本文",
+      hasAudio: false,
+    };
+    toTalkImportRecordMock.mockImplementation((message: { senderAddress: string }) =>
+      message.senderAddress === "alice@example.com" ? aliceRecord : bobRecord,
+    );
     executeImportMock.mockResolvedValue({
-      createdCount: 1,
+      createdCount: 2,
       skippedCount: 0,
-      createdParticipants: { minami_umezawa: "part-new-1" },
+      createdParticipants: {},
       createdRecords: [],
     });
 
@@ -876,21 +921,19 @@ describe("executeEmlImportAction", () => {
     const result = await executeEmlImportAction(
       "conv-1",
       formData,
-      JSON.stringify({ "nogizaka46-minami_umezawa@example.com": "new" }),
+      VALID_PARTICIPANT_ID,
     );
 
     expect(executeImportMock).toHaveBeenCalledWith(expect.anything(), "conv-1", {
-      records: [record],
-      speakerAssignments: { "nogizaka46-minami_umezawa@example.com": "new" },
-      newParticipantNameBySpeaker: {
-        "nogizaka46-minami_umezawa@example.com": "minami_umezawa",
+      records: [aliceRecord, bobRecord],
+      speakerAssignments: {
+        "alice@example.com": VALID_PARTICIPANT_ID,
+        "bob@example.com": VALID_PARTICIPANT_ID,
       },
     });
     if ("error" in result) {
       throw new Error("expected a result");
     }
-    expect(result.result.createdParticipants).toEqual({
-      minami_umezawa: "part-new-1",
-    });
+    expect(result.result.createdCount).toBe(2);
   });
 });

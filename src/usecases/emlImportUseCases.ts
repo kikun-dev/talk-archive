@@ -5,10 +5,13 @@ import type { TalkImportRecord } from "@/usecases/importUseCases";
 // --- .eml パース ---
 
 export type ParsedEmlMessage = {
-  /** From アドレス（小文字正規化） */
+  /**
+   * From アドレス（小文字正規化）
+   * 取り違え防止の警告表示・重複排除キーとして使う（#128 設計簡素化。
+   * トークは常に1対1で参加者割り当てはトーク参加者から行うため、
+   * From アドレスから参加者名を導出する用途はなくなった）
+   */
   senderAddress: string;
-  /** local part から導出した表示名候補（ハイフン以降が取れなければ local part 全体） */
-  senderNameSuggestion: string;
   /** Date ヘッダを ISO 8601（UTC 正規化）に変換したもの */
   postedAt: string;
   /** Subject（「無題」または空白のみは null） */
@@ -53,14 +56,6 @@ function isMailbox(address: Address | undefined): address is {
     typeof address.address === "string" &&
     address.address.trim().length > 0
   );
-}
-
-function deriveSenderNameSuggestion(localPart: string): string {
-  const hyphenIndex = localPart.indexOf("-");
-  if (hyphenIndex === -1 || hyphenIndex === localPart.length - 1) {
-    return localPart;
-  }
-  return localPart.slice(hyphenIndex + 1);
 }
 
 function normalizeEmlDate(date: string | undefined): string | null {
@@ -213,8 +208,6 @@ export async function parseEmlFile(
     );
   }
   const senderAddress = email.from.address.trim().toLowerCase();
-  const localPart = senderAddress.split("@")[0] ?? senderAddress;
-  const senderNameSuggestion = deriveSenderNameSuggestion(localPart);
 
   const postedAt = normalizeEmlDate(email.date);
   if (postedAt === null) {
@@ -234,7 +227,6 @@ export async function parseEmlFile(
 
   return {
     senderAddress,
-    senderNameSuggestion,
     postedAt,
     title,
     content,

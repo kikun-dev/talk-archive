@@ -159,25 +159,6 @@ describe("parseEmlFile", () => {
     expect(result.extraImageCount).toBe(0);
   });
 
-  it("derives senderNameSuggestion from the part of the local part after the first hyphen", async () => {
-    const raw = buildAlternativeEml({
-      from: '"nogizaka46-minami_umezawa@m.nogizaka46.com" <nogizaka46-minami_umezawa@m.nogizaka46.com>',
-    });
-
-    const result = await parseEmlFile(raw, "test.eml");
-
-    expect(result.senderAddress).toBe("nogizaka46-minami_umezawa@m.nogizaka46.com");
-    expect(result.senderNameSuggestion).toBe("minami_umezawa");
-  });
-
-  it("falls back to the full local part as senderNameSuggestion when there is no hyphen", async () => {
-    const raw = buildAlternativeEml({ from: "<plainuser@example.com>" });
-
-    const result = await parseEmlFile(raw, "test.eml");
-
-    expect(result.senderNameSuggestion).toBe("plainuser");
-  });
-
   it("returns null title for a blank subject", async () => {
     const raw = buildAlternativeEml({ subject: "" });
 
@@ -358,7 +339,6 @@ describe("toTalkImportRecord", () => {
   ): ParsedEmlMessage {
     return {
       senderAddress: "sender@example.com",
-      senderNameSuggestion: "sender",
       postedAt: "2020-10-12T06:16:14.000Z",
       title: "件名",
       content: "本文",

@@ -58,6 +58,18 @@ const participants: ConversationParticipant[] = [
   },
 ];
 
+const twoParticipants: ConversationParticipant[] = [
+  ...participants,
+  {
+    id: "part-2",
+    conversationId: "conv-1",
+    name: "メンバーB",
+    sortOrder: 1,
+    thumbnailPath: null,
+    createdAt: "2026-01-01T00:00:00Z",
+  },
+];
+
 function selectJsonFile(text: string, name = "talk.json") {
   const input = screen.getByLabelText("インポートするJSONファイル");
   const file = new File([text], name, { type: "application/json" });
@@ -75,6 +87,18 @@ function selectEmlFiles(files: File[]) {
 
 function emlFile(name = "mail1.eml") {
   return new File(["raw"], name, { type: "message/rfc822" });
+}
+
+/**
+ * text がマークアップ内で複数のノード（例: <span>ラベル</span> テキスト）に
+ * 分かれている場合、RTL の getByText 標準の一致判定（直接の子テキストノードのみを
+ * 対象にする）はそのままでは全文一致できない。要素の textContent 全体で判定する
+ */
+function findByExactText(text: string) {
+  return screen.findByText(
+    (_, element) => element?.textContent?.trim() === text,
+    { selector: "p" },
+  );
 }
 
 /** File の size を Object.defineProperty で偽装する（実データは確保しない、#128） */
@@ -111,9 +135,7 @@ const baseEmlPreview: PreviewEmlImportResult = {
     typeCounts: { text: 1, image: 1, video: 0, audio: 0 },
     unknownSpeakers: ["taro@example.com"],
     rowErrors: [],
-    senders: [
-      { address: "taro@example.com", nameSuggestion: "太郎", messageCount: 2 },
-    ],
+    senders: [{ address: "taro@example.com", messageCount: 2 }],
     imageCount: 1,
     extraImageWarnings: [],
   },
@@ -373,8 +395,18 @@ describe("TalkImportForm", () => {
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
-  it("shows sender assignment selects defaulting to new participant in mail mode preview", async () => {
+  it("auto-assigns to the sole participant, shows it statically, and passes its id to executeEmlImportAction (#128)", async () => {
     previewEmlImportActionMock.mockResolvedValue(baseEmlPreview);
+    executeEmlImportActionMock.mockResolvedValue({
+      result: {
+        createdCount: 2,
+        skippedCount: 1,
+        createdParticipants: {},
+        createdRecords: [],
+        attachedCount: 1,
+        attachFailedCount: 0,
+      },
+    });
 
     render(
       <TalkImportForm conversationId="conv-1" participants={participants} />,
@@ -391,16 +423,116 @@ describe("TalkImportForm", () => {
     expect(calledConversationId).toBe("conv-1");
     expect(calledFormData.getAll("files")).toEqual([file]);
 
-    const select = await screen.findByLabelText(
-      "taro@example.comの割り当て",
+    expect(await findByExactText("割り当て先: メンバーA")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("combobox", { name: /割り当て先/ }),
+    ).not.toBeInTheDocument();
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "インポート実行" }),
     );
-    expect(select).toHaveValue("new");
+
+    await waitFor(() =>
+      expect(executeEmlImportActionMock).toHaveBeenCalledWith(
+        "conv-1",
+        expect.any(FormData),
+        "part-1",
+      ),
+    );
+  });
+
+  it("shows a participant select defaulting to the first participant when there are multiple participants, and passes the selected id to executeEmlImportAction (#128)", async () => {
+    previewEmlImportActionMock.mockResolvedValue(baseEmlPreview);
+    executeEmlImportActionMock.mockResolvedValue({
+      result: {
+        createdCount: 2,
+        skippedCount: 1,
+        createdParticipants: {},
+        createdRecords: [],
+        attachedCount: 1,
+        attachFailedCount: 0,
+      },
+    });
+
+    render(
+      <TalkImportForm conversationId="conv-1" participants={twoParticipants} />,
+    );
+    switchToEmlMode();
+    selectEmlFiles([emlFile()]);
+
+    const select = await screen.findByRole("combobox", {
+      name: "割り当て先",
+    });
+    expect(select).toHaveValue("part-1");
+    expect(screen.getByRole("option", { name: "メンバーA" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "メンバーB" })).toBeInTheDocument();
+
+    fireEvent.change(select, { target: { value: "part-2" } });
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "インポート実行" }),
+    );
+
+    await waitFor(() =>
+      expect(executeEmlImportActionMock).toHaveBeenCalledWith(
+        "conv-1",
+        expect.any(FormData),
+        "part-2",
+      ),
+    );
+  });
+
+  it("shows an error and does not render the .eml file input when the conversation has no participants (#128)", () => {
+    render(<TalkImportForm conversationId="conv-1" participants={[]} />);
+    switchToEmlMode();
+
     expect(
-      screen.getByText(/太郎（taro@example\.com）/),
+      screen.getByText(
+        "このトークにはまだ参加者がいません。先に参加者を追加してください",
+      ),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("option", { name: "メンバーA" }),
+      screen.queryByLabelText("インポートする.emlファイル"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows a warning when the selected .eml batch contains more than one From address, listing each address with its count (#128)", async () => {
+    previewEmlImportActionMock.mockResolvedValue({
+      preview: {
+        ...baseEmlPreview.preview!,
+        senders: [
+          { address: "alice@example.com", messageCount: 3 },
+          { address: "bob@example.com", messageCount: 1 },
+        ],
+      },
+    });
+
+    render(
+      <TalkImportForm conversationId="conv-1" participants={participants} />,
+    );
+    switchToEmlMode();
+    selectEmlFiles([emlFile()]);
+
+    expect(
+      await screen.findByText(
+        "複数の差出人アドレスが含まれています: alice@example.com（3件）、bob@example.com（1件）。別の人のメールが混ざっていないか確認してください",
+      ),
     ).toBeInTheDocument();
+  });
+
+  it("does not show the mixed-sender warning when the batch has a single From address", async () => {
+    previewEmlImportActionMock.mockResolvedValue(baseEmlPreview);
+
+    render(
+      <TalkImportForm conversationId="conv-1" participants={participants} />,
+    );
+    switchToEmlMode();
+    selectEmlFiles([emlFile()]);
+
+    await findByExactText("割り当て先: メンバーA");
+    expect(
+      screen.queryByText(/複数の差出人アドレスが含まれています/),
+    ).not.toBeInTheDocument();
   });
 
   it("shows the image count and extra image warnings in mail mode preview", async () => {

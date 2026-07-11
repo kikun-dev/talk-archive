@@ -85,6 +85,7 @@ export function TalkImportForm({
 }: TalkImportFormProps) {
   const fileInputId = useId();
   const emlFileInputId = useId();
+  const emlParticipantSelectId = useId();
   const [mode, setMode] = useState<Mode>("json");
   const [stage, setStage] = useState<Stage>("select");
   const [error, setError] = useState<string | undefined>();
@@ -100,9 +101,12 @@ export function TalkImportForm({
   const [result, setResult] = useState<ImportResult | null>(null);
   const [emlFiles, setEmlFiles] = useState<File[] | null>(null);
   const [emlPreview, setEmlPreview] = useState<EmlPreview | null>(null);
-  const [senderAssignments, setSenderAssignments] = useState<{
-    [address: string]: string;
-  }>({});
+  // .eml インポートの割り当て先参加者（#128）。メールのトークは常に1対1で、
+  // インポート画面は取り込み先トークが確定しているため、選択されたバッチ全体を
+  // 単一の参加者に割り当てる。既定値は先頭の参加者
+  const [emlParticipantId, setEmlParticipantId] = useState<string>(
+    participants[0]?.id ?? "",
+  );
   const [emlResult, setEmlResult] = useState<EmlExecutionResult | null>(null);
   const [fileInputKey, setFileInputKey] = useState(0);
 
@@ -116,7 +120,7 @@ export function TalkImportForm({
     setResult(null);
     setEmlFiles(null);
     setEmlPreview(null);
-    setSenderAssignments({});
+    setEmlParticipantId(participants[0]?.id ?? "");
     setEmlResult(null);
     setFileInputKey((key) => key + 1);
   }
@@ -200,6 +204,9 @@ export function TalkImportForm({
     if (!fileList || fileList.length === 0) {
       return;
     }
+    if (participants.length === 0) {
+      return;
+    }
     const files = Array.from(fileList);
 
     setError(undefined);
@@ -236,14 +243,8 @@ export function TalkImportForm({
         return;
       }
 
-      const defaultAssignments: { [address: string]: string } = {};
-      for (const sender of response.preview.senders) {
-        defaultAssignments[sender.address] = NEW_PARTICIPANT_VALUE;
-      }
-
       setEmlFiles(files);
       setEmlPreview(response.preview);
-      setSenderAssignments(defaultAssignments);
       setStage("preview");
     });
   }
@@ -263,7 +264,7 @@ export function TalkImportForm({
       const response = await executeEmlImportAction(
         conversationId,
         formData,
-        JSON.stringify(senderAssignments),
+        emlParticipantId,
       );
       if ("error" in response) {
         setError(response.error);
@@ -689,53 +690,51 @@ export function TalkImportForm({
             </section>
           )}
 
-          {emlPreview.senders.length > 0 && (
-            <section className="space-y-3">
-              <h3 className="text-sm font-semibold text-gray-900">
-                差出人の割り当て
-              </h3>
-              <div className="divide-y divide-gray-200 border-y border-gray-200">
-                {emlPreview.senders.map((sender) => (
-                  <div
-                    key={sender.address}
-                    className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center sm:gap-4"
-                  >
-                    <label
-                      htmlFor={`sender-${sender.address}`}
-                      className="min-w-0 flex-1 break-all text-sm font-medium text-gray-700"
-                    >
-                      {sender.nameSuggestion}（{sender.address}）・
-                      {sender.messageCount}件
-                    </label>
-                    <select
-                      id={`sender-${sender.address}`}
-                      aria-label={`${sender.address}の割り当て`}
-                      value={
-                        senderAssignments[sender.address] ??
-                        NEW_PARTICIPANT_VALUE
-                      }
-                      onChange={(event) =>
-                        setSenderAssignments((prev) => ({
-                          ...prev,
-                          [sender.address]: event.target.value,
-                        }))
-                      }
-                      className="min-h-10 w-full rounded border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 sm:w-auto sm:max-w-xs"
-                    >
-                      <option value={NEW_PARTICIPANT_VALUE}>
-                        新規参加者として追加
-                      </option>
-                      {participants.map((participant) => (
-                        <option key={participant.id} value={participant.id}>
-                          {participant.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                ))}
-              </div>
+          {emlPreview.senders.length >= 2 && (
+            <section className="border-l-4 border-amber-500 bg-amber-50 px-4 py-3">
+              <p className="text-sm text-gray-900">
+                複数の差出人アドレスが含まれています:{" "}
+                {emlPreview.senders
+                  .map(
+                    (sender) => `${sender.address}（${sender.messageCount}件）`,
+                  )
+                  .join("、")}
+                。別の人のメールが混ざっていないか確認してください
+              </p>
             </section>
           )}
+
+          <section className="space-y-2">
+            {participants.length === 1 && (
+              <p className="text-sm text-gray-700">
+                <span className="font-medium text-gray-900">割り当て先:</span>{" "}
+                {participants[0].name}
+              </p>
+            )}
+            {participants.length >= 2 && (
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
+                <label
+                  htmlFor={emlParticipantSelectId}
+                  className="text-sm font-medium text-gray-700"
+                >
+                  割り当て先
+                </label>
+                <select
+                  id={emlParticipantSelectId}
+                  aria-label="割り当て先"
+                  value={emlParticipantId}
+                  onChange={(event) => setEmlParticipantId(event.target.value)}
+                  className="min-h-10 w-full rounded border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 sm:w-auto sm:max-w-xs"
+                >
+                  {participants.map((participant) => (
+                    <option key={participant.id} value={participant.id}>
+                      {participant.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </section>
 
           <FormError message={error} />
 
@@ -824,6 +823,15 @@ export function TalkImportForm({
               内容を確認しています...
             </p>
           )}
+        </div>
+      ) : participants.length === 0 ? (
+        <div className="border border-gray-300 bg-gray-50 px-4 py-8 text-center shadow-sm sm:px-8 sm:py-10">
+          <p className="text-sm font-semibold text-gray-900">
+            インポートする.emlファイル
+          </p>
+          <div className="mt-4">
+            <FormError message="このトークにはまだ参加者がいません。先に参加者を追加してください" />
+          </div>
         </div>
       ) : (
         <div className="border border-gray-300 bg-gray-50 px-4 py-8 text-center shadow-sm sm:px-8 sm:py-10">

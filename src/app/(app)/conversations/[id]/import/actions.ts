@@ -35,6 +35,12 @@ function isRecord(value: unknown): value is { [key: string]: unknown } {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function isValidUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+    value,
+  );
+}
+
 /**
  * speakerAssignmentsJson（`{ [speakerName]: participantId | "new" }`）をパースする
  * 不正な形式（JSON パース失敗・オブジェクトでない・値が非文字列）は null を返す
@@ -231,9 +237,13 @@ async function parseEmlFilesFromFormData(
   return { parsed, rowErrors, totalCount: files.length };
 }
 
+/**
+ * .eml バッチ内の差出人サマリ（#128 簡素化）
+ * 参加者への割り当てには使わない（トークは常に1対1で、割り当てはトーク参加者から行う）。
+ * 複数種の From アドレスが混在する場合の取り違え防止警告表示にのみ使う
+ */
 type EmlSenderSummary = {
   address: string;
-  nameSuggestion: string;
   messageCount: number;
 };
 
@@ -247,7 +257,6 @@ function buildSenderSummaries(parsed: ParsedEmlFile[]): EmlSenderSummary[] {
     }
     summaries.set(message.senderAddress, {
       address: message.senderAddress,
-      nameSuggestion: message.senderNameSuggestion,
       messageCount: 1,
     });
   }
@@ -353,11 +362,16 @@ export type ExecuteEmlImportResult =
  * 画像を持つ元メッセージに対応する record へ attachRecordMedia で画像を添付する。
  * 添付失敗はメールごとに握りつぶさず attachFailedCount に集計する
  * （未添付のまま残る＝#113 の添付導線で個別に復旧可能）
+ *
+ * participantId: このバッチ全体を割り当てる参加者の ID（#128 簡素化）。
+ * メールのトークは常に1対1で、インポート画面は取り込み先トークが確定しているため、
+ * From アドレスごとの差出人割り当ては行わず、選択された全メッセージを1人の
+ * 参加者に割り当てる。空文字・不正な UUID はエラーとする
  */
 export async function executeEmlImportAction(
   conversationId: string,
   formData: FormData,
-  speakerAssignmentsJson: string,
+  participantId: string,
 ): Promise<ExecuteEmlImportResult> {
   const supabase = await createSupabaseServerClient();
   const {
@@ -373,9 +387,9 @@ export async function executeEmlImportAction(
     return outcome;
   }
 
-  const speakerAssignments = parseSpeakerAssignments(speakerAssignmentsJson);
-  if (speakerAssignments === null) {
-    return { error: "発言者の割り当てのデータが不正です" };
+  const trimmedParticipantId = participantId.trim();
+  if (trimmedParticipantId.length === 0 || !isValidUuid(trimmedParticipantId)) {
+    return { error: "参加者の割り当てが不正です" };
   }
 
   try {
@@ -392,18 +406,16 @@ export async function executeEmlImportAction(
       messageByRecord.set(record, parsed[index].message);
     });
 
-    // 新規参加者作成時、speaker（From アドレス）の代わりに local part 由来の
-    // 表示名候補（senderNameSuggestion）を使う（#128）
-    const newParticipantNameBySpeaker: { [speakerName: string]: string } = {};
+    // 選択された .eml 群に登場する全 From アドレスを、指定された単一の
+    // participantId に割り当てる（#128）
+    const speakerAssignments: { [speakerName: string]: string } = {};
     for (const { message } of parsed) {
-      newParticipantNameBySpeaker[message.senderAddress] =
-        message.senderNameSuggestion;
+      speakerAssignments[message.senderAddress] = trimmedParticipantId;
     }
 
     const result = await executeImport(supabase, conversationId, {
       records,
       speakerAssignments,
-      newParticipantNameBySpeaker,
     });
 
     let attachedCount = 0;
