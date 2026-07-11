@@ -172,6 +172,9 @@ describe("ChatView", () => {
       screen.getByRole("link", { name: "会話内メディア一覧" }),
     ).toHaveAttribute("href", "/conversations/conv-1/media");
     expect(
+      screen.getByRole("link", { name: "インポート" }),
+    ).toHaveAttribute("href", "/conversations/conv-1/import");
+    expect(
       screen.getByRole("button", { name: "会話編集" }),
     ).toBeInTheDocument();
   });
