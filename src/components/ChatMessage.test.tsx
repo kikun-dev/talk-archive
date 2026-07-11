@@ -293,6 +293,28 @@ describe("ChatMessage", () => {
     ).toBeInTheDocument();
   });
 
+  it("renders a URL in content as a clickable link", () => {
+    const record = {
+      ...textRecord,
+      content: "資料はこちら https://example.com/doc をどうぞ",
+    };
+    render(
+      <ToastProvider><ChatMessage
+        record={record}
+        participantName="メンバーA"
+        conversationId="conv-1"
+        displayName=""
+      /></ToastProvider>,
+    );
+
+    const link = screen.getByRole("link", {
+      name: "https://example.com/doc",
+    });
+    expect(link).toHaveAttribute("href", "https://example.com/doc");
+    expect(link).toHaveAttribute("target", "_blank");
+    expect(link).toHaveAttribute("rel", "noopener noreferrer");
+  });
+
   it("shows raw placeholder in edit mode textarea", () => {
     const record = {
       ...textRecord,

@@ -15,6 +15,7 @@ import {
   type MediaFileKind,
 } from "@/lib/mediaFileSelection";
 import { FormError } from "@/components/FormError";
+import { LinkifiedText } from "@/components/LinkifiedText";
 import { useToast } from "@/components/ToastProvider";
 import type { Record } from "@/types/domain";
 import type { MediaUrl } from "@/usecases/recordUseCases";
@@ -343,7 +344,9 @@ export const ChatMessage = memo(function ChatMessage({
           )}
           {record.content && (
             <p className="whitespace-pre-wrap text-sm text-gray-700">
-              {replaceMyNamePlaceholder(record.content, displayName)}
+              <LinkifiedText
+                text={replaceMyNamePlaceholder(record.content, displayName)}
+              />
             </p>
           )}
           {mediaUrl && <MediaContent record={record} mediaUrl={mediaUrl} />}
