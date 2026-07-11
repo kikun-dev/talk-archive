@@ -517,6 +517,239 @@ describe("parseEmlFile", () => {
   });
 });
 
+// #129: 実メール41通の調査結果対応（数値文字参照・Gmail画像マーカー・スタブ本文・
+// リモート画像）。実メールは添付ファイル0件で、画像は HTML パート内の
+// <img src="https://.../qimage?..."> というリモート参照のみを持つ
+describe("parseEmlFile: numeric character references in text/plain (#129)", () => {
+  it("decodes a valid hex numeric character reference (&#x2600;) in text/plain", async () => {
+    const raw = buildAlternativeEml({
+      textBody: `先頭&#x2600;末尾`,
+      htmlBody: null,
+    });
+
+    const result = await parseEmlFile(raw, "test.eml");
+
+    expect(result.content).toBe(`先頭${String.fromCodePoint(0x2600)}末尾`);
+  });
+
+  it("decodes a valid decimal numeric character reference (&#9728;) in text/plain", async () => {
+    const raw = buildAlternativeEml({
+      textBody: `先頭&#9728;末尾`,
+      htmlBody: null,
+    });
+
+    const result = await parseEmlFile(raw, "test.eml");
+
+    expect(result.content).toBe(`先頭${String.fromCodePoint(9728)}末尾`);
+  });
+
+  it("leaves an invalid numeric character reference (&#0;, out of range) in text/plain untouched", async () => {
+    const raw = buildAlternativeEml({
+      textBody: `先頭&#0;中&#x110000;末尾`,
+      htmlBody: null,
+    });
+
+    const result = await parseEmlFile(raw, "test.eml");
+
+    expect(result.content).toBe("先頭&#0;中&#x110000;末尾");
+  });
+
+  it("does not decode named HTML entities (e.g. &amp;) in text/plain, since they may be literal text", async () => {
+    const raw = buildAlternativeEml({
+      textBody: `AT&amp;T`,
+      htmlBody: null,
+    });
+
+    const result = await parseEmlFile(raw, "test.eml");
+
+    expect(result.content).toBe("AT&amp;T");
+  });
+});
+
+describe("parseEmlFile: Gmail-style [image: ...] marker lines (#129)", () => {
+  it("removes a marker-only line and keeps the surrounding body", async () => {
+    const raw = buildAlternativeEml({
+      textBody: "前の行\n[image: 1142-20220301-041051.jpg]\n後の行",
+      htmlBody: null,
+    });
+
+    const result = await parseEmlFile(raw, "test.eml");
+
+    expect(result.content).toBe("前の行\n後の行");
+  });
+
+  it("collapses consecutive blank lines created by removing the marker line", async () => {
+    const raw = buildAlternativeEml({
+      textBody: "前\n\n[image: x.jpg]\n\n後",
+      htmlBody: null,
+    });
+
+    const result = await parseEmlFile(raw, "test.eml");
+
+    expect(result.content).toBe("前\n\n後");
+  });
+
+  it("falls back to the HTML body when the text/plain body is only a marker line", async () => {
+    const raw = buildAlternativeEml({
+      textBody: "[image: 1142-20220301-041051.jpg]",
+      htmlBody: "<p>HTML本文</p>",
+    });
+
+    const result = await parseEmlFile(raw, "test.eml");
+
+    expect(result.content).toBe("HTML本文");
+  });
+
+  it("throws EmlImportError when the body is only a marker line and there is no HTML fallback", async () => {
+    const raw = buildAlternativeEml({
+      textBody: "[image: 1142-20220301-041051.jpg]",
+      htmlBody: "  ",
+    });
+
+    await expect(parseEmlFile(raw, "marker-only.eml")).rejects.toThrow(
+      "marker-only.eml: 本文が空のため取り込めません",
+    );
+  });
+});
+
+describe("parseEmlFile: stub text/plain body falls back to HTML (#129)", () => {
+  it("falls back to the HTML body when text/plain is only the cuenote stub with a link", async () => {
+    const raw = buildAlternativeEml({
+      textBody:
+        "メールがうまく表示されない方はこちらをご覧ください\r\nhttp://fc1093.cuenote.jp/h/xxxxxx",
+      htmlBody: "<p>本当の本文です。</p>",
+    });
+
+    const result = await parseEmlFile(raw, "test.eml");
+
+    expect(result.content).toBe("本当の本文です。");
+  });
+
+  it("falls back to the HTML body when text/plain is only the cuenote stub without a link", async () => {
+    const raw = buildAlternativeEml({
+      textBody: "メールがうまく表示されない方はこちらをご覧ください",
+      htmlBody: "<p>本当の本文です。</p>",
+    });
+
+    const result = await parseEmlFile(raw, "test.eml");
+
+    expect(result.content).toBe("本当の本文です。");
+  });
+
+  it("throws EmlImportError when the stub body has no usable HTML fallback and there is no image", async () => {
+    const raw = buildAlternativeEml({
+      textBody:
+        "メールがうまく表示されない方はこちらをご覧ください\r\nhttp://fc1093.cuenote.jp/h/xxxxxx",
+      htmlBody: "  ",
+    });
+
+    await expect(parseEmlFile(raw, "stub-only.eml")).rejects.toThrow(
+      "stub-only.eml: 本文が空のため取り込めません",
+    );
+  });
+
+  it("does not treat a body that merely starts with the stub sentence as a stub (real content keeps text/plain)", async () => {
+    const raw = buildAlternativeEml({
+      textBody:
+        "メールがうまく表示されない方はこちらをご覧ください\r\nhttp://fc1093.cuenote.jp/h/xxxxxx\r\n追記: 本当はこれも本文です",
+      htmlBody: "<p>HTML側</p>",
+    });
+
+    const result = await parseEmlFile(raw, "test.eml");
+
+    expect(result.content).toContain("追記: 本当はこれも本文です");
+  });
+});
+
+describe("parseEmlFile: remote image extraction from HTML <img> (#129)", () => {
+  it("extracts a remote image URL and decodes &amp; in its query string", async () => {
+    const raw = buildAlternativeEml({
+      textBody: null,
+      htmlBody:
+        '<p>本文</p><img src="https://mail-web.example.com/mail/output/qimage?image_name=abc123&amp;token=xyz">',
+    });
+
+    const result = await parseEmlFile(raw, "test.eml");
+
+    expect(result.image).toBeNull();
+    expect(result.remoteImageUrl).toBe(
+      "https://mail-web.example.com/mail/output/qimage?image_name=abc123&token=xyz",
+    );
+    expect(result.extraImageCount).toBe(0);
+  });
+
+  it("ignores non-http(s) img src values such as javascript: or cid:", async () => {
+    const raw = buildAlternativeEml({
+      textBody: null,
+      htmlBody:
+        '<p>本文</p><img src="javascript:alert(1)"><img src="cid:abc123">',
+    });
+
+    const result = await parseEmlFile(raw, "test.eml");
+
+    expect(result.remoteImageUrl).toBeNull();
+    expect(result.extraImageCount).toBe(0);
+  });
+
+  it("picks the first valid remote image and counts the rest as extraImageCount", async () => {
+    const raw = buildAlternativeEml({
+      textBody: null,
+      htmlBody:
+        '<p>本文</p>' +
+        '<img src="https://example.com/1.jpg">' +
+        '<img src="cid:ignored">' +
+        '<img src="https://example.com/2.jpg">' +
+        '<img src="https://example.com/3.jpg">',
+    });
+
+    const result = await parseEmlFile(raw, "test.eml");
+
+    expect(result.remoteImageUrl).toBe("https://example.com/1.jpg");
+    expect(result.extraImageCount).toBe(2);
+  });
+
+  it("prefers an attachment image over an HTML <img> and ignores the HTML image entirely (avoids cid double-counting)", async () => {
+    const raw = buildAlternativeEml({
+      textBody: null,
+      htmlBody: '<p>本文</p><img src="https://example.com/1.jpg">',
+      attachments: [
+        {
+          filename: "photo.png",
+          mimeType: "image/png",
+          data: Buffer.from([0x89, 0x50, 0x4e, 0x47]),
+        },
+      ],
+    });
+
+    const result = await parseEmlFile(raw, "test.eml");
+
+    expect(result.image?.filename).toBe("photo.png");
+    expect(result.remoteImageUrl).toBeNull();
+    expect(result.extraImageCount).toBe(0);
+  });
+
+  it("parses a blank-body email with only a remote image as a valid image message", async () => {
+    const raw = buildAlternativeEml({
+      textBody: "   ",
+      htmlBody: '<img src="https://example.com/1.jpg">',
+    });
+
+    const result = await parseEmlFile(raw, "remote-image-only.eml");
+
+    expect(result.content).toBeNull();
+    expect(result.remoteImageUrl).toBe("https://example.com/1.jpg");
+    expect(toTalkImportRecord(result).type).toBe("image");
+  });
+
+  it("throws EmlImportError when body, image, and remoteImageUrl are all absent", async () => {
+    const raw = buildAlternativeEml({ textBody: "  ", htmlBody: "  " });
+
+    await expect(parseEmlFile(raw, "all-empty.eml")).rejects.toThrow(
+      "all-empty.eml: 本文が空のため取り込めません",
+    );
+  });
+});
+
 describe("toTalkImportRecord", () => {
   function baseMessage(
     overrides: Partial<ParsedEmlMessage> = {},
@@ -527,6 +760,7 @@ describe("toTalkImportRecord", () => {
       title: "件名",
       content: "本文",
       image: null,
+      remoteImageUrl: null,
       extraImageCount: 0,
       ...overrides,
     };
@@ -558,6 +792,16 @@ describe("toTalkImportRecord", () => {
 
     expect(record.type).toBe("image");
     expect(record.content).toBe("本文");
+  });
+
+  it("maps a message with only a remoteImageUrl (no attachment image) to an image record", () => {
+    const message = baseMessage({
+      remoteImageUrl: "https://example.com/1.jpg",
+    });
+
+    const record = toTalkImportRecord(message);
+
+    expect(record.type).toBe("image");
   });
 });
 

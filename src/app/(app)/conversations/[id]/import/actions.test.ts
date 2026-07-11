@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const getUserMock = vi.fn();
 const createSupabaseServerClientMock = vi.fn();
@@ -22,6 +22,10 @@ class ImportErrorMock extends Error {}
 
 const parseEmlFileMock = vi.fn();
 const toTalkImportRecordMock = vi.fn();
+const guessImageFilenameMock = vi.fn((mimeType: string, index: number) => {
+  const subtype = mimeType.split("/")[1]?.split("+")[0] || "bin";
+  return `image-${index + 1}.${subtype}`;
+});
 
 class EmlImportErrorMock extends Error {}
 
@@ -50,6 +54,7 @@ vi.mock("@/usecases/importUseCases", () => ({
 vi.mock("@/usecases/emlImportUseCases", () => ({
   parseEmlFile: parseEmlFileMock,
   toTalkImportRecord: toTalkImportRecordMock,
+  guessImageFilename: guessImageFilenameMock,
   EmlImportError: EmlImportErrorMock,
   MAX_EML_FILE_SIZE: 10 * 1024 * 1024,
   MAX_EML_FILE_COUNT: 200,
@@ -374,6 +379,7 @@ function parsedMessage(
     title: string | null;
     content: string | null;
     image: { filename: string; mimeType: string; data: Uint8Array } | null;
+    remoteImageUrl: string | null;
     extraImageCount: number;
   }> = {},
 ) {
@@ -383,6 +389,7 @@ function parsedMessage(
     title: "件名",
     content: "本文",
     image: null,
+    remoteImageUrl: null,
     extraImageCount: 0,
     ...overrides,
   };
@@ -629,6 +636,45 @@ describe("previewEmlImportAction", () => {
     ]);
   });
 
+  // #129: 実メールは添付ファイルを持たず、画像は HTML 内のリモート参照のみのため、
+  // 添付が無くリモート画像だけを持つメッセージも imageCount に含める
+  it("counts messages that have only a remoteImageUrl (no attachment image) toward imageCount", async () => {
+    mockSupabaseClient({ id: "user-1" });
+    const formData = buildFormDataWithFiles([
+      { name: "a.eml" },
+      { name: "b.eml" },
+    ]);
+    parseEmlFileMock.mockImplementation(async (_raw: unknown, filename: string) =>
+      filename === "a.eml"
+        ? parsedMessage({ remoteImageUrl: "https://example.com/1.jpg" })
+        : parsedMessage(),
+    );
+    toTalkImportRecordMock.mockReturnValue({
+      speaker: "sender@example.com",
+      postedAt: "2020-10-12T06:16:14.000Z",
+      type: "text",
+      title: "件名",
+      content: "本文",
+      hasAudio: false,
+    });
+    buildImportPreviewMock.mockResolvedValue({
+      totalCount: 2,
+      importableCount: 2,
+      duplicateCount: 0,
+      period: null,
+      typeCounts: { text: 1, image: 1, video: 0, audio: 0 },
+      unknownSpeakers: [],
+    });
+
+    const { previewEmlImportAction } = await import("./actions");
+    const result = await previewEmlImportAction("conv-1", formData, VALID_PARTICIPANT_ID);
+
+    if ("error" in result) {
+      throw new Error("expected a preview result");
+    }
+    expect(result.preview.imageCount).toBe(1);
+  });
+
   it("returns a generic error for unexpected failures", async () => {
     mockSupabaseClient({ id: "user-1" });
     const formData = buildFormDataWithFiles([{ name: "a.eml" }]);
@@ -781,9 +827,36 @@ describe("previewEmlImportAction", () => {
   });
 });
 
+/**
+ * fetchRemoteImage が呼ぶ fetch の Response をモックする最小構成（#129）。
+ * headers.get はヘッダ名の大文字小文字を無視して content-type のみ返す
+ */
+function buildFetchResponse(options: {
+  ok?: boolean;
+  contentType?: string | null;
+  blobSize?: number;
+}): Response {
+  const { ok = true, contentType = "image/jpeg", blobSize = 3 } = options;
+  return {
+    ok,
+    headers: {
+      get: (name: string) =>
+        name.toLowerCase() === "content-type" ? contentType : null,
+    },
+    blob: async () =>
+      new Blob([new Uint8Array(blobSize)], {
+        type: contentType ?? undefined,
+      }),
+  } as unknown as Response;
+}
+
 describe("executeEmlImportAction", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
   });
 
   it("redirects to login when not authenticated", async () => {
@@ -973,6 +1046,287 @@ describe("executeEmlImportAction", () => {
     expect(result.result.attachedCount).toBe(0);
     expect(result.result.attachFailedCount).toBe(1);
     expect(result.result.createdCount).toBe(1);
+  });
+
+  // #129: 実メールは添付ファイルを持たず画像は HTML 内のリモート参照のみのため、
+  // 添付が無い場合は remoteImageUrl を fetch して添付する
+  describe("remote image attachment via remoteImageUrl (#129)", () => {
+    it("fetches the remoteImageUrl and attaches it via attachRecordMedia when there is no attachment image", async () => {
+      mockSupabaseClient({ id: "user-1" });
+      const formData = buildFormDataWithFiles([{ name: "remote-image.eml" }]);
+      const remoteMessage = parsedMessage({
+        remoteImageUrl: "https://example.com/1.jpg",
+      });
+      parseEmlFileMock.mockResolvedValue(remoteMessage);
+      const imageRecord = {
+        speaker: "sender@example.com",
+        postedAt: "2020-10-12T06:16:14.000Z",
+        type: "image" as const,
+        title: "件名",
+        content: null,
+        hasAudio: false,
+      };
+      toTalkImportRecordMock.mockReturnValue(imageRecord);
+      executeImportMock.mockResolvedValue({
+        createdCount: 1,
+        skippedCount: 0,
+        createdParticipants: {},
+        createdRecords: [{ record: imageRecord, id: "record-remote" }],
+      });
+      attachRecordMediaMock.mockResolvedValue({});
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValue(buildFetchResponse({ contentType: "image/jpeg" }));
+      vi.stubGlobal("fetch", fetchMock);
+
+      const { executeEmlImportAction } = await import("./actions");
+      const result = await executeEmlImportAction(
+        "conv-1",
+        formData,
+        VALID_PARTICIPANT_ID,
+      );
+
+      expect(fetchMock).toHaveBeenCalledWith(
+        "https://example.com/1.jpg",
+        expect.objectContaining({ signal: expect.anything() }),
+      );
+      expect(attachRecordMediaMock).toHaveBeenCalledTimes(1);
+      expect(attachRecordMediaMock).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          userId: "user-1",
+          recordId: "record-remote",
+          filename: "image-1.jpeg",
+          contentType: "image/jpeg",
+        }),
+      );
+      const [, callArgs] = attachRecordMediaMock.mock.calls[0] as [
+        unknown,
+        { file: unknown },
+      ];
+      expect(callArgs.file).toBeInstanceOf(Blob);
+      if ("error" in result) {
+        throw new Error("expected a result");
+      }
+      expect(result.result.attachedCount).toBe(1);
+      expect(result.result.attachFailedCount).toBe(0);
+    });
+
+    it("counts attachFailedCount without calling attachRecordMedia when the fetch response is not ok", async () => {
+      mockSupabaseClient({ id: "user-1" });
+      const formData = buildFormDataWithFiles([{ name: "remote-image.eml" }]);
+      const remoteMessage = parsedMessage({
+        remoteImageUrl: "https://example.com/1.jpg",
+      });
+      parseEmlFileMock.mockResolvedValue(remoteMessage);
+      const imageRecord = {
+        speaker: "sender@example.com",
+        postedAt: "2020-10-12T06:16:14.000Z",
+        type: "image" as const,
+        title: "件名",
+        content: null,
+        hasAudio: false,
+      };
+      toTalkImportRecordMock.mockReturnValue(imageRecord);
+      executeImportMock.mockResolvedValue({
+        createdCount: 1,
+        skippedCount: 0,
+        createdParticipants: {},
+        createdRecords: [{ record: imageRecord, id: "record-remote" }],
+      });
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue(buildFetchResponse({ ok: false })),
+      );
+      vi.spyOn(console, "error").mockImplementation(() => {});
+
+      const { executeEmlImportAction } = await import("./actions");
+      const result = await executeEmlImportAction(
+        "conv-1",
+        formData,
+        VALID_PARTICIPANT_ID,
+      );
+
+      expect(attachRecordMediaMock).not.toHaveBeenCalled();
+      if ("error" in result) {
+        throw new Error("expected a result");
+      }
+      expect(result.result.attachedCount).toBe(0);
+      expect(result.result.attachFailedCount).toBe(1);
+    });
+
+    it("counts attachFailedCount when the response Content-Type does not start with image/", async () => {
+      mockSupabaseClient({ id: "user-1" });
+      const formData = buildFormDataWithFiles([{ name: "remote-image.eml" }]);
+      const remoteMessage = parsedMessage({
+        remoteImageUrl: "https://example.com/1.jpg",
+      });
+      parseEmlFileMock.mockResolvedValue(remoteMessage);
+      const imageRecord = {
+        speaker: "sender@example.com",
+        postedAt: "2020-10-12T06:16:14.000Z",
+        type: "image" as const,
+        title: "件名",
+        content: null,
+        hasAudio: false,
+      };
+      toTalkImportRecordMock.mockReturnValue(imageRecord);
+      executeImportMock.mockResolvedValue({
+        createdCount: 1,
+        skippedCount: 0,
+        createdParticipants: {},
+        createdRecords: [{ record: imageRecord, id: "record-remote" }],
+      });
+      vi.stubGlobal(
+        "fetch",
+        vi
+          .fn()
+          .mockResolvedValue(
+            buildFetchResponse({ contentType: "text/html" }),
+          ),
+      );
+      vi.spyOn(console, "error").mockImplementation(() => {});
+
+      const { executeEmlImportAction } = await import("./actions");
+      const result = await executeEmlImportAction(
+        "conv-1",
+        formData,
+        VALID_PARTICIPANT_ID,
+      );
+
+      expect(attachRecordMediaMock).not.toHaveBeenCalled();
+      if ("error" in result) {
+        throw new Error("expected a result");
+      }
+      expect(result.result.attachFailedCount).toBe(1);
+    });
+
+    it("counts attachFailedCount when the fetched body exceeds MAX_EML_FILE_SIZE (10MB)", async () => {
+      mockSupabaseClient({ id: "user-1" });
+      const formData = buildFormDataWithFiles([{ name: "remote-image.eml" }]);
+      const remoteMessage = parsedMessage({
+        remoteImageUrl: "https://example.com/1.jpg",
+      });
+      parseEmlFileMock.mockResolvedValue(remoteMessage);
+      const imageRecord = {
+        speaker: "sender@example.com",
+        postedAt: "2020-10-12T06:16:14.000Z",
+        type: "image" as const,
+        title: "件名",
+        content: null,
+        hasAudio: false,
+      };
+      toTalkImportRecordMock.mockReturnValue(imageRecord);
+      executeImportMock.mockResolvedValue({
+        createdCount: 1,
+        skippedCount: 0,
+        createdParticipants: {},
+        createdRecords: [{ record: imageRecord, id: "record-remote" }],
+      });
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue(
+          buildFetchResponse({
+            contentType: "image/png",
+            blobSize: 10 * 1024 * 1024 + 1,
+          }),
+        ),
+      );
+      vi.spyOn(console, "error").mockImplementation(() => {});
+
+      const { executeEmlImportAction } = await import("./actions");
+      const result = await executeEmlImportAction(
+        "conv-1",
+        formData,
+        VALID_PARTICIPANT_ID,
+      );
+
+      expect(attachRecordMediaMock).not.toHaveBeenCalled();
+      if ("error" in result) {
+        throw new Error("expected a result");
+      }
+      expect(result.result.attachFailedCount).toBe(1);
+    });
+
+    it("counts attachFailedCount without aborting other records when fetch itself throws (network error)", async () => {
+      mockSupabaseClient({ id: "user-1" });
+      const formData = buildFormDataWithFiles([
+        { name: "remote-image.eml" },
+        { name: "with-attachment.eml" },
+      ]);
+      const remoteMessage = parsedMessage({
+        senderAddress: "alice@example.com",
+        remoteImageUrl: "https://example.com/1.jpg",
+      });
+      const attachmentMessage = parsedMessage({
+        senderAddress: "bob@example.com",
+        image: {
+          filename: "photo.png",
+          mimeType: "image/png",
+          data: new Uint8Array([1, 2, 3]),
+        },
+      });
+      parseEmlFileMock.mockImplementation(
+        async (_raw: unknown, filename: string) =>
+          filename === "remote-image.eml" ? remoteMessage : attachmentMessage,
+      );
+      const remoteRecord = {
+        speaker: "alice@example.com",
+        postedAt: "2020-10-12T06:16:14.000Z",
+        type: "image" as const,
+        title: "件名",
+        content: null,
+        hasAudio: false,
+      };
+      const attachmentRecord = {
+        speaker: "bob@example.com",
+        postedAt: "2020-10-12T06:16:14.000Z",
+        type: "image" as const,
+        title: "件名",
+        content: null,
+        hasAudio: false,
+      };
+      toTalkImportRecordMock.mockImplementation(
+        (message: { senderAddress: string }) =>
+          message.senderAddress === "alice@example.com"
+            ? remoteRecord
+            : attachmentRecord,
+      );
+      executeImportMock.mockResolvedValue({
+        createdCount: 2,
+        skippedCount: 0,
+        createdParticipants: {},
+        createdRecords: [
+          { record: remoteRecord, id: "record-remote" },
+          { record: attachmentRecord, id: "record-attachment" },
+        ],
+      });
+      attachRecordMediaMock.mockResolvedValue({});
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockRejectedValue(new Error("network down")),
+      );
+      vi.spyOn(console, "error").mockImplementation(() => {});
+
+      const { executeEmlImportAction } = await import("./actions");
+      const result = await executeEmlImportAction(
+        "conv-1",
+        formData,
+        VALID_PARTICIPANT_ID,
+      );
+
+      if ("error" in result) {
+        throw new Error("expected a result");
+      }
+      // リモート画像の fetch は失敗するが、添付画像を持つレコードの添付は続行される
+      expect(attachRecordMediaMock).toHaveBeenCalledTimes(1);
+      expect(attachRecordMediaMock).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ recordId: "record-attachment" }),
+      );
+      expect(result.result.attachedCount).toBe(1);
+      expect(result.result.attachFailedCount).toBe(1);
+    });
   });
 
   it("passes through the ImportError message", async () => {

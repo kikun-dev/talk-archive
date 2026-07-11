@@ -20,7 +20,15 @@ export type ParsedEmlMessage = {
   content: string | null;
   /** inline/attachment 問わず image/* の最初の1件 */
   image: { filename: string; mimeType: string; data: Uint8Array } | null;
-  /** 2枚目以降の画像枚数（取り込み対象外の警告用） */
+  /**
+   * HTML 本文中の最初の `<img src="https://...">` （リモート画像参照）。
+   * 添付画像（image）がある場合は常に null（#129: 実メールは添付ファイルを持たず、画像は
+   * HTML パート内のリモート参照のみだが、添付画像がある .eml では cid 参照と重複する
+   * 可能性があるため、添付を優先し HTML 側の img は無視する）
+   */
+  remoteImageUrl: string | null;
+  /** 2枚目以降の画像枚数（取り込み対象外の警告用）。添付画像がある場合は添付の残り枚数、
+   * ない場合は HTML 内リモート画像の残り枚数を数える */
   extraImageCount: number;
 };
 
@@ -118,9 +126,14 @@ function isValidCodePoint(codePoint: number): boolean {
   );
 }
 
-// html-entities.js は postal-mime の公開 API（package.json の exports）に含まれず
-// 深いパスからの import はできないため、フォールバック用に最小限のデコードを自前で持つ
-function decodeHtmlEntities(text: string): string {
+/**
+ * `&#NNNN;`（10進）・`&#xHHHH;`（16進）の数値文字参照のみをデコードする
+ * isValidCodePoint による検証を通し、無効なコードポイント（範囲外・サロゲート範囲・NUL）は
+ * 元の表記のまま残す（#128）。text/plain・HTML どちらの経路からも呼べるよう、
+ * 名前付きエンティティ（`&amp;` 等）のデコードとは切り離してある（#129: text/plain の
+ * `&amp;` 等はリテラルの可能性があるため、text/plain 経路では数値文字参照のみを対象とする）
+ */
+function decodeNumericCharacterReferences(text: string): string {
   return text
     .replace(/&#x([0-9a-fA-F]+);/g, (match, hex: string) => {
       const codePoint = parseInt(hex, 16);
@@ -133,7 +146,13 @@ function decodeHtmlEntities(text: string): string {
       return isValidCodePoint(codePoint)
         ? String.fromCodePoint(codePoint)
         : match;
-    })
+    });
+}
+
+// html-entities.js は postal-mime の公開 API（package.json の exports）に含まれず
+// 深いパスからの import はできないため、フォールバック用に最小限のデコードを自前で持つ
+function decodeHtmlEntities(text: string): string {
+  return decodeNumericCharacterReferences(text)
     .replace(/&nbsp;/gi, " ")
     .replace(/&amp;/gi, "&")
     .replace(/&lt;/gi, "<")
@@ -157,19 +176,67 @@ function htmlToText(html: string): string {
 }
 
 /**
+ * Gmail アプリが画像添付を text/plain 側に残す際のマーカー行（例:
+ * `[image: 1142-20220301-041051.jpg]`）にのみマッチする（#129）。
+ * 行全体（前後の空白を除く）がこの形式である場合のみ除去対象とし、本文中に
+ * 偶然似た文字列が現れても誤って消さないようにする
+ */
+const IMAGE_MARKER_LINE_PATTERN = /^\s*\[image:[^\]]*\]\s*$/i;
+
+/**
+ * text/plain 本文から `[image: ...]` マーカーのみの行を取り除き、除去によってできた
+ * 連続空行を1行に詰める（#129）
+ */
+function removeImageMarkerLines(text: string): string {
+  const lines = text.split(/\r\n|\r|\n/).filter(
+    (line) => !IMAGE_MARKER_LINE_PATTERN.test(line),
+  );
+
+  const collapsed: string[] = [];
+  for (const line of lines) {
+    const isBlank = line.trim().length === 0;
+    const previousIsBlank =
+      collapsed.length > 0 &&
+      collapsed[collapsed.length - 1].trim().length === 0;
+    if (isBlank && previousIsBlank) {
+      continue;
+    }
+    collapsed.push(line);
+  }
+  return collapsed.join("\n");
+}
+
+/**
+ * 配信システム（cuenote 等）が HTML を表示できないクライアント向けに text/plain 側へ
+ * 埋め込む定型スタブ本文（実本文は HTML パートにある）にのみマッチする（#129）
+ */
+const STUB_BODY_PATTERN =
+  /^メールがうまく表示されない方はこちらをご覧ください\s*(https?:\/\/\S+)?$/;
+
+/**
  * text/plain・html いずれの経路の最終結果にも NUL 除去を適用する（防御の多重化）。
  * decodeHtmlEntities 側で数値文字参照由来の NUL は無効化しているが、text/plain 本文には
  * 生の NUL バイトがそのまま混入し得るため、ここでも取り除く。NUL を除去した結果が空に
  * なった場合は「本文なし」として扱い、text 経路なら html 経路へ、両方とも空なら呼び出し元
  * の「本文が空」判定（画像なしなら行エラー）へ自然に流す（#128 第3ラウンドレビュー対応 P1）
+ *
+ * text/plain 経路は以下の順で処理する（#129: 実メール41通の調査結果対応）
+ *   1. Gmail の `[image: ...]` マーカー行を除去
+ *   2. 数値文字参照（`&#NNNN;` / `&#xHHHH;`）をデコード（名前付きエンティティは対象外。
+ *      text/plain では `&amp;` 等がリテラルの可能性があるため）
+ *   3. NUL 除去 → trim
+ * その結果が空、またはスタブ本文（STUB_BODY_PATTERN）に一致する場合は、実本文が
+ * HTML パートにあると判断して html 経路へフォールバックする
  */
 function normalizeContent(
   text: string | undefined,
   html: string | undefined,
 ): string | null {
   if (typeof text === "string") {
-    const cleanedText = stripNulCharacters(text).trim();
-    if (cleanedText.length > 0) {
+    const withoutMarkers = removeImageMarkerLines(text);
+    const decoded = decodeNumericCharacterReferences(withoutMarkers);
+    const cleanedText = stripNulCharacters(decoded).trim();
+    if (cleanedText.length > 0 && !STUB_BODY_PATTERN.test(cleanedText)) {
       return cleanedText;
     }
   }
@@ -210,7 +277,8 @@ function toArrayBuffer(raw: ArrayBuffer | string): ArrayBuffer {
   );
 }
 
-function guessImageFilename(mimeType: string, index: number): string {
+/** mimeType の subtype から `image-N.ext` 形式のファイル名を組み立てる（添付・リモート画像共用） */
+export function guessImageFilename(mimeType: string, index: number): string {
   const subtype = mimeType.split("/")[1]?.split("+")[0] || "bin";
   return `image-${index + 1}.${subtype}`;
 }
@@ -234,6 +302,60 @@ function extractImage(
       data: toUint8Array(first.content),
     },
     extraImageCount: imageAttachments.length - 1,
+  };
+}
+
+const IMG_TAG_PATTERN = /<img\b[^>]*>/gi;
+const IMG_SRC_ATTR_PATTERN = /\bsrc\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i;
+
+/** `<img>` タグ群から src 属性の生の値（未デコード）を出現順に列挙する */
+function extractImgSrcValues(html: string): string[] {
+  const imgTags = html.match(IMG_TAG_PATTERN) ?? [];
+  const srcValues: string[] = [];
+  for (const tag of imgTags) {
+    const match = IMG_SRC_ATTR_PATTERN.exec(tag);
+    const rawSrc = match?.[1] ?? match?.[2] ?? match?.[3];
+    if (rawSrc !== undefined) {
+      srcValues.push(rawSrc);
+    }
+  }
+  return srcValues;
+}
+
+/** http/https のみ許可する（`javascript:` 等の危険なスキームや `cid:` 参照を除外） */
+function isHttpUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * HTML 本文から最初の有効なリモート画像 URL（http/https のみ）を抽出する（#129）。
+ * 実メールの img src には `&amp;` エンティティが含まれるため（例:
+ * `qimage?image_name=abc123&amp;token=...`）、デコードしてから URL として検証する
+ */
+function extractRemoteImageUrl(html: string | undefined): {
+  remoteImageUrl: string | null;
+  extraImageCount: number;
+} {
+  if (typeof html !== "string") {
+    return { remoteImageUrl: null, extraImageCount: 0 };
+  }
+
+  const validUrls = extractImgSrcValues(html)
+    .map((rawSrc) => decodeHtmlEntities(rawSrc))
+    .filter(isHttpUrl);
+
+  if (validUrls.length === 0) {
+    return { remoteImageUrl: null, extraImageCount: 0 };
+  }
+
+  return {
+    remoteImageUrl: validUrls[0],
+    extraImageCount: validUrls.length - 1,
   };
 }
 
@@ -276,12 +398,23 @@ export async function parseEmlFile(
     throw new EmlImportError(`${filename}: 本文の解析に失敗しました`);
   }
 
-  const { image, extraImageCount } = extractImage(email.attachments);
+  const { image, extraImageCount: attachmentExtraImageCount } = extractImage(
+    email.attachments,
+  );
 
-  // 本文空・画像なしは text record（content 非null必須の CHECK 制約
-  // records_text_content_check）に違反し RPC のトランザクション全体を abort させるため、
-  // ここで行エラーとして弾く（画像あり・本文空は image record として正当なので通す）
-  if (image === null && content === null) {
+  // 添付画像がある場合、HTML 内の img は cid 参照と重複する可能性があるため無視し、
+  // 添付を優先する（remoteImageUrl は常に null。ParsedEmlMessage.remoteImageUrl のコメント参照）
+  const { remoteImageUrl, extraImageCount: remoteExtraImageCount } =
+    image === null
+      ? extractRemoteImageUrl(email.html)
+      : { remoteImageUrl: null, extraImageCount: 0 };
+  const extraImageCount =
+    image !== null ? attachmentExtraImageCount : remoteExtraImageCount;
+
+  // 本文空・画像なし（添付・リモートいずれも無し）は text record（content 非null必須の
+  // CHECK 制約 records_text_content_check）に違反し RPC のトランザクション全体を abort
+  // させるため、ここで行エラーとして弾く（画像あり・本文空は image record として正当なので通す）
+  if (image === null && remoteImageUrl === null && content === null) {
     throw new EmlImportError(`${filename}: 本文が空のため取り込めません`);
   }
 
@@ -291,6 +424,7 @@ export async function parseEmlFile(
     title,
     content,
     image,
+    remoteImageUrl,
     extraImageCount,
   };
 }
@@ -309,7 +443,7 @@ export function toTalkImportRecord(
   return {
     speaker: message.senderAddress,
     postedAt: message.postedAt,
-    type: message.image ? "image" : "text",
+    type: message.image || message.remoteImageUrl ? "image" : "text",
     title: message.title,
     content: message.content,
     hasAudio: false,
