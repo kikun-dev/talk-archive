@@ -319,6 +319,27 @@ describe("executeTalkImportAction", () => {
 
 // --- .eml インポート（#115） ---
 
+/**
+ * 実体の parseEmlFile/toTalkImportRecord を通す結合テスト用（#128 第3ラウンドレビュー対応
+ * P1）に、text/plain 本文へ生の NUL 文字を1件埋め込んだ最小構成の .eml を組み立てる
+ */
+function buildRawEmlWithNulBody(): string {
+  const nul = String.fromCharCode(0);
+  const textBody = `前${nul}後`;
+  return [
+    'From: "Sender" <sender@example.com>',
+    "To: recipient@example.com",
+    "Subject: Test",
+    "Date: Mon, 12 Oct 2020 06:16:14 +0000",
+    "MIME-Version: 1.0",
+    'Content-Type: text/plain; charset="utf-8"',
+    "Content-Transfer-Encoding: base64",
+    "",
+    Buffer.from(textBody, "utf-8").toString("base64"),
+    "",
+  ].join("\r\n");
+}
+
 function buildFormDataWithFiles(
   files: { name: string; size?: number }[],
 ): FormData {
@@ -1064,5 +1085,56 @@ describe("executeEmlImportAction", () => {
       throw new Error("expected a result");
     }
     expect(result.result.createdCount).toBe(2);
+  });
+
+  // #128 第3ラウンドレビュー対応（P1）: parseEmlFile/toTalkImportRecord のモックを実体に
+  // 差し替え、NUL を含む .eml を実際にパースさせた上で、executeImport に渡る records の
+  // content から U+0000 が除去されていることを確認する（usecase 単体テストだけでなく、
+  // action 層での結合まで通しで検証する）
+  it("strips NUL characters through the real parseEmlFile/toTalkImportRecord pipeline before calling executeImport", async () => {
+    mockSupabaseClient({ id: "user-1" });
+
+    const actualEmlImportUseCases = await vi.importActual<
+      typeof import("@/usecases/emlImportUseCases")
+    >("@/usecases/emlImportUseCases");
+    parseEmlFileMock.mockImplementation(actualEmlImportUseCases.parseEmlFile);
+    toTalkImportRecordMock.mockImplementation(
+      actualEmlImportUseCases.toTalkImportRecord,
+    );
+
+    const formData = new FormData();
+    formData.append("files", new File([buildRawEmlWithNulBody()], "nul.eml"));
+
+    executeImportMock.mockResolvedValue({
+      createdCount: 1,
+      skippedCount: 0,
+      createdParticipants: {},
+      createdRecords: [],
+    });
+
+    const { executeEmlImportAction } = await import("./actions");
+    const result = await executeEmlImportAction(
+      "conv-1",
+      formData,
+      VALID_PARTICIPANT_ID,
+    );
+
+    expect(executeImportMock).toHaveBeenCalledWith(expect.anything(), "conv-1", {
+      records: [
+        {
+          speaker: "sender@example.com",
+          postedAt: "2020-10-12T06:16:14.000Z",
+          type: "text",
+          title: "Test",
+          content: "前後",
+          hasAudio: false,
+        },
+      ],
+      speakerAssignments: { "sender@example.com": VALID_PARTICIPANT_ID },
+    });
+    if ("error" in result) {
+      throw new Error("expected a result");
+    }
+    expect(result.result.createdCount).toBe(1);
   });
 });

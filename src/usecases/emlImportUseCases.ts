@@ -73,11 +73,21 @@ function normalizeEmlDate(date: string | undefined): string | null {
  * Subject は自動由来のため行エラーにせず切り詰める */
 const MAX_TITLE_LENGTH = 200;
 
+/**
+ * 文字列から U+0000（NUL）を取り除く
+ * PostgreSQL の jsonb/text カラムは NUL 文字を保存できないため、Subject・本文の
+ * 最終文字列からは（数値文字参照経由に限らず）NUL を無条件に除去する（#128 第3ラウンド
+ * レビュー対応 P1）
+ */
+function stripNulCharacters(text: string): string {
+  return text.replace(/\0/g, "");
+}
+
 function normalizeTitle(subject: string | undefined): string | null {
   if (subject === undefined) {
     return null;
   }
-  const trimmed = subject.trim();
+  const trimmed = stripNulCharacters(subject).trim();
   if (trimmed.length === 0 || trimmed === "無題") {
     return null;
   }
@@ -90,13 +100,19 @@ const MAX_CODE_POINT = 0x10ffff;
 
 /**
  * String.fromCodePoint に渡して安全な Unicode コードポイントかどうかを検証する
- * 整数でない・負・0x10FFFF 超・サロゲート範囲（0xD800〜0xDFFF）はすべて無効とし、
- * RangeError を未然に防ぐ（#128: 異常な HTML 数値文字参照でバッチ全体が失敗する不具合対応）
+ * 整数でない・0以下・0x10FFFF 超・サロゲート範囲（0xD800〜0xDFFF）はすべて無効とし、
+ * RangeError を未然に防ぐ（#128: 異常な HTML 数値文字参照でバッチ全体が失敗する不具合対応）。
+ *
+ * U+0000（NUL）も無効として扱う（codePoint > 0）。String.fromCodePoint(0) は例外を
+ * 投げないため既存の防御（isValidCodePoint）をすり抜け、`&#0;` / `&#x0;` が本文中の
+ * 生の NUL 文字にデコードされてしまう。PostgreSQL の jsonb/text カラムは NUL 文字を
+ * 保存できないため、プレビューは通過するものの import_records_atomic RPC でバッチ
+ * 全体が失敗する（#128 第3ラウンドレビュー対応 P1）
  */
 function isValidCodePoint(codePoint: number): boolean {
   return (
     Number.isInteger(codePoint) &&
-    codePoint >= 0 &&
+    codePoint > 0 &&
     codePoint <= MAX_CODE_POINT &&
     !(codePoint >= SURROGATE_RANGE_START && codePoint <= SURROGATE_RANGE_END)
   );
@@ -140,15 +156,25 @@ function htmlToText(html: string): string {
   return decodeHtmlEntities(withoutTags);
 }
 
+/**
+ * text/plain・html いずれの経路の最終結果にも NUL 除去を適用する（防御の多重化）。
+ * decodeHtmlEntities 側で数値文字参照由来の NUL は無効化しているが、text/plain 本文には
+ * 生の NUL バイトがそのまま混入し得るため、ここでも取り除く。NUL を除去した結果が空に
+ * なった場合は「本文なし」として扱い、text 経路なら html 経路へ、両方とも空なら呼び出し元
+ * の「本文が空」判定（画像なしなら行エラー）へ自然に流す（#128 第3ラウンドレビュー対応 P1）
+ */
 function normalizeContent(
   text: string | undefined,
   html: string | undefined,
 ): string | null {
-  if (typeof text === "string" && text.trim().length > 0) {
-    return text.trim();
+  if (typeof text === "string") {
+    const cleanedText = stripNulCharacters(text).trim();
+    if (cleanedText.length > 0) {
+      return cleanedText;
+    }
   }
   if (typeof html === "string") {
-    const fromHtml = htmlToText(html).trim();
+    const fromHtml = stripNulCharacters(htmlToText(html)).trim();
     if (fromHtml.length > 0) {
       return fromHtml;
     }

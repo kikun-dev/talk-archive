@@ -419,6 +419,79 @@ describe("importUseCases", () => {
       ]);
     });
 
+    // #128 第3ラウンドレビュー対応（P1）: PostgreSQL の jsonb/text カラムは U+0000（NUL）
+    // を保存できず import_records_atomic RPC でバッチ全体が失敗するため、JSON インポート
+    // 経路では黙って除去せず行エラーとして表面化させる（JSON は talk-extract スキルの
+    // 機械生成であり、混入は入力側の異常として検知したい）
+    it("collects a row error when content contains U+0000 (NUL), which PostgreSQL's jsonb/text columns cannot store", () => {
+      const json = JSON.stringify({
+        version: 1,
+        records: [
+          {
+            speaker: "瀬戸口 心月",
+            postedAt: "2026-07-07T15:19:00+09:00",
+            type: "text",
+            content: `前${String.fromCharCode(0)}後`,
+          },
+        ],
+      });
+
+      const result = parseTalkImportJson(json);
+      expect(result.records).toEqual([]);
+      expect(result.rowErrors).toEqual([
+        "1件目: 本文に使用できない文字（U+0000）が含まれています",
+      ]);
+    });
+
+    it("collects a row error when title contains U+0000 (NUL)", () => {
+      const json = JSON.stringify({
+        version: 1,
+        records: [
+          {
+            speaker: "瀬戸口 心月",
+            postedAt: "2026-07-07T15:19:00+09:00",
+            type: "text",
+            content: "こんにちは",
+            title: `前${String.fromCharCode(0)}後`,
+          },
+        ],
+      });
+
+      const result = parseTalkImportJson(json);
+      expect(result.records).toEqual([]);
+      expect(result.rowErrors).toEqual([
+        "1件目: タイトルに使用できない文字（U+0000）が含まれています",
+      ]);
+    });
+
+    it("skips only the record whose content contains U+0000 and keeps importing the other valid records", () => {
+      const json = JSON.stringify({
+        version: 1,
+        records: [
+          {
+            speaker: "瀬戸口 心月",
+            postedAt: "2026-07-07T15:19:00+09:00",
+            type: "text",
+            content: "OK",
+          },
+          {
+            speaker: "瀬戸口 心月",
+            postedAt: "2026-07-08T15:19:00+09:00",
+            type: "text",
+            content: `NG${String.fromCharCode(0)}`,
+          },
+        ],
+      });
+
+      const result = parseTalkImportJson(json);
+      expect(result.records).toHaveLength(1);
+      expect(result.records[0].content).toBe("OK");
+      expect(result.rowErrors).toEqual([
+        "2件目: 本文に使用できない文字（U+0000）が含まれています",
+      ]);
+      expect(result.totalCount).toBe(2);
+    });
+
     it("keeps valid records while collecting errors for invalid ones, with correct 1-based index", () => {
       const json = JSON.stringify({
         version: 1,

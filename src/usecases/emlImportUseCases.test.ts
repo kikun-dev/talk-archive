@@ -394,6 +394,85 @@ describe("parseEmlFile", () => {
     });
   });
 
+  // #128 第3ラウンドレビュー対応（P1）: isValidCodePoint は codePoint >= 0 のため
+  // U+0000（NUL）を有効として扱い、`&#0;` / `&#x0;` が NUL 文字としてデコードされていた。
+  // PostgreSQL の jsonb/text カラムは NUL 文字を保存できず、プレビューは通過するものの
+  // import_records_atomic RPC でバッチ全体が失敗する。数値文字参照は元の表記のまま残し、
+  // text/plain 由来の生 NUL・Subject の NUL も最終文字列から除去する（防御の多重化）
+  describe("U+0000 (NUL) handling (#128 第3ラウンドレビュー P1)", () => {
+    // ソース中に生の NUL 文字を書くのを避けるため、コードポイントから組み立てる
+    const NUL = String.fromCharCode(0);
+
+    it("does not decode &#0; (decimal NUL reference) and leaves the original notation", async () => {
+      const raw = buildAlternativeEml({
+        textBody: null,
+        htmlBody: "<p>先頭&#0;末尾</p>",
+      });
+
+      const result = await parseEmlFile(raw, "test.eml");
+
+      expect(result.content).toBe("先頭&#0;末尾");
+    });
+
+    it("does not decode &#x0; (hex NUL reference) and leaves the original notation", async () => {
+      const raw = buildAlternativeEml({
+        textBody: null,
+        htmlBody: "<p>先頭&#x0;末尾</p>",
+      });
+
+      const result = await parseEmlFile(raw, "test.eml");
+
+      expect(result.content).toBe("先頭&#x0;末尾");
+    });
+
+    it("strips a raw NUL character embedded in a text/plain body", async () => {
+      const raw = buildAlternativeEml({
+        textBody: `前${NUL}後`,
+        htmlBody: null,
+      });
+
+      const result = await parseEmlFile(raw, "test.eml");
+
+      expect(result.content).toBe("前後");
+      expect(result.content).not.toContain(NUL);
+    });
+
+    it("falls back to the HTML body when the text/plain body becomes empty after stripping NUL characters", async () => {
+      const raw = buildAlternativeEml({
+        textBody: `${NUL}${NUL}`,
+        htmlBody: "<p>HTML本文</p>",
+      });
+
+      const result = await parseEmlFile(raw, "test.eml");
+
+      expect(result.content).toBe("HTML本文");
+    });
+
+    it("throws EmlImportError when the body is NUL-only and there is no image (empty after NUL stripping)", async () => {
+      const raw = buildAlternativeEml({
+        textBody: NUL,
+        htmlBody: NUL,
+      });
+
+      await expect(parseEmlFile(raw, "nul-only.eml")).rejects.toThrow(
+        EmlImportError,
+      );
+      await expect(parseEmlFile(raw, "nul-only.eml")).rejects.toThrow(
+        "nul-only.eml: 本文が空のため取り込めません",
+      );
+    });
+
+    it("strips NUL characters embedded in the subject", async () => {
+      const raw = buildAlternativeEml({
+        subject: "=?utf-8?B?" + base64Utf8(`${NUL}タイトル`) + "?=",
+      });
+
+      const result = await parseEmlFile(raw, "test.eml");
+
+      expect(result.title).toBe("タイトル");
+    });
+  });
+
   it("decodes ISO-2022-JP encoded subject and body correctly", async () => {
     const raw = buildIso2022JpEml();
 

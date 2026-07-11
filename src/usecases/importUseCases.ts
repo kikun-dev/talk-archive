@@ -214,6 +214,17 @@ export function parseTalkImportJson(text: string): TalkImportParseResult {
         ? null
         : rawContent.trim();
 
+    // PostgreSQL の jsonb/text カラムは U+0000（NUL）を保存できず
+    // import_records_atomic RPC でバッチ全体が失敗する。JSON は talk-extract スキルの
+    // 機械生成であり、混入は入力側の異常のため、黙って除去せず行エラーとして表面化させる
+    // （#128 第3ラウンドレビュー対応 P1）
+    if (content !== null && content.includes("\0")) {
+      rowErrors.push(
+        `${rowLabel}: 本文に使用できない文字（U+0000）が含まれています`,
+      );
+      return;
+    }
+
     if (type === "text" && (content === null || content.length === 0)) {
       rowErrors.push(`${rowLabel}: テキストを入力してください`);
       return;
@@ -230,6 +241,12 @@ export function parseTalkImportJson(text: string): TalkImportParseResult {
     }
     const title =
       rawTitle === undefined || rawTitle === null ? null : rawTitle.trim();
+    if (title !== null && title.includes("\0")) {
+      rowErrors.push(
+        `${rowLabel}: タイトルに使用できない文字（U+0000）が含まれています`,
+      );
+      return;
+    }
     if (title !== null && title.length > MAX_TITLE_LENGTH) {
       rowErrors.push(`${rowLabel}: タイトルは200文字以内で入力してください`);
       return;
