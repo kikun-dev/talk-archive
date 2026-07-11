@@ -17,12 +17,13 @@ import {
 import {
   parseEmlFile,
   toTalkImportRecord,
-  guessImageFilename,
+  fetchRemoteImagesForImport,
   EmlImportError,
   MAX_EML_FILE_SIZE,
   MAX_EML_FILE_COUNT,
   MAX_EML_TOTAL_SIZE,
   type ParsedEmlMessage,
+  type RemoteImageFetchTask,
 } from "@/usecases/emlImportUseCases";
 import { attachRecordMedia } from "@/usecases/recordUseCases";
 
@@ -369,49 +370,6 @@ export async function previewEmlImportAction(
   }
 }
 
-/** リモート画像取得の許容タイムアウト（#129） */
-const REMOTE_IMAGE_FETCH_TIMEOUT_MS = 15_000;
-
-type FetchedRemoteImage = { blob: Blob; contentType: string };
-
-/**
- * .eml に添付ファイルが無く、HTML 本文内のリモート画像参照（remoteImageUrl）しか
- * 持たないメッセージのために、URL から画像を取得する（#129）。
- * 以下のいずれかに該当する場合は null を返し、呼び出し元で添付失敗（attachFailedCount）
- * として扱う: fetch 自体の失敗（ネットワークエラー・タイムアウト）・レスポンスが
- * ok でない・Content-Type が image/ で始まらない・本体サイズが MAX_EML_FILE_SIZE
- * （10MB）を超える
- *
- * Content-Type レスポンスヘッダはパラメータ付きのことがある（例:
- * `image/jpeg; charset=binary`）ため、メディアタイプのみに正規化してから
- * image/ 判定・戻り値（＝attachRecordMedia の contentType と guessImageFilename の
- * 拡張子導出）に使う
- */
-async function fetchRemoteImage(
-  url: string,
-): Promise<FetchedRemoteImage | null> {
-  const response = await fetch(url, {
-    signal: AbortSignal.timeout(REMOTE_IMAGE_FETCH_TIMEOUT_MS),
-  });
-
-  if (!response.ok) {
-    return null;
-  }
-
-  const rawContentType = response.headers.get("content-type") ?? "";
-  const contentType = rawContentType.split(";")[0].trim().toLowerCase();
-  if (!contentType.startsWith("image/")) {
-    return null;
-  }
-
-  const blob = await response.blob();
-  if (blob.size > MAX_EML_FILE_SIZE) {
-    return null;
-  }
-
-  return { blob, contentType };
-}
-
 export type ExecuteEmlImportResult =
   | {
       result: ImportResult & {
@@ -487,15 +445,27 @@ export async function executeEmlImportAction(
     let attachedCount = 0;
     let attachFailedCount = 0;
 
+    // 添付が無く remoteImageUrl のみを持つメッセージ（#129: 実メールは添付0件で画像は
+    // HTML 内のリモート参照）は、UseCase 側でまとめて取得する（許可リスト検証・サイズ上限・
+    // 同時実行数制限・合計サイズ上限は fetchRemoteImagesForImport の責務）。
+    // 取得は record 作成後の record id をキーに引けるようにしておく
+    const remoteImageTasks: RemoteImageFetchTask[] = [];
+    for (const { record, id } of result.createdRecords) {
+      const message = messageByRecord.get(record);
+      if (message && !message.image && message.remoteImageUrl) {
+        remoteImageTasks.push({ key: id, url: message.remoteImageUrl });
+      }
+    }
+    const fetchedRemoteImages =
+      await fetchRemoteImagesForImport(remoteImageTasks);
+
     for (const { record, id } of result.createdRecords) {
       const message = messageByRecord.get(record);
       if (!message) {
         continue;
       }
 
-      // 添付画像がある場合は従来どおり添付データをそのまま使う（#115）。
-      // 添付が無く remoteImageUrl のみを持つ場合は、実メールの構造（#129: 添付0件・
-      // 画像は HTML 内のリモート参照のみ）に合わせて取得してから添付する
+      // 添付画像がある場合は従来どおり添付データをそのまま使う（#115）
       if (message.image) {
         const image = message.image;
         try {
@@ -518,20 +488,27 @@ export async function executeEmlImportAction(
         continue;
       }
 
+      // 添付が無く remoteImageUrl のみを持つ場合は、事前に一括取得した結果を使う。
+      // 取得失敗（許可外・サイズ超過・非画像・ネットワーク等 = null）は添付失敗として
+      // 集計し、メディア未添付レコードとして残す（#113 の導線で個別に復旧可能）
       if (message.remoteImageUrl) {
-        const remoteImageUrl = message.remoteImageUrl;
+        const fetched = fetchedRemoteImages.get(id);
+        if (!fetched) {
+          console.error(
+            "Failed to attach eml remote image:",
+            message.remoteImageUrl,
+          );
+          attachFailedCount += 1;
+          continue;
+        }
         try {
-          const fetched = await fetchRemoteImage(remoteImageUrl);
-          if (!fetched) {
-            throw new Error(
-              `Remote image fetch failed or was rejected: ${remoteImageUrl}`,
-            );
-          }
           await attachRecordMedia(supabase, {
             userId: user.id,
             recordId: id,
-            file: fetched.blob,
-            filename: guessImageFilename(fetched.contentType, 0),
+            file: new Blob([new Uint8Array(fetched.data)], {
+              type: fetched.contentType,
+            }),
+            filename: fetched.filename,
             contentType: fetched.contentType,
           });
           attachedCount += 1;

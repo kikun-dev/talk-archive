@@ -1,6 +1,7 @@
 import PostalMime from "postal-mime";
 import type { Address, Email } from "postal-mime";
 import type { TalkImportRecord } from "@/usecases/importUseCases";
+import { fetchRemoteImage } from "@/repositories/remoteImageRepository";
 
 // --- .eml パース ---
 
@@ -322,20 +323,55 @@ function extractImgSrcValues(html: string): string[] {
   return srcValues;
 }
 
-/** http/https のみ許可する（`javascript:` 等の危険なスキームや `cid:` 参照を除外） */
-function isHttpUrl(value: string): boolean {
+/**
+ * リモート画像の取得を許可する配信元の許可リスト（#129 レビュー対応: SSRF・
+ * トラッキングピクセル対策）。任意の http/https を取得すると、細工した .eml の投入で
+ * 内部ネットワークへの SSRF になり、一般の HTML メールではトラッキングピクセルを
+ * 踏んでしまうため、実データに必要な配信元のみに限定する。
+ * 新しい配信元を許可する場合は、この配列に `{ hostname, pathname }` を追加する
+ * （hostname・pathname とも完全一致で判定。https・userinfo なし・ポート指定なしは
+ * isAllowedRemoteImageUrl 側で共通に強制される）
+ */
+const ALLOWED_REMOTE_IMAGE_SOURCES: ReadonlyArray<{
+  hostname: string;
+  pathname: string;
+}> = [
+  { hostname: "mail-web.c-nogizaka46.com", pathname: "/mail/output/qimage" },
+];
+
+/**
+ * リモート画像 URL が許可リストに一致するか検証する
+ * https のみ・userinfo（username/password）なし・ポート指定なし・hostname と pathname が
+ * 許可リストに完全一致、のすべてを満たす場合のみ許可する
+ */
+function isAllowedRemoteImageUrl(value: string): boolean {
+  let url: URL;
   try {
-    const url = new URL(value);
-    return url.protocol === "http:" || url.protocol === "https:";
+    url = new URL(value);
   } catch {
     return false;
   }
+  if (url.protocol !== "https:") {
+    return false;
+  }
+  if (url.username !== "" || url.password !== "") {
+    return false;
+  }
+  if (url.port !== "") {
+    return false;
+  }
+  return ALLOWED_REMOTE_IMAGE_SOURCES.some(
+    (source) =>
+      source.hostname === url.hostname && source.pathname === url.pathname,
+  );
 }
 
 /**
- * HTML 本文から最初の有効なリモート画像 URL（http/https のみ）を抽出する（#129）。
- * 実メールの img src には `&amp;` エンティティが含まれるため（例:
- * `qimage?image_name=abc123&amp;token=...`）、デコードしてから URL として検証する
+ * HTML 本文から最初の許可されたリモート画像 URL を抽出する（#129）。
+ * 許可リスト（ALLOWED_REMOTE_IMAGE_SOURCES）に一致しない `<img>` は remoteImageUrl にも
+ * extraImageCount にも数えない。実メールの img src には `&amp;` エンティティが
+ * 含まれるため（例: `qimage?image_name=abc123&amp;token=...`）、デコードしてから
+ * URL として検証する
  */
 function extractRemoteImageUrl(html: string | undefined): {
   remoteImageUrl: string | null;
@@ -345,17 +381,17 @@ function extractRemoteImageUrl(html: string | undefined): {
     return { remoteImageUrl: null, extraImageCount: 0 };
   }
 
-  const validUrls = extractImgSrcValues(html)
+  const allowedUrls = extractImgSrcValues(html)
     .map((rawSrc) => decodeHtmlEntities(rawSrc))
-    .filter(isHttpUrl);
+    .filter(isAllowedRemoteImageUrl);
 
-  if (validUrls.length === 0) {
+  if (allowedUrls.length === 0) {
     return { remoteImageUrl: null, extraImageCount: 0 };
   }
 
   return {
-    remoteImageUrl: validUrls[0],
-    extraImageCount: validUrls.length - 1,
+    remoteImageUrl: allowedUrls[0],
+    extraImageCount: allowedUrls.length - 1,
   };
 }
 
@@ -448,4 +484,92 @@ export function toTalkImportRecord(
     content: message.content,
     hasAudio: false,
   };
+}
+
+// --- リモート画像のバッチ取得（#129） ---
+
+/** リモート画像1件の取得タイムアウト */
+const REMOTE_IMAGE_FETCH_TIMEOUT_MS = 15_000;
+
+/**
+ * リモート画像取得の同時実行数
+ * 最大200通 × タイムアウト15秒の直列実行は最悪50分かかるため並列化する。
+ * 配信元サーバーへの負荷と Server Action のメモリ使用量を抑えるため5に制限する
+ */
+const REMOTE_IMAGE_FETCH_CONCURRENCY = 5;
+
+export type RemoteImageFetchTask = { key: string; url: string };
+
+export type FetchedRemoteImage = {
+  data: Uint8Array;
+  contentType: string;
+  filename: string;
+};
+
+/**
+ * .eml インポート用にリモート画像をまとめて取得する（#129）
+ * - 1件あたり MAX_EML_FILE_SIZE（10MB）・タイムアウト15秒で repository の
+ *   fetchRemoteImage を呼ぶ
+ * - 同時実行数 REMOTE_IMAGE_FETCH_CONCURRENCY（5）のワーカープールで並列化する
+ * - 成功分の合計サイズが MAX_EML_TOTAL_SIZE（50MB）を超えた時点で、当該タスクと
+ *   以降のタスクは失敗（null）にする（バッチ全体のメモリ使用量の上限）
+ * - Content-Type はメディアタイプのみに正規化（`;` 以降除去・trim・小文字化）し、
+ *   `image/` 始まりでなければ失敗（null）。filename は正規化後の subtype から導出する
+ * - 戻り値は task.key → 取得結果（失敗は null）の Map。呼び出し元は null を
+ *   添付失敗として扱う（メディア未添付レコードとして残る）
+ */
+export async function fetchRemoteImagesForImport(
+  tasks: RemoteImageFetchTask[],
+): Promise<Map<string, FetchedRemoteImage | null>> {
+  const results = new Map<string, FetchedRemoteImage | null>();
+  let totalFetchedBytes = 0;
+  let isTotalSizeExceeded = false;
+  let nextTaskIndex = 0;
+
+  async function fetchOne(url: string): Promise<FetchedRemoteImage | null> {
+    const fetched = await fetchRemoteImage(url, {
+      timeoutMs: REMOTE_IMAGE_FETCH_TIMEOUT_MS,
+      maxBytes: MAX_EML_FILE_SIZE,
+    });
+    if (!fetched.ok) {
+      return null;
+    }
+
+    const contentType = fetched.contentType.split(";")[0].trim().toLowerCase();
+    if (!contentType.startsWith("image/")) {
+      return null;
+    }
+
+    totalFetchedBytes += fetched.data.byteLength;
+    if (totalFetchedBytes > MAX_EML_TOTAL_SIZE) {
+      isTotalSizeExceeded = true;
+      return null;
+    }
+
+    return {
+      data: fetched.data,
+      contentType,
+      filename: guessImageFilename(contentType, 0),
+    };
+  }
+
+  async function runWorker(): Promise<void> {
+    while (nextTaskIndex < tasks.length) {
+      const task = tasks[nextTaskIndex];
+      nextTaskIndex += 1;
+      if (isTotalSizeExceeded) {
+        results.set(task.key, null);
+        continue;
+      }
+      results.set(task.key, await fetchOne(task.url));
+    }
+  }
+
+  const workers = Array.from(
+    { length: Math.min(REMOTE_IMAGE_FETCH_CONCURRENCY, tasks.length) },
+    () => runWorker(),
+  );
+  await Promise.all(workers);
+
+  return results;
 }

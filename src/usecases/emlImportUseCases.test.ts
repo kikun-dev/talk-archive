@@ -1,14 +1,29 @@
-import { describe, it, expect, vi, afterEach } from "vitest";
+import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 import PostalMime from "postal-mime";
 import {
   parseEmlFile,
   toTalkImportRecord,
+  fetchRemoteImagesForImport,
   EmlImportError,
   MAX_EML_FILE_SIZE,
   MAX_EML_FILE_COUNT,
   MAX_EML_TOTAL_SIZE,
   type ParsedEmlMessage,
 } from "./emlImportUseCases";
+
+const { fetchRemoteImageRepositoryMock } = vi.hoisted(() => ({
+  fetchRemoteImageRepositoryMock: vi.fn(),
+}));
+
+vi.mock("@/repositories/remoteImageRepository", () => ({
+  fetchRemoteImage: fetchRemoteImageRepositoryMock,
+}));
+
+// 許可リスト（mail-web.c-nogizaka46.com の qimage のみ、#129 SSRF 対策）に一致する
+// リモート画像 URL のテスト用ビルダー
+function allowedImageUrl(imageName: string): string {
+  return `https://mail-web.c-nogizaka46.com/mail/output/qimage?image_name=${imageName}`;
+}
 
 // --- テスト用 .eml フィクスチャビルダー ---
 // 実サンプル（.tmp/*.eml、コミット禁止）と同じ構造
@@ -659,21 +674,38 @@ describe("parseEmlFile: stub text/plain body falls back to HTML (#129)", () => {
 
     expect(result.content).toContain("追記: 本当はこれも本文です");
   });
+
+  // #129 レビュー対応（誤検出防止）: スタブ文言を「含む」だけの通常本文はスタブ扱いせず
+  // text/plain のまま採用する（判定は本文全体に対する anchored 一致のみ）
+  it("keeps a normal text/plain body that mentions the stub sentence in the middle of other content", async () => {
+    const raw = buildAlternativeEml({
+      textBody:
+        "今日の配信メールに\r\nメールがうまく表示されない方はこちらをご覧ください\r\nと書いてあって面白かった",
+      htmlBody: "<p>HTML側</p>",
+    });
+
+    const result = await parseEmlFile(raw, "test.eml");
+
+    // 改行は text/plain 経路の行処理（removeImageMarkerLines）で LF に正規化される
+    expect(result.content).toBe(
+      "今日の配信メールに\nメールがうまく表示されない方はこちらをご覧ください\nと書いてあって面白かった",
+    );
+  });
 });
 
 describe("parseEmlFile: remote image extraction from HTML <img> (#129)", () => {
-  it("extracts a remote image URL and decodes &amp; in its query string", async () => {
+  it("extracts an allowed remote image URL and decodes &amp; in its query string", async () => {
     const raw = buildAlternativeEml({
       textBody: null,
       htmlBody:
-        '<p>本文</p><img src="https://mail-web.example.com/mail/output/qimage?image_name=abc123&amp;token=xyz">',
+        '<p>本文</p><img src="https://mail-web.c-nogizaka46.com/mail/output/qimage?image_name=abc123&amp;token=xyz">',
     });
 
     const result = await parseEmlFile(raw, "test.eml");
 
     expect(result.image).toBeNull();
     expect(result.remoteImageUrl).toBe(
-      "https://mail-web.example.com/mail/output/qimage?image_name=abc123&token=xyz",
+      "https://mail-web.c-nogizaka46.com/mail/output/qimage?image_name=abc123&token=xyz",
     );
     expect(result.extraImageCount).toBe(0);
   });
@@ -691,27 +723,114 @@ describe("parseEmlFile: remote image extraction from HTML <img> (#129)", () => {
     expect(result.extraImageCount).toBe(0);
   });
 
-  it("picks the first valid remote image and counts the rest as extraImageCount", async () => {
+  // #129 レビュー対応: SSRF・トラッキングピクセル対策として、リモート画像 URL は
+  // 許可リスト（https・mail-web.c-nogizaka46.com・/mail/output/qimage・userinfo なし・
+  // ポート指定なし）に一致するもののみ取得候補とする
+  describe("remote image URL allowlist (SSRF countermeasure)", () => {
+    it("rejects a non-https URL even when the host and path match the allowlist", async () => {
+      const raw = buildAlternativeEml({
+        textBody: null,
+        htmlBody:
+          '<p>本文</p><img src="http://mail-web.c-nogizaka46.com/mail/output/qimage?image_name=a">',
+      });
+
+      const result = await parseEmlFile(raw, "test.eml");
+
+      expect(result.remoteImageUrl).toBeNull();
+      expect(result.extraImageCount).toBe(0);
+    });
+
+    it("rejects a URL on a different host", async () => {
+      const raw = buildAlternativeEml({
+        textBody: null,
+        htmlBody:
+          '<p>本文</p><img src="https://evil.example.com/mail/output/qimage?image_name=a">',
+      });
+
+      const result = await parseEmlFile(raw, "test.eml");
+
+      expect(result.remoteImageUrl).toBeNull();
+      expect(result.extraImageCount).toBe(0);
+    });
+
+    it("rejects a URL with a different path", async () => {
+      const raw = buildAlternativeEml({
+        textBody: null,
+        htmlBody:
+          '<p>本文</p><img src="https://mail-web.c-nogizaka46.com/other/path?image_name=a">',
+      });
+
+      const result = await parseEmlFile(raw, "test.eml");
+
+      expect(result.remoteImageUrl).toBeNull();
+      expect(result.extraImageCount).toBe(0);
+    });
+
+    it("rejects a URL with an explicit port", async () => {
+      const raw = buildAlternativeEml({
+        textBody: null,
+        htmlBody:
+          '<p>本文</p><img src="https://mail-web.c-nogizaka46.com:8443/mail/output/qimage?image_name=a">',
+      });
+
+      const result = await parseEmlFile(raw, "test.eml");
+
+      expect(result.remoteImageUrl).toBeNull();
+      expect(result.extraImageCount).toBe(0);
+    });
+
+    it("rejects a URL with userinfo (https://user@mail-web...)", async () => {
+      const raw = buildAlternativeEml({
+        textBody: null,
+        htmlBody:
+          '<p>本文</p><img src="https://user@mail-web.c-nogizaka46.com/mail/output/qimage?image_name=a">',
+      });
+
+      const result = await parseEmlFile(raw, "test.eml");
+
+      expect(result.remoteImageUrl).toBeNull();
+      expect(result.extraImageCount).toBe(0);
+    });
+
+    it("counts only allowlisted URLs when allowed and disallowed images are mixed", async () => {
+      const raw = buildAlternativeEml({
+        textBody: null,
+        htmlBody:
+          "<p>本文</p>" +
+          '<img src="https://tracking.example.com/pixel.gif">' +
+          `<img src="${allowedImageUrl("first")}">` +
+          '<img src="https://evil.example.com/mail/output/qimage?image_name=x">' +
+          `<img src="${allowedImageUrl("second")}">`,
+      });
+
+      const result = await parseEmlFile(raw, "test.eml");
+
+      expect(result.remoteImageUrl).toBe(allowedImageUrl("first"));
+      expect(result.extraImageCount).toBe(1);
+    });
+  });
+
+  it("picks the first allowed remote image and counts the rest as extraImageCount", async () => {
     const raw = buildAlternativeEml({
       textBody: null,
       htmlBody:
-        '<p>本文</p>' +
-        '<img src="https://example.com/1.jpg">' +
+        "<p>本文</p>" +
+        `<img src="${allowedImageUrl("1")}">` +
         '<img src="cid:ignored">' +
-        '<img src="https://example.com/2.jpg">' +
-        '<img src="https://example.com/3.jpg">',
+        `<img src="${allowedImageUrl("2")}">` +
+        `<img src="${allowedImageUrl("3")}">`,
     });
 
     const result = await parseEmlFile(raw, "test.eml");
 
-    expect(result.remoteImageUrl).toBe("https://example.com/1.jpg");
+    expect(result.remoteImageUrl).toBe(allowedImageUrl("1"));
     expect(result.extraImageCount).toBe(2);
   });
 
   it("prefers an attachment image over an HTML <img> and ignores the HTML image entirely (avoids cid double-counting)", async () => {
     const raw = buildAlternativeEml({
       textBody: null,
-      htmlBody: '<p>本文</p><img src="https://example.com/1.jpg">',
+      htmlBody: `<p>本文</p><img src="${allowedImageUrl("1")}">`,
       attachments: [
         {
           filename: "photo.png",
@@ -731,14 +850,25 @@ describe("parseEmlFile: remote image extraction from HTML <img> (#129)", () => {
   it("parses a blank-body email with only a remote image as a valid image message", async () => {
     const raw = buildAlternativeEml({
       textBody: "   ",
-      htmlBody: '<img src="https://example.com/1.jpg">',
+      htmlBody: `<img src="${allowedImageUrl("1")}">`,
     });
 
     const result = await parseEmlFile(raw, "remote-image-only.eml");
 
     expect(result.content).toBeNull();
-    expect(result.remoteImageUrl).toBe("https://example.com/1.jpg");
+    expect(result.remoteImageUrl).toBe(allowedImageUrl("1"));
     expect(toTalkImportRecord(result).type).toBe("image");
+  });
+
+  it("treats a blank-body email whose only image URL is disallowed as an empty-body row error", async () => {
+    const raw = buildAlternativeEml({
+      textBody: "   ",
+      htmlBody: '<img src="https://tracking.example.com/pixel.gif">',
+    });
+
+    await expect(parseEmlFile(raw, "pixel-only.eml")).rejects.toThrow(
+      "pixel-only.eml: 本文が空のため取り込めません",
+    );
   });
 
   it("throws EmlImportError when body, image, and remoteImageUrl are all absent", async () => {
@@ -747,6 +877,136 @@ describe("parseEmlFile: remote image extraction from HTML <img> (#129)", () => {
     await expect(parseEmlFile(raw, "all-empty.eml")).rejects.toThrow(
       "all-empty.eml: 本文が空のため取り込めません",
     );
+  });
+});
+
+describe("fetchRemoteImagesForImport (#129)", () => {
+  beforeEach(() => {
+    fetchRemoteImageRepositoryMock.mockReset();
+  });
+
+  it("fetches every task via the repository (10MB per image, 15s timeout) and returns normalized results", async () => {
+    fetchRemoteImageRepositoryMock.mockResolvedValue({
+      ok: true,
+      data: new Uint8Array([1, 2, 3]),
+      contentType: "IMAGE/JPEG; charset=binary",
+    });
+
+    const result = await fetchRemoteImagesForImport([
+      { key: "record-1", url: allowedImageUrl("1") },
+      { key: "record-2", url: allowedImageUrl("2") },
+    ]);
+
+    expect(fetchRemoteImageRepositoryMock).toHaveBeenCalledTimes(2);
+    expect(fetchRemoteImageRepositoryMock).toHaveBeenCalledWith(
+      allowedImageUrl("1"),
+      { timeoutMs: 15_000, maxBytes: MAX_EML_FILE_SIZE },
+    );
+    // Content-Type はメディアタイプのみに正規化され（; 以降除去・trim・小文字化）、
+    // filename は正規化後の subtype から導出される
+    expect(result.get("record-1")).toEqual({
+      data: new Uint8Array([1, 2, 3]),
+      contentType: "image/jpeg",
+      filename: "image-1.jpeg",
+    });
+    expect(result.get("record-2")).toEqual({
+      data: new Uint8Array([1, 2, 3]),
+      contentType: "image/jpeg",
+      filename: "image-1.jpeg",
+    });
+  });
+
+  it("returns an empty map for an empty task list without calling the repository", async () => {
+    const result = await fetchRemoteImagesForImport([]);
+
+    expect(result.size).toBe(0);
+    expect(fetchRemoteImageRepositoryMock).not.toHaveBeenCalled();
+  });
+
+  it("maps a non-image Content-Type to null", async () => {
+    fetchRemoteImageRepositoryMock.mockResolvedValue({
+      ok: true,
+      data: new Uint8Array([1]),
+      contentType: "text/html; charset=utf-8",
+    });
+
+    const result = await fetchRemoteImagesForImport([
+      { key: "record-1", url: allowedImageUrl("1") },
+    ]);
+
+    expect(result.get("record-1")).toBeNull();
+  });
+
+  it("maps repository failures to null while other tasks still succeed", async () => {
+    fetchRemoteImageRepositoryMock.mockImplementation(async (url: string) =>
+      url === allowedImageUrl("bad")
+        ? { ok: false, reason: "network" }
+        : {
+            ok: true,
+            data: new Uint8Array([1, 2]),
+            contentType: "image/png",
+          },
+    );
+
+    const result = await fetchRemoteImagesForImport([
+      { key: "record-bad", url: allowedImageUrl("bad") },
+      { key: "record-ok", url: allowedImageUrl("ok") },
+    ]);
+
+    expect(result.get("record-bad")).toBeNull();
+    expect(result.get("record-ok")).toEqual({
+      data: new Uint8Array([1, 2]),
+      contentType: "image/png",
+      filename: "image-1.png",
+    });
+  });
+
+  it("fails tasks with null once the cumulative fetched size exceeds MAX_EML_TOTAL_SIZE (50MB)", async () => {
+    // 9MB × 7件 = 63MB。5件目まで（45MB）は成功し、累計が 50MB を超えた時点で
+    // 当該・以降のタスクは null になる
+    const nineMb = 9 * 1024 * 1024;
+    fetchRemoteImageRepositoryMock.mockResolvedValue({
+      ok: true,
+      data: new Uint8Array(nineMb),
+      contentType: "image/jpeg",
+    });
+
+    const tasks = Array.from({ length: 7 }, (_, i) => ({
+      key: `record-${i}`,
+      url: allowedImageUrl(String(i)),
+    }));
+    const result = await fetchRemoteImagesForImport(tasks);
+
+    const succeeded = [...result.values()].filter((value) => value !== null);
+    expect(succeeded).toHaveLength(5);
+    expect(result.size).toBe(7);
+  });
+
+  it("never runs more than 5 fetches concurrently", async () => {
+    let activeCount = 0;
+    let maxActiveCount = 0;
+    fetchRemoteImageRepositoryMock.mockImplementation(async () => {
+      activeCount += 1;
+      maxActiveCount = Math.max(maxActiveCount, activeCount);
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      activeCount -= 1;
+      return {
+        ok: true,
+        data: new Uint8Array([1]),
+        contentType: "image/jpeg",
+      };
+    });
+
+    const tasks = Array.from({ length: 12 }, (_, i) => ({
+      key: `record-${i}`,
+      url: allowedImageUrl(String(i)),
+    }));
+    const result = await fetchRemoteImagesForImport(tasks);
+
+    expect(result.size).toBe(12);
+    expect(maxActiveCount).toBeLessThanOrEqual(5);
+    // 直列実行に退化していないこと（並列で動いている）
+    expect(maxActiveCount).toBeGreaterThan(1);
   });
 });
 
