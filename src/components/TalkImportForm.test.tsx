@@ -3,9 +3,12 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { TalkImportForm } from "./TalkImportForm";
 import type { ConversationParticipant } from "@/types/domain";
 import { MAX_IMPORT_FILE_SIZE } from "@/usecases/importUseCases";
+import { MAX_EML_FILE_SIZE } from "@/usecases/emlImportUseCases";
 import type {
   PreviewTalkImportResult,
   ExecuteTalkImportResult,
+  PreviewEmlImportResult,
+  ExecuteEmlImportResult,
 } from "@/app/(app)/conversations/[id]/import/actions";
 
 const previewTalkImportActionMock = vi.fn<
@@ -18,6 +21,16 @@ const executeTalkImportActionMock = vi.fn<
     speakerAssignmentsJson: string,
   ) => Promise<ExecuteTalkImportResult>
 >();
+const previewEmlImportActionMock = vi.fn<
+  (conversationId: string, formData: FormData) => Promise<PreviewEmlImportResult>
+>();
+const executeEmlImportActionMock = vi.fn<
+  (
+    conversationId: string,
+    formData: FormData,
+    senderAssignmentsJson: string,
+  ) => Promise<ExecuteEmlImportResult>
+>();
 
 vi.mock("@/app/(app)/conversations/[id]/import/actions", () => ({
   previewTalkImportAction: (...args: unknown[]) =>
@@ -28,6 +41,10 @@ vi.mock("@/app/(app)/conversations/[id]/import/actions", () => ({
     executeTalkImportActionMock(
       ...(args as [string, string, string]),
     ),
+  previewEmlImportAction: (...args: unknown[]) =>
+    previewEmlImportActionMock(...(args as [string, FormData])),
+  executeEmlImportAction: (...args: unknown[]) =>
+    executeEmlImportActionMock(...(args as [string, FormData, string])),
 }));
 
 const participants: ConversationParticipant[] = [
@@ -47,6 +64,19 @@ function selectJsonFile(text: string, name = "talk.json") {
   fireEvent.change(input, { target: { files: [file] } });
 }
 
+function switchToEmlMode() {
+  fireEvent.click(screen.getByRole("button", { name: "メール（.eml）" }));
+}
+
+function selectEmlFiles(files: File[]) {
+  const input = screen.getByLabelText("インポートする.emlファイル");
+  fireEvent.change(input, { target: { files } });
+}
+
+function emlFile(name = "mail1.eml") {
+  return new File(["raw"], name, { type: "message/rfc822" });
+}
+
 const basePreview: PreviewTalkImportResult = {
   preview: {
     totalCount: 5,
@@ -59,6 +89,26 @@ const basePreview: PreviewTalkImportResult = {
     typeCounts: { text: 2, image: 1, video: 0, audio: 0 },
     unknownSpeakers: [],
     rowErrors: [],
+  },
+};
+
+const baseEmlPreview: PreviewEmlImportResult = {
+  preview: {
+    totalCount: 3,
+    importableCount: 2,
+    duplicateCount: 1,
+    period: {
+      start: "2026-01-01T01:00:00Z",
+      end: "2026-01-03T01:00:00Z",
+    },
+    typeCounts: { text: 1, image: 1, video: 0, audio: 0 },
+    unknownSpeakers: ["taro@example.com"],
+    rowErrors: [],
+    senders: [
+      { address: "taro@example.com", nameSuggestion: "太郎", messageCount: 2 },
+    ],
+    imageCount: 1,
+    extraImageWarnings: [],
   },
 };
 
@@ -268,6 +318,224 @@ describe("TalkImportForm", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "JSONの形式が不正です",
+    );
+  });
+
+  it("shows a mode toggle and switches to the .eml file input in mail mode", () => {
+    render(
+      <TalkImportForm conversationId="conv-1" participants={participants} />,
+    );
+
+    expect(screen.getByRole("button", { name: "JSON" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(
+      screen.getByRole("button", { name: "メール（.eml）" }),
+    ).toHaveAttribute("aria-pressed", "false");
+
+    switchToEmlMode();
+
+    const input = screen.getByLabelText("インポートする.emlファイル");
+    expect(input).toHaveAttribute("multiple");
+    expect(input).toHaveAttribute("accept", ".eml,message/rfc822");
+    expect(
+      screen.queryByLabelText("インポートするJSONファイル"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("resets error state when switching from JSON mode to mail mode", async () => {
+    render(
+      <TalkImportForm conversationId="conv-1" participants={participants} />,
+    );
+
+    const oversizedFile = new File(
+      [new Uint8Array(MAX_IMPORT_FILE_SIZE + 1)],
+      "too-big.json",
+      { type: "application/json" },
+    );
+    fireEvent.change(screen.getByLabelText("インポートするJSONファイル"), {
+      target: { files: [oversizedFile] },
+    });
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "ファイルサイズは5MB以内にしてください",
+    );
+
+    switchToEmlMode();
+
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("shows sender assignment selects defaulting to new participant in mail mode preview", async () => {
+    previewEmlImportActionMock.mockResolvedValue(baseEmlPreview);
+
+    render(
+      <TalkImportForm conversationId="conv-1" participants={participants} />,
+    );
+    switchToEmlMode();
+    const file = emlFile();
+    selectEmlFiles([file]);
+
+    await waitFor(() =>
+      expect(previewEmlImportActionMock).toHaveBeenCalledTimes(1),
+    );
+    const [calledConversationId, calledFormData] =
+      previewEmlImportActionMock.mock.calls[0];
+    expect(calledConversationId).toBe("conv-1");
+    expect(calledFormData.getAll("files")).toEqual([file]);
+
+    const select = await screen.findByLabelText(
+      "taro@example.comの割り当て",
+    );
+    expect(select).toHaveValue("new");
+    expect(
+      screen.getByText(/太郎（taro@example\.com）/),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("option", { name: "メンバーA" }),
+    ).toBeInTheDocument();
+  });
+
+  it("shows the image count and extra image warnings in mail mode preview", async () => {
+    previewEmlImportActionMock.mockResolvedValue({
+      preview: {
+        ...baseEmlPreview.preview!,
+        extraImageWarnings: [
+          "mail1.eml: 2枚目以降の画像 1枚は取り込まれません",
+        ],
+      },
+    });
+
+    render(
+      <TalkImportForm conversationId="conv-1" participants={participants} />,
+    );
+    switchToEmlMode();
+    selectEmlFiles([emlFile()]);
+
+    expect(
+      await screen.findByLabelText("画像付きメール数: 1件"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("2枚目以降の画像は取り込まれません"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("mail1.eml: 2枚目以降の画像 1枚は取り込まれません"),
+    ).toBeInTheDocument();
+  });
+
+  it("shows attach results and pending-attachment guidance when an attachment fails in mail mode", async () => {
+    previewEmlImportActionMock.mockResolvedValue(baseEmlPreview);
+    executeEmlImportActionMock.mockResolvedValue({
+      result: {
+        createdCount: 2,
+        skippedCount: 1,
+        createdParticipants: { 太郎: "part-new-1" },
+        createdRecords: [],
+        attachedCount: 1,
+        attachFailedCount: 1,
+      },
+    });
+
+    render(
+      <TalkImportForm conversationId="conv-1" participants={participants} />,
+    );
+    switchToEmlMode();
+    selectEmlFiles([emlFile()]);
+
+    const executeButton = await screen.findByRole("button", {
+      name: "インポート実行",
+    });
+    fireEvent.click(executeButton);
+
+    await waitFor(() =>
+      expect(executeEmlImportActionMock).toHaveBeenCalledWith(
+        "conv-1",
+        expect.any(FormData),
+        expect.any(String),
+      ),
+    );
+
+    expect(
+      await screen.findByLabelText("画像添付成功: 1件"),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText("画像添付失敗: 1件")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "未添付のまま取り込まれたため、タイムラインの未添付バッジから添付できます",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("does not show the pending-attachment guidance when there are no attach failures in mail mode", async () => {
+    previewEmlImportActionMock.mockResolvedValue(baseEmlPreview);
+    executeEmlImportActionMock.mockResolvedValue({
+      result: {
+        createdCount: 2,
+        skippedCount: 1,
+        createdParticipants: {},
+        createdRecords: [],
+        attachedCount: 1,
+        attachFailedCount: 0,
+      },
+    });
+
+    render(
+      <TalkImportForm conversationId="conv-1" participants={participants} />,
+    );
+    switchToEmlMode();
+    selectEmlFiles([emlFile()]);
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "インポート実行" }),
+    );
+
+    expect(
+      await screen.findByLabelText("画像添付成功: 1件"),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(
+        "未添付のまま取り込まれたため、タイムラインの未添付バッジから添付できます",
+      ),
+    ).not.toBeInTheDocument();
+  });
+
+  it("rejects more than MAX_EML_FILE_COUNT files without calling the preview action", async () => {
+    render(
+      <TalkImportForm conversationId="conv-1" participants={participants} />,
+    );
+    switchToEmlMode();
+
+    const files = Array.from({ length: 201 }, (_, index) =>
+      emlFile(`mail${index}.eml`),
+    );
+    selectEmlFiles(files);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "一度にインポートできるのは200件までです。ファイルを分割してください",
+    );
+    expect(previewEmlImportActionMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects a file over MAX_EML_FILE_SIZE without calling the preview action, and resets the input", async () => {
+    render(
+      <TalkImportForm conversationId="conv-1" participants={participants} />,
+    );
+    switchToEmlMode();
+
+    const initialInput = screen.getByLabelText("インポートする.emlファイル");
+    const oversizedFile = new File(
+      [new Uint8Array(MAX_EML_FILE_SIZE + 1)],
+      "big.eml",
+      { type: "message/rfc822" },
+    );
+    fireEvent.change(initialInput, { target: { files: [oversizedFile] } });
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "big.eml: ファイルサイズは10MB以内にしてください",
+    );
+    expect(previewEmlImportActionMock).not.toHaveBeenCalled();
+    expect(screen.getByLabelText("インポートする.emlファイル")).not.toBe(
+      initialInput,
     );
   });
 });
