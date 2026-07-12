@@ -1,4 +1,5 @@
 import Image from "next/image";
+import { LinkifiedText } from "@/components/LinkifiedText";
 import { formatDateTimeJst } from "@/lib/dateTime";
 import type { Record, RecordType } from "@/types/domain";
 import type { MediaUrl } from "@/usecases/recordUseCases";
@@ -81,7 +82,7 @@ export function RecordCard({ record, mediaUrl }: RecordCardProps) {
       </div>
       {record.content && (
         <p className="mt-2 whitespace-pre-wrap text-sm text-gray-700">
-          {record.content}
+          <LinkifiedText text={record.content} />
         </p>
       )}
       {mediaUrl && <MediaDisplay record={record} mediaUrl={mediaUrl} />}
