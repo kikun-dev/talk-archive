@@ -141,7 +141,6 @@ const baseEmlPreview: PreviewEmlImportResult = {
     rowErrors: [],
     senders: [{ address: "taro@example.com", messageCount: 2 }],
     imageCount: 1,
-    extraImageWarnings: [],
   },
 };
 
@@ -581,13 +580,13 @@ describe("TalkImportForm", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("shows the image count and extra image warnings in mail mode preview", async () => {
+  // #133: 複数画像インポートにより extraImageWarnings は廃止され、全画像が取り込み
+  // 対象になったため、imageCount（画像枚数）のみを表示する
+  it("shows the image count in mail mode preview", async () => {
     previewEmlImportActionMock.mockResolvedValue({
       preview: {
         ...baseEmlPreview.preview!,
-        extraImageWarnings: [
-          "mail1.eml: 2枚目以降の画像 1枚は取り込まれません",
-        ],
+        imageCount: 3,
       },
     });
 
@@ -598,14 +597,11 @@ describe("TalkImportForm", () => {
     selectEmlFiles([emlFile()]);
 
     expect(
-      await screen.findByLabelText("画像付きメール数: 1件"),
+      await screen.findByLabelText("画像枚数: 3件"),
     ).toBeInTheDocument();
     expect(
-      screen.getByText("2枚目以降の画像は取り込まれません"),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText("mail1.eml: 2枚目以降の画像 1枚は取り込まれません"),
-    ).toBeInTheDocument();
+      screen.queryByText("2枚目以降の画像は取り込まれません"),
+    ).not.toBeInTheDocument();
   });
 
   it("shows attach results and pending-attachment guidance when an attachment fails in mail mode", async () => {

@@ -21,7 +21,7 @@ const executeImportMock = vi.fn();
 class ImportErrorMock extends Error {}
 
 const parseEmlFileMock = vi.fn();
-const toTalkImportRecordMock = vi.fn();
+const expandEmlMessageToRecordsMock = vi.fn();
 const fetchRemoteImagesForImportMock = vi.fn();
 const guessImageFilenameMock = vi.fn((mimeType: string, index: number) => {
   const subtype = mimeType.split("/")[1]?.split("+")[0] || "bin";
@@ -54,7 +54,7 @@ vi.mock("@/usecases/importUseCases", () => ({
 
 vi.mock("@/usecases/emlImportUseCases", () => ({
   parseEmlFile: parseEmlFileMock,
-  toTalkImportRecord: toTalkImportRecordMock,
+  expandEmlMessageToRecords: expandEmlMessageToRecordsMock,
   guessImageFilename: guessImageFilenameMock,
   fetchRemoteImagesForImport: fetchRemoteImagesForImportMock,
   EmlImportError: EmlImportErrorMock,
@@ -327,8 +327,9 @@ describe("executeTalkImportAction", () => {
 // --- .eml インポート（#115） ---
 
 /**
- * 実体の parseEmlFile/toTalkImportRecord を通す結合テスト用（#128 第3ラウンドレビュー対応
- * P1）に、text/plain 本文へ生の NUL 文字を1件埋め込んだ最小構成の .eml を組み立てる
+ * 実体の parseEmlFile/expandEmlMessageToRecords を通す結合テスト用（#128 第3ラウンド
+ * レビュー対応 P1）に、text/plain 本文へ生の NUL 文字を1件埋め込んだ最小構成の .eml を
+ * 組み立てる
  */
 function buildRawEmlWithNulBody(): string {
   const nul = String.fromCharCode(0);
@@ -380,9 +381,8 @@ function parsedMessage(
     postedAt: string;
     title: string | null;
     content: string | null;
-    image: { filename: string; mimeType: string; data: Uint8Array } | null;
-    remoteImageUrl: string | null;
-    extraImageCount: number;
+    images: { filename: string; mimeType: string; data: Uint8Array }[];
+    remoteImageUrls: string[];
   }> = {},
 ) {
   return {
@@ -390,14 +390,58 @@ function parsedMessage(
     postedAt: "2020-10-12T06:16:14.000Z",
     title: "件名",
     content: "本文",
-    image: null,
-    remoteImageUrl: null,
-    extraImageCount: 0,
+    images: [],
+    remoteImageUrls: [],
     ...overrides,
   };
 }
 
 const VALID_PARTICIPANT_ID = "11111111-1111-1111-1111-111111111111";
+
+type RecordOverrides = Partial<{
+  speaker: string;
+  postedAt: string;
+  title: string | null;
+  content: string | null;
+}>;
+
+/** expandEmlMessageToRecordsMock の戻り値（単一 text unit）を組み立てる */
+function textUnit(overrides: RecordOverrides = {}) {
+  return [
+    {
+      record: {
+        speaker: "sender@example.com",
+        postedAt: "2020-10-12T06:16:14.000Z",
+        type: "text" as const,
+        title: "件名",
+        content: "本文",
+        hasAudio: false,
+        importKey: "mail.eml#0",
+        ...overrides,
+      },
+      media: null,
+    },
+  ];
+}
+
+/** expandEmlMessageToRecordsMock の戻り値（単一 image unit、リモート画像）を組み立てる */
+function remoteImageUnit(url: string, overrides: RecordOverrides = {}) {
+  return [
+    {
+      record: {
+        speaker: "sender@example.com",
+        postedAt: "2020-10-12T06:16:14.000Z",
+        type: "image" as const,
+        title: "件名",
+        content: null,
+        hasAudio: false,
+        importKey: "mail.eml#0",
+        ...overrides,
+      },
+      media: { kind: "remote" as const, url },
+    },
+  ];
+}
 
 describe("previewEmlImportAction", () => {
   beforeEach(() => {
@@ -470,14 +514,7 @@ describe("previewEmlImportAction", () => {
       })),
     );
     parseEmlFileMock.mockResolvedValue(parsedMessage());
-    toTalkImportRecordMock.mockReturnValue({
-      speaker: "sender@example.com",
-      postedAt: "2020-10-12T06:16:14.000Z",
-      type: "text",
-      title: "件名",
-      content: "本文",
-      hasAudio: false,
-    });
+    expandEmlMessageToRecordsMock.mockReturnValue(textUnit());
     buildImportPreviewMock.mockResolvedValue({
       totalCount: 5,
       importableCount: 5,
@@ -501,14 +538,7 @@ describe("previewEmlImportAction", () => {
       { name: "ok.eml" },
     ]);
     parseEmlFileMock.mockResolvedValue(parsedMessage());
-    toTalkImportRecordMock.mockReturnValue({
-      speaker: "sender@example.com",
-      postedAt: "2020-10-12T06:16:14.000Z",
-      type: "text",
-      title: "件名",
-      content: "本文",
-      hasAudio: false,
-    });
+    expandEmlMessageToRecordsMock.mockReturnValue(textUnit());
     buildImportPreviewMock.mockResolvedValue({
       totalCount: 2,
       importableCount: 1,
@@ -545,14 +575,7 @@ describe("previewEmlImportAction", () => {
       }
       return parsedMessage();
     });
-    toTalkImportRecordMock.mockReturnValue({
-      speaker: "sender@example.com",
-      postedAt: "2020-10-12T06:16:14.000Z",
-      type: "text",
-      title: "件名",
-      content: "本文",
-      hasAudio: false,
-    });
+    expandEmlMessageToRecordsMock.mockReturnValue(textUnit());
     buildImportPreviewMock.mockResolvedValue({
       totalCount: 2,
       importableCount: 1,
@@ -579,7 +602,10 @@ describe("previewEmlImportAction", () => {
     );
   });
 
-  it("summarizes senders, imageCount, and extraImageWarnings from the parsed messages", async () => {
+  // #133: previewEmlImportAction は expandEmlMessageToRecords が返す全 unit を
+  // records としてカウントするため、1通で複数画像を持つメールは、その枚数分だけ
+  // imageCount に積まれる（従来の extraImageWarnings は廃止され、全件が取り込み対象になる）
+  it("summarizes senders and counts every expanded image record toward imageCount (#133: multi-image expansion, no extraImageWarnings)", async () => {
     mockSupabaseClient({ id: "user-1" });
     const formData = buildFormDataWithFiles([
       { name: "a.eml" },
@@ -590,33 +616,66 @@ describe("previewEmlImportAction", () => {
       if (filename === "a.eml") {
         return parsedMessage({
           senderAddress: "alice@example.com",
-          image: { filename: "photo.png", mimeType: "image/png", data: new Uint8Array() },
-          extraImageCount: 2,
+          images: [
+            { filename: "photo1.png", mimeType: "image/png", data: new Uint8Array() },
+            { filename: "photo2.png", mimeType: "image/png", data: new Uint8Array() },
+          ],
         });
       }
       if (filename === "b.eml") {
-        return parsedMessage({
-          senderAddress: "alice@example.com",
-        });
+        return parsedMessage({ senderAddress: "alice@example.com" });
       }
-      return parsedMessage({
-        senderAddress: "bob@example.com",
-      });
+      return parsedMessage({ senderAddress: "bob@example.com" });
     });
-    toTalkImportRecordMock.mockReturnValue({
-      speaker: "sender@example.com",
-      postedAt: "2020-10-12T06:16:14.000Z",
-      type: "text",
-      title: "件名",
-      content: "本文",
-      hasAudio: false,
-    });
+    expandEmlMessageToRecordsMock.mockImplementation(
+      (message: { senderAddress: string; images: unknown[] }) => {
+        if (message.images.length > 0) {
+          return [
+            {
+              record: {
+                speaker: message.senderAddress,
+                postedAt: "2020-10-12T06:16:14.000Z",
+                type: "image",
+                title: "件名",
+                content: "本文",
+                hasAudio: false,
+                importKey: "a.eml#0",
+              },
+              media: {
+                kind: "attachment",
+                data: new Uint8Array(),
+                mimeType: "image/png",
+                filename: "photo1.png",
+              },
+            },
+            {
+              record: {
+                speaker: message.senderAddress,
+                postedAt: "2020-10-12T06:16:14.000Z",
+                type: "image",
+                title: "件名",
+                content: null,
+                hasAudio: false,
+                importKey: "a.eml#1",
+              },
+              media: {
+                kind: "attachment",
+                data: new Uint8Array(),
+                mimeType: "image/png",
+                filename: "photo2.png",
+              },
+            },
+          ];
+        }
+        return textUnit({ speaker: message.senderAddress });
+      },
+    );
     buildImportPreviewMock.mockResolvedValue({
       totalCount: 3,
-      importableCount: 3,
+      importableCount: 4,
       duplicateCount: 0,
       period: null,
-      typeCounts: { text: 2, image: 1, video: 0, audio: 0 },
+      typeCounts: { text: 2, image: 2, video: 0, audio: 0 },
       unknownSpeakers: [],
     });
 
@@ -632,10 +691,8 @@ describe("previewEmlImportAction", () => {
         { address: "bob@example.com", messageCount: 1 },
       ]),
     );
-    expect(result.preview.imageCount).toBe(1);
-    expect(result.preview.extraImageWarnings).toEqual([
-      "a.eml: 2枚目以降の画像 2枚は取り込まれません",
-    ]);
+    expect(result.preview.imageCount).toBe(2);
+    expect(result.preview).not.toHaveProperty("extraImageWarnings");
   });
 
   // #129: 実メールは添付ファイルを持たず、画像は HTML 内のリモート参照のみのため、
@@ -648,17 +705,15 @@ describe("previewEmlImportAction", () => {
     ]);
     parseEmlFileMock.mockImplementation(async (_raw: unknown, filename: string) =>
       filename === "a.eml"
-        ? parsedMessage({ remoteImageUrl: "https://example.com/1.jpg" })
+        ? parsedMessage({ remoteImageUrls: ["https://example.com/1.jpg"] })
         : parsedMessage(),
     );
-    toTalkImportRecordMock.mockReturnValue({
-      speaker: "sender@example.com",
-      postedAt: "2020-10-12T06:16:14.000Z",
-      type: "text",
-      title: "件名",
-      content: "本文",
-      hasAudio: false,
-    });
+    expandEmlMessageToRecordsMock.mockImplementation(
+      (message: { remoteImageUrls: string[] }) =>
+        message.remoteImageUrls.length > 0
+          ? remoteImageUnit(message.remoteImageUrls[0])
+          : textUnit(),
+    );
     buildImportPreviewMock.mockResolvedValue({
       totalCount: 2,
       importableCount: 2,
@@ -681,14 +736,7 @@ describe("previewEmlImportAction", () => {
     mockSupabaseClient({ id: "user-1" });
     const formData = buildFormDataWithFiles([{ name: "a.eml" }]);
     parseEmlFileMock.mockResolvedValue(parsedMessage());
-    toTalkImportRecordMock.mockReturnValue({
-      speaker: "sender@example.com",
-      postedAt: "2020-10-12T06:16:14.000Z",
-      type: "text",
-      title: "件名",
-      content: "本文",
-      hasAudio: false,
-    });
+    expandEmlMessageToRecordsMock.mockReturnValue(textUnit());
     buildImportPreviewMock.mockRejectedValue(new Error("boom"));
 
     const { previewEmlImportAction } = await import("./actions");
@@ -739,14 +787,7 @@ describe("previewEmlImportAction", () => {
         ? parsedMessage({ senderAddress: "alice@example.com" })
         : parsedMessage({ senderAddress: "bob@example.com" }),
     );
-    toTalkImportRecordMock.mockReturnValue({
-      speaker: "sender@example.com",
-      postedAt: "2020-10-12T06:16:14.000Z",
-      type: "text",
-      title: "件名",
-      content: "本文",
-      hasAudio: false,
-    });
+    expandEmlMessageToRecordsMock.mockReturnValue(textUnit());
     buildImportPreviewMock.mockResolvedValue({
       totalCount: 2,
       importableCount: 2,
@@ -789,14 +830,9 @@ describe("previewEmlImportAction", () => {
       }
       return parsedMessage({ senderAddress: "ok@example.com" });
     });
-    toTalkImportRecordMock.mockReturnValue({
-      speaker: "ok@example.com",
-      postedAt: "2020-10-12T06:16:14.000Z",
-      type: "text",
-      title: "件名",
-      content: "本文",
-      hasAudio: false,
-    });
+    expandEmlMessageToRecordsMock.mockReturnValue(
+      textUnit({ speaker: "ok@example.com" }),
+    );
     buildImportPreviewMock.mockResolvedValue({
       totalCount: 2,
       importableCount: 1,
@@ -867,14 +903,7 @@ describe("executeEmlImportAction", () => {
     mockSupabaseClient({ id: "user-1" });
     const formData = buildFormDataWithFiles([{ name: "a.eml" }]);
     parseEmlFileMock.mockResolvedValue(parsedMessage());
-    toTalkImportRecordMock.mockReturnValue({
-      speaker: "sender@example.com",
-      postedAt: "2020-10-12T06:16:14.000Z",
-      type: "text",
-      title: "件名",
-      content: "本文",
-      hasAudio: false,
-    });
+    expandEmlMessageToRecordsMock.mockReturnValue(textUnit());
 
     const { executeEmlImportAction } = await import("./actions");
     const result = await executeEmlImportAction("conv-1", formData, "");
@@ -887,14 +916,7 @@ describe("executeEmlImportAction", () => {
     mockSupabaseClient({ id: "user-1" });
     const formData = buildFormDataWithFiles([{ name: "a.eml" }]);
     parseEmlFileMock.mockResolvedValue(parsedMessage());
-    toTalkImportRecordMock.mockReturnValue({
-      speaker: "sender@example.com",
-      postedAt: "2020-10-12T06:16:14.000Z",
-      type: "text",
-      title: "件名",
-      content: "本文",
-      hasAudio: false,
-    });
+    expandEmlMessageToRecordsMock.mockReturnValue(textUnit());
 
     const { executeEmlImportAction } = await import("./actions");
     const result = await executeEmlImportAction(
@@ -907,30 +929,44 @@ describe("executeEmlImportAction", () => {
     expect(executeImportMock).not.toHaveBeenCalled();
   });
 
-  it("executes the import and attaches images to their created records via createdRecords", async () => {
+  // #133: 1通のメールに複数の添付画像がある場合、全件が独立した image record として
+  // 作成され、それぞれの createdRecords エントリに対応する画像データが個別に添付される
+  it("executes the import and attaches each image of a multi-image mail to its own created record via createdRecords (#133)", async () => {
     mockSupabaseClient({ id: "user-1" });
     const formData = buildFormDataWithFiles([
-      { name: "with-image.eml" },
+      { name: "with-images.eml" },
       { name: "text-only.eml" },
     ]);
 
+    const image1 = { filename: "photo1.png", mimeType: "image/png", data: new Uint8Array([1, 2, 3]) };
+    const image2 = { filename: "photo2.jpg", mimeType: "image/jpeg", data: new Uint8Array([4, 5, 6]) };
     const imageMessage = parsedMessage({
       senderAddress: "alice@example.com",
-      image: { filename: "photo.png", mimeType: "image/png", data: new Uint8Array([1, 2, 3]) },
+      images: [image1, image2],
     });
     const textMessage = parsedMessage({ senderAddress: "bob@example.com" });
 
     parseEmlFileMock.mockImplementation(async (_raw: unknown, filename: string) =>
-      filename === "with-image.eml" ? imageMessage : textMessage,
+      filename === "with-images.eml" ? imageMessage : textMessage,
     );
 
-    const imageRecord = {
+    const imageRecordMain = {
       speaker: "alice@example.com",
       postedAt: "2020-10-12T06:16:14.000Z",
       type: "image" as const,
       title: "件名",
       content: "本文",
       hasAudio: false,
+      importKey: "with-images.eml#0",
+    };
+    const imageRecordExtra = {
+      speaker: "alice@example.com",
+      postedAt: "2020-10-12T06:16:14.000Z",
+      type: "image" as const,
+      title: "件名",
+      content: null,
+      hasAudio: false,
+      importKey: "with-images.eml#1",
     };
     const textRecord = {
       speaker: "bob@example.com",
@@ -939,17 +975,25 @@ describe("executeEmlImportAction", () => {
       title: "件名",
       content: "本文",
       hasAudio: false,
+      importKey: "text-only.eml#0",
     };
-    toTalkImportRecordMock.mockImplementation((message: { senderAddress: string }) =>
-      message.senderAddress === "alice@example.com" ? imageRecord : textRecord,
+    expandEmlMessageToRecordsMock.mockImplementation(
+      (message: { senderAddress: string }) =>
+        message.senderAddress === "alice@example.com"
+          ? [
+              { record: imageRecordMain, media: { kind: "attachment", ...image1 } },
+              { record: imageRecordExtra, media: { kind: "attachment", ...image2 } },
+            ]
+          : [{ record: textRecord, media: null }],
     );
 
     executeImportMock.mockResolvedValue({
-      createdCount: 2,
+      createdCount: 3,
       skippedCount: 0,
       createdParticipants: {},
       createdRecords: [
-        { record: imageRecord, id: "record-image" },
+        { record: imageRecordMain, id: "record-image-1" },
+        { record: imageRecordExtra, id: "record-image-2" },
         { record: textRecord, id: "record-text" },
       ],
     });
@@ -963,37 +1007,45 @@ describe("executeEmlImportAction", () => {
     );
 
     expect(executeImportMock).toHaveBeenCalledWith(expect.anything(), "conv-1", {
-      records: [imageRecord, textRecord],
+      records: [imageRecordMain, imageRecordExtra, textRecord],
       speakerAssignments: {
         "alice@example.com": VALID_PARTICIPANT_ID,
         "bob@example.com": VALID_PARTICIPANT_ID,
       },
     });
-    expect(attachRecordMediaMock).toHaveBeenCalledTimes(1);
+    expect(attachRecordMediaMock).toHaveBeenCalledTimes(2);
     expect(attachRecordMediaMock).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
         userId: "user-1",
-        recordId: "record-image",
-        filename: "photo.png",
+        recordId: "record-image-1",
+        filename: "photo1.png",
         contentType: "image/png",
+      }),
+    );
+    expect(attachRecordMediaMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        userId: "user-1",
+        recordId: "record-image-2",
+        filename: "photo2.jpg",
+        contentType: "image/jpeg",
       }),
     );
     expect(revalidatePathMock).toHaveBeenCalledWith("/conversations/conv-1");
     if ("error" in result) {
       throw new Error("expected a result");
     }
-    expect(result.result.attachedCount).toBe(1);
+    expect(result.result.attachedCount).toBe(2);
     expect(result.result.attachFailedCount).toBe(0);
-    expect(result.result.createdCount).toBe(2);
+    expect(result.result.createdCount).toBe(3);
   });
 
   it("counts attachFailedCount without aborting other attachments when attachRecordMedia throws", async () => {
     mockSupabaseClient({ id: "user-1" });
     const formData = buildFormDataWithFiles([{ name: "with-image.eml" }]);
-    const imageMessage = parsedMessage({
-      image: { filename: "photo.png", mimeType: "image/png", data: new Uint8Array([1, 2, 3]) },
-    });
+    const imageAttachment = { filename: "photo.png", mimeType: "image/png", data: new Uint8Array([1, 2, 3]) };
+    const imageMessage = parsedMessage({ images: [imageAttachment] });
     parseEmlFileMock.mockResolvedValue(imageMessage);
     const imageRecord = {
       speaker: "sender@example.com",
@@ -1002,8 +1054,11 @@ describe("executeEmlImportAction", () => {
       title: "件名",
       content: "本文",
       hasAudio: false,
+      importKey: "with-image.eml#0",
     };
-    toTalkImportRecordMock.mockReturnValue(imageRecord);
+    expandEmlMessageToRecordsMock.mockReturnValue([
+      { record: imageRecord, media: { kind: "attachment", ...imageAttachment } },
+    ]);
     executeImportMock.mockResolvedValue({
       createdCount: 1,
       skippedCount: 0,
@@ -1055,15 +1110,17 @@ describe("executeEmlImportAction", () => {
       ]);
       const remoteMessage = parsedMessage({
         senderAddress: "alice@example.com",
-        remoteImageUrl: REMOTE_IMAGE_URL,
+        remoteImageUrls: [REMOTE_IMAGE_URL],
       });
       const attachmentMessage = parsedMessage({
         senderAddress: "bob@example.com",
-        image: {
-          filename: "photo.png",
-          mimeType: "image/png",
-          data: new Uint8Array([1, 2, 3]),
-        },
+        images: [
+          {
+            filename: "photo.png",
+            mimeType: "image/png",
+            data: new Uint8Array([1, 2, 3]),
+          },
+        ],
       });
       parseEmlFileMock.mockImplementation(
         async (_raw: unknown, filename: string) =>
@@ -1085,11 +1142,21 @@ describe("executeEmlImportAction", () => {
         content: null,
         hasAudio: false,
       };
-      toTalkImportRecordMock.mockImplementation(
+      expandEmlMessageToRecordsMock.mockImplementation(
         (message: { senderAddress: string }) =>
           message.senderAddress === "alice@example.com"
-            ? remoteRecord
-            : attachmentRecord,
+            ? [{ record: remoteRecord, media: { kind: "remote", url: REMOTE_IMAGE_URL } }]
+            : [
+                {
+                  record: attachmentRecord,
+                  media: {
+                    kind: "attachment",
+                    filename: "photo.png",
+                    mimeType: "image/png",
+                    data: new Uint8Array([1, 2, 3]),
+                  },
+                },
+              ],
       );
       executeImportMock.mockResolvedValue({
         createdCount: 2,
@@ -1166,15 +1233,17 @@ describe("executeEmlImportAction", () => {
       ]);
       const remoteMessage = parsedMessage({
         senderAddress: "alice@example.com",
-        remoteImageUrl: REMOTE_IMAGE_URL,
+        remoteImageUrls: [REMOTE_IMAGE_URL],
       });
       const attachmentMessage = parsedMessage({
         senderAddress: "bob@example.com",
-        image: {
-          filename: "photo.png",
-          mimeType: "image/png",
-          data: new Uint8Array([1, 2, 3]),
-        },
+        images: [
+          {
+            filename: "photo.png",
+            mimeType: "image/png",
+            data: new Uint8Array([1, 2, 3]),
+          },
+        ],
       });
       parseEmlFileMock.mockImplementation(
         async (_raw: unknown, filename: string) =>
@@ -1196,11 +1265,21 @@ describe("executeEmlImportAction", () => {
         content: null,
         hasAudio: false,
       };
-      toTalkImportRecordMock.mockImplementation(
+      expandEmlMessageToRecordsMock.mockImplementation(
         (message: { senderAddress: string }) =>
           message.senderAddress === "alice@example.com"
-            ? remoteRecord
-            : attachmentRecord,
+            ? [{ record: remoteRecord, media: { kind: "remote", url: REMOTE_IMAGE_URL } }]
+            : [
+                {
+                  record: attachmentRecord,
+                  media: {
+                    kind: "attachment",
+                    filename: "photo.png",
+                    mimeType: "image/png",
+                    data: new Uint8Array([1, 2, 3]),
+                  },
+                },
+              ],
       );
       executeImportMock.mockResolvedValue({
         createdCount: 2,
@@ -1250,7 +1329,7 @@ describe("executeEmlImportAction", () => {
       mockSupabaseClient({ id: "user-1" });
       const formData = buildFormDataWithFiles([{ name: "remote-image.eml" }]);
       const remoteMessage = parsedMessage({
-        remoteImageUrl: REMOTE_IMAGE_URL,
+        remoteImageUrls: [REMOTE_IMAGE_URL],
       });
       parseEmlFileMock.mockResolvedValue(remoteMessage);
       const remoteRecord = {
@@ -1261,7 +1340,9 @@ describe("executeEmlImportAction", () => {
         content: null,
         hasAudio: false,
       };
-      toTalkImportRecordMock.mockReturnValue(remoteRecord);
+      expandEmlMessageToRecordsMock.mockReturnValue([
+        { record: remoteRecord, media: { kind: "remote", url: REMOTE_IMAGE_URL } },
+      ]);
       executeImportMock.mockResolvedValue({
         createdCount: 1,
         skippedCount: 0,
@@ -1290,7 +1371,7 @@ describe("executeEmlImportAction", () => {
       mockSupabaseClient({ id: "user-1" });
       const formData = buildFormDataWithFiles([{ name: "remote-image.eml" }]);
       const remoteMessage = parsedMessage({
-        remoteImageUrl: REMOTE_IMAGE_URL,
+        remoteImageUrls: [REMOTE_IMAGE_URL],
       });
       parseEmlFileMock.mockResolvedValue(remoteMessage);
       const remoteRecord = {
@@ -1301,7 +1382,9 @@ describe("executeEmlImportAction", () => {
         content: null,
         hasAudio: false,
       };
-      toTalkImportRecordMock.mockReturnValue(remoteRecord);
+      expandEmlMessageToRecordsMock.mockReturnValue([
+        { record: remoteRecord, media: { kind: "remote", url: REMOTE_IMAGE_URL } },
+      ]);
       executeImportMock.mockResolvedValue({
         createdCount: 1,
         skippedCount: 0,
@@ -1345,14 +1428,7 @@ describe("executeEmlImportAction", () => {
     mockSupabaseClient({ id: "user-1" });
     const formData = buildFormDataWithFiles([{ name: "a.eml" }]);
     parseEmlFileMock.mockResolvedValue(parsedMessage());
-    toTalkImportRecordMock.mockReturnValue({
-      speaker: "sender@example.com",
-      postedAt: "2020-10-12T06:16:14.000Z",
-      type: "text",
-      title: "件名",
-      content: "本文",
-      hasAudio: false,
-    });
+    expandEmlMessageToRecordsMock.mockReturnValue(textUnit());
     executeImportMock.mockRejectedValue(
       new ImportErrorMock("発言者「sender@example.com」の割り当てを指定してください"),
     );
@@ -1374,14 +1450,7 @@ describe("executeEmlImportAction", () => {
     mockSupabaseClient({ id: "user-1" });
     const formData = buildFormDataWithFiles([{ name: "a.eml" }]);
     parseEmlFileMock.mockResolvedValue(parsedMessage());
-    toTalkImportRecordMock.mockReturnValue({
-      speaker: "sender@example.com",
-      postedAt: "2020-10-12T06:16:14.000Z",
-      type: "text",
-      title: "件名",
-      content: "本文",
-      hasAudio: false,
-    });
+    expandEmlMessageToRecordsMock.mockReturnValue(textUnit());
     executeImportMock.mockRejectedValue(new Error("boom"));
 
     const { executeEmlImportAction } = await import("./actions");
@@ -1414,6 +1483,7 @@ describe("executeEmlImportAction", () => {
       title: "件名",
       content: "本文",
       hasAudio: false,
+      importKey: "a.eml#0",
     };
     const bobRecord = {
       speaker: "bob@example.com",
@@ -1422,9 +1492,13 @@ describe("executeEmlImportAction", () => {
       title: "件名",
       content: "本文",
       hasAudio: false,
+      importKey: "b.eml#0",
     };
-    toTalkImportRecordMock.mockImplementation((message: { senderAddress: string }) =>
-      message.senderAddress === "alice@example.com" ? aliceRecord : bobRecord,
+    expandEmlMessageToRecordsMock.mockImplementation(
+      (message: { senderAddress: string }) =>
+        message.senderAddress === "alice@example.com"
+          ? [{ record: aliceRecord, media: null }]
+          : [{ record: bobRecord, media: null }],
     );
     executeImportMock.mockResolvedValue({
       createdCount: 2,
@@ -1453,19 +1527,19 @@ describe("executeEmlImportAction", () => {
     expect(result.result.createdCount).toBe(2);
   });
 
-  // #128 第3ラウンドレビュー対応（P1）: parseEmlFile/toTalkImportRecord のモックを実体に
-  // 差し替え、NUL を含む .eml を実際にパースさせた上で、executeImport に渡る records の
-  // content から U+0000 が除去されていることを確認する（usecase 単体テストだけでなく、
-  // action 層での結合まで通しで検証する）
-  it("strips NUL characters through the real parseEmlFile/toTalkImportRecord pipeline before calling executeImport", async () => {
+  // #128 第3ラウンドレビュー対応（P1）: parseEmlFile/expandEmlMessageToRecords のモックを
+  // 実体に差し替え、NUL を含む .eml を実際にパースさせた上で、executeImport に渡る
+  // records の content から U+0000 が除去されていることを確認する（usecase 単体テスト
+  // だけでなく、action 層での結合まで通しで検証する）
+  it("strips NUL characters through the real parseEmlFile/expandEmlMessageToRecords pipeline before calling executeImport", async () => {
     mockSupabaseClient({ id: "user-1" });
 
     const actualEmlImportUseCases = await vi.importActual<
       typeof import("@/usecases/emlImportUseCases")
     >("@/usecases/emlImportUseCases");
     parseEmlFileMock.mockImplementation(actualEmlImportUseCases.parseEmlFile);
-    toTalkImportRecordMock.mockImplementation(
-      actualEmlImportUseCases.toTalkImportRecord,
+    expandEmlMessageToRecordsMock.mockImplementation(
+      actualEmlImportUseCases.expandEmlMessageToRecords,
     );
 
     const formData = new FormData();
@@ -1494,6 +1568,7 @@ describe("executeEmlImportAction", () => {
           title: "Test",
           content: "前後",
           hasAudio: false,
+          importKey: "nul.eml#0",
         },
       ],
       speakerAssignments: { "sender@example.com": VALID_PARTICIPANT_ID },

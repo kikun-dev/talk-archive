@@ -184,6 +184,7 @@ export type Database = {
           created_at: string
           has_audio: boolean
           id: string
+          import_key: string | null
           position: number
           posted_at: string
           record_type: Database["public"]["Enums"]["record_type"]
@@ -197,6 +198,7 @@ export type Database = {
           created_at?: string
           has_audio?: boolean
           id?: string
+          import_key?: string | null
           position?: number
           posted_at?: string
           record_type: Database["public"]["Enums"]["record_type"]
@@ -210,6 +212,7 @@ export type Database = {
           created_at?: string
           has_audio?: boolean
           id?: string
+          import_key?: string | null
           position?: number
           posted_at?: string
           record_type?: Database["public"]["Enums"]["record_type"]
@@ -303,6 +306,7 @@ export type Database = {
           created_at: string
           has_audio: boolean
           id: string
+          import_key: string | null
           position: number
           posted_at: string
           record_type: Database["public"]["Enums"]["record_type"]
@@ -331,6 +335,7 @@ export type Database = {
           created_at: string
           has_audio: boolean
           id: string
+          import_key: string | null
           position: number
           posted_at: string
           record_type: Database["public"]["Enums"]["record_type"]

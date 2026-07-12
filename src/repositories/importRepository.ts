@@ -36,6 +36,11 @@ export type ImportRecordsAtomicRecordInput = {
   content: string | null;
   hasAudio: boolean;
   postedAt: string;
+  /**
+   * .eml インポート由来レコードの安定な重複排除キー（"<元ファイル名>#<連番>"）。
+   * JSON インポート由来のレコードは null（従来どおり本文プレフィックスベースで判定する、#133）
+   */
+  importKey: string | null;
 };
 
 export type ImportRecordsAtomicParams = {
@@ -71,6 +76,7 @@ export async function importRecordsAtomic(
       content: record.content,
       has_audio: record.hasAudio,
       posted_at: record.postedAt,
+      import_key: record.importKey,
     })),
   });
 
