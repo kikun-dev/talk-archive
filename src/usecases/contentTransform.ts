@@ -13,7 +13,7 @@ export type TextSegment = { type: "text" | "url"; value: string };
 // URL 末尾に付きがちな句読点・記号は URL に含めず、後続のテキストへ戻す
 const TRAILING_PUNCTUATION = /[。、）」！？!?,.;:)]+$/;
 
-const URL_PATTERN = /https?:\/\/\S+/g;
+const URL_PATTERN = /https?:\/\/\S+/gi;
 
 export function splitTextByUrls(text: string): TextSegment[] {
   if (text.length === 0) return [];

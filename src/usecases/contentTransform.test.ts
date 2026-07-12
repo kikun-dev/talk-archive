@@ -134,4 +134,16 @@ describe("splitTextByUrls", () => {
   it("returns an empty array for empty text", () => {
     expect(splitTextByUrls("")).toEqual([]);
   });
+
+  it("linkifies an uppercase scheme while preserving the original casing", () => {
+    expect(splitTextByUrls("HTTPS://example.com/x")).toEqual([
+      { type: "url", value: "HTTPS://example.com/x" },
+    ]);
+  });
+
+  it("linkifies a mixed-case scheme", () => {
+    expect(splitTextByUrls("Http://example.com")).toEqual([
+      { type: "url", value: "Http://example.com" },
+    ]);
+  });
 });
