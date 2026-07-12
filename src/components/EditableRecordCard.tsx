@@ -50,9 +50,14 @@ export function EditableRecordCard({
 
     startDeleteTransition(async () => {
       const result = await deleteRecordAction(conversationId, record.id);
-      if (result?.error) {
-        addToast(result.error, "error");
+      if (!result) {
+        return;
       }
+      if ("error" in result) {
+        addToast(result.error, "error");
+        return;
+      }
+      addToast(result.warning, "warning");
     });
   }
 

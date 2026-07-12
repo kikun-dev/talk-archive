@@ -6,6 +6,9 @@ const BUCKET_NAME = "media";
 /** Signed URL の有効期限（秒） */
 const SIGNED_URL_EXPIRY_SECONDS = 3600;
 
+/** Supabase Storage の remove が1回に受け付けるオブジェクト数の上限 */
+const STORAGE_REMOVE_BATCH_SIZE = 1000;
+
 type SignedUrlBatchItem = {
   error: string | null;
   path: string | null;
@@ -56,6 +59,14 @@ export function isStorageFilePath(path: string | null): path is string {
     !path.startsWith("http://") &&
     !path.startsWith("https://")
   );
+}
+
+/**
+ * Storage パスが指定ユーザーの所有物か判定する
+ * 規約: {userId}/... で始まるパスのみそのユーザーの所有物とみなす
+ */
+export function isOwnedStoragePath(userId: string, path: string): boolean {
+  return path.startsWith(`${userId}/`);
 }
 
 /**
@@ -154,6 +165,8 @@ export async function deleteFile(
 
 /**
  * 複数ファイルを Storage から一括削除する
+ * Supabase Storage の remove は1回あたり STORAGE_REMOVE_BATCH_SIZE 件までのため、
+ * 上限件数ごとにチャンク分割して順番に削除する
  */
 export async function deleteFiles(
   client: SupabaseClient<Database>,
@@ -163,9 +176,12 @@ export async function deleteFiles(
     return;
   }
 
-  const { error } = await client.storage.from(BUCKET_NAME).remove(paths);
+  for (let i = 0; i < paths.length; i += STORAGE_REMOVE_BATCH_SIZE) {
+    const chunk = paths.slice(i, i + STORAGE_REMOVE_BATCH_SIZE);
+    const { error } = await client.storage.from(BUCKET_NAME).remove(chunk);
 
-  if (error) {
-    throw error;
+    if (error) {
+      throw error;
+    }
   }
 }

@@ -30,6 +30,7 @@ vi.mock("@/app/(app)/conversations/[id]/actions", () => ({
 vi.mock("next/navigation", () => ({
   redirect: redirectMock,
   notFound: notFoundMock,
+  useRouter: () => ({ replace: vi.fn() }),
 }));
 
 const conversation: ConversationWithRecords = {

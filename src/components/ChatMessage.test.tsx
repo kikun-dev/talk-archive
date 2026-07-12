@@ -10,7 +10,10 @@ vi.mock("@/app/(app)/conversations/[id]/actions", () => ({
   attachRecordMediaAction: vi.fn(),
 }));
 
-import { attachRecordMediaAction } from "@/app/(app)/conversations/[id]/actions";
+import {
+  attachRecordMediaAction,
+  deleteRecordAction,
+} from "@/app/(app)/conversations/[id]/actions";
 
 const textRecord: Record = {
   id: "rec-1",
@@ -240,6 +243,33 @@ describe("ChatMessage", () => {
     expect(actionButton).toHaveAttribute("aria-expanded", "true");
     expect(within(menu).getByText("編集")).toBeInTheDocument();
     expect(within(menu).getByText("削除")).toBeInTheDocument();
+  });
+
+  it("shows a warning toast when deleting a record leaves storage cleanup failed", async () => {
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    vi.mocked(deleteRecordAction).mockResolvedValue({
+      warning:
+        "レコードは削除しましたが、メディアファイルの削除に失敗しました。",
+    });
+
+    render(
+      <ToastProvider><ChatMessage
+        record={textRecord}
+        participantName="メンバーA"
+        conversationId="conv-1"
+        isEditMode
+        displayName=""
+      /></ToastProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "操作" }));
+    fireEvent.click(within(screen.getByRole("menu")).getByText("削除"));
+
+    expect(
+      await screen.findByText(
+        "レコードは削除しましたが、メディアファイルの削除に失敗しました。",
+      ),
+    ).toBeInTheDocument();
   });
 
   it("hides action menu trigger outside edit mode", () => {

@@ -11,6 +11,10 @@ vi.mock("@/app/(app)/conversations/[id]/actions", () => ({
   updateConversationCoverImageAction: vi.fn(),
 }));
 
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ replace: vi.fn() }),
+}));
+
 const conversation: ConversationWithMetadata = {
   id: "conv-1",
   userId: "user-1",

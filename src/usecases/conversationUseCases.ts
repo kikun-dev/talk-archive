@@ -22,14 +22,18 @@ import {
 import { getConversationParticipants } from "@/repositories/conversationParticipantRepository";
 import { updateConversationParticipantThumbnail } from "@/repositories/conversationParticipantRepository";
 import { getRecordsByConversation } from "@/repositories/recordRepository";
+import { getAttachmentFilePathsByConversation } from "@/repositories/attachmentRepository";
 import { MAX_PARTICIPANT_NAME_LENGTH } from "@/lib/validationConstraints";
 import {
   buildConversationCoverPath,
   buildParticipantThumbnailPath,
+  deleteFiles,
   getFileUrls,
+  isOwnedStoragePath,
   isStorageFilePath,
   uploadFile,
 } from "@/repositories/storageService";
+import { StorageCleanupError } from "./storageCleanupError";
 
 export type ConversationSummary = Conversation & {
   activeDays: number;
@@ -481,8 +485,47 @@ export async function updateExistingConversation(
 export async function deleteExistingConversation(
   client: SupabaseClient<Database>,
   id: string,
+  userId: string,
 ): Promise<void> {
-  return deleteConversation(client, id);
+  const [attachmentFilePaths, conversation, participants] = await Promise.all([
+    getAttachmentFilePathsByConversation(client, id),
+    getConversation(client, id),
+    getConversationParticipants(client, id),
+  ]);
+
+  const candidatePaths = new Set<string>(attachmentFilePaths);
+  if (conversation?.coverImagePath) {
+    candidatePaths.add(conversation.coverImagePath);
+  }
+  for (const participant of participants) {
+    if (participant.thumbnailPath) {
+      candidatePaths.add(participant.thumbnailPath);
+    }
+  }
+
+  const filePaths = [...candidatePaths].filter(
+    (filePath) =>
+      isStorageFilePath(filePath) && isOwnedStoragePath(userId, filePath),
+  );
+
+  await deleteConversation(client, id);
+
+  if (filePaths.length === 0) {
+    return;
+  }
+
+  try {
+    await deleteFiles(client, filePaths);
+  } catch (error) {
+    console.error("Failed to delete storage files for conversation", {
+      conversationId: id,
+      filePaths,
+      error,
+    });
+    throw new StorageCleanupError(
+      `会話（${id}）のDB削除は完了しましたが、Storageファイルの削除に失敗しました`,
+    );
+  }
 }
 
 export async function getConversationCoverUrls(

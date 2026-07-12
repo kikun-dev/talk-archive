@@ -9,6 +9,8 @@ vi.mock("@/app/(app)/conversations/[id]/actions", () => ({
   deleteRecordAction: vi.fn(),
 }));
 
+import { deleteRecordAction } from "@/app/(app)/conversations/[id]/actions";
+
 const textRecord: Record = {
   id: "rec-1",
   conversationId: "conv-1",
@@ -86,5 +88,25 @@ describe("EditableRecordCard", () => {
 
     expect(screen.getByText("テストタイトル")).toBeInTheDocument();
     expect(screen.getByText("編集")).toBeInTheDocument();
+  });
+
+  it("shows a warning toast when deleting a record leaves storage cleanup failed", async () => {
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    vi.mocked(deleteRecordAction).mockResolvedValue({
+      warning:
+        "レコードは削除しましたが、メディアファイルの削除に失敗しました。",
+    });
+
+    render(
+      <ToastProvider><EditableRecordCard record={textRecord} conversationId="conv-1" /></ToastProvider>,
+    );
+
+    fireEvent.click(screen.getByText("削除"));
+
+    expect(
+      await screen.findByText(
+        "レコードは削除しましたが、メディアファイルの削除に失敗しました。",
+      ),
+    ).toBeInTheDocument();
   });
 });

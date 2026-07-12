@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useTransition } from "react";
 import { deleteConversationAction } from "@/app/(app)/conversations/[id]/actions";
 import { useToast } from "@/components/ToastProvider";
@@ -13,6 +14,7 @@ export function DeleteConversationButton({
 }: DeleteConversationButtonProps) {
   const [isPending, startTransition] = useTransition();
   const { addToast } = useToast();
+  const router = useRouter();
 
   function handleDelete() {
     if (!window.confirm("この会話を削除しますか？関連するレコードもすべて削除されます。")) {
@@ -21,9 +23,16 @@ export function DeleteConversationButton({
 
     startTransition(async () => {
       const result = await deleteConversationAction(conversationId);
-      if (result?.error) {
-        addToast(result.error, "error");
+      if (!result) {
+        return;
       }
+      if ("error" in result) {
+        addToast(result.error, "error");
+        return;
+      }
+      // 部分成功: トークは削除済みのためホームへ遷移する
+      addToast(result.warning, "warning");
+      router.replace("/");
     });
   }
 

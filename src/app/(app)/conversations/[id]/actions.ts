@@ -29,6 +29,7 @@ import {
   validateUpdateRecordInput,
   deleteExistingRecord,
 } from "@/usecases/recordUseCases";
+import { StorageCleanupError } from "@/usecases/storageCleanupError";
 import type { RecordType } from "@/types/domain";
 
 export type ActionState =
@@ -839,7 +840,7 @@ export async function updateConversationCoverImageAction(
 
 export async function deleteConversationAction(
   conversationId: string,
-): Promise<{ error: string } | void> {
+): Promise<{ error: string } | { warning: string } | void> {
   const supabase = await createSupabaseServerClient();
   const {
     data: { user },
@@ -850,8 +851,17 @@ export async function deleteConversationAction(
   }
 
   try {
-    await deleteExistingConversation(supabase, conversationId);
+    await deleteExistingConversation(supabase, conversationId, user.id);
   } catch (error) {
+    if (error instanceof StorageCleanupError) {
+      console.error("Failed to clean up storage for conversation:", error);
+      revalidatePath("/");
+      revalidatePath(`/conversations/${conversationId}`);
+      return {
+        warning:
+          "トークは削除しましたが、メディアファイルの削除に失敗しました。",
+      };
+    }
     console.error("Failed to delete conversation:", error);
     return { error: "会話の削除に失敗しました。時間をおいて再度お試しください。" };
   }
@@ -909,7 +919,7 @@ export async function updateRecordAction(
 export async function deleteRecordAction(
   conversationId: string,
   recordId: string,
-): Promise<{ error: string } | void> {
+): Promise<{ error: string } | { warning: string } | void> {
   const supabase = await createSupabaseServerClient();
   const {
     data: { user },
@@ -920,8 +930,16 @@ export async function deleteRecordAction(
   }
 
   try {
-    await deleteExistingRecord(supabase, recordId);
+    await deleteExistingRecord(supabase, recordId, user.id);
   } catch (error) {
+    if (error instanceof StorageCleanupError) {
+      console.error("Failed to clean up storage for record:", error);
+      revalidatePath(`/conversations/${conversationId}`);
+      return {
+        warning:
+          "レコードは削除しましたが、メディアファイルの削除に失敗しました。",
+      };
+    }
     console.error("Failed to delete record:", error);
     return { error: "レコードの削除に失敗しました。時間をおいて再度お試しください。" };
   }

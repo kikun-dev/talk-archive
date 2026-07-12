@@ -23,6 +23,7 @@ import {
   attachRecordMedia,
   getMediaDisplayInfoForRecords,
 } from "./recordUseCases";
+import { StorageCleanupError } from "./storageCleanupError";
 
 vi.mock("@/repositories/recordRepository");
 vi.mock("@/repositories/attachmentRepository");
@@ -47,6 +48,9 @@ import {
   uploadFile,
   getFileUrls,
   deleteFile,
+  deleteFiles,
+  isStorageFilePath,
+  isOwnedStoragePath,
 } from "@/repositories/storageService";
 
 const mockCreateTextRecordAtNextPosition = vi.mocked(
@@ -68,6 +72,9 @@ const mockBuildStoragePath = vi.mocked(buildStoragePath);
 const mockUploadFile = vi.mocked(uploadFile);
 const mockGetFileUrls = vi.mocked(getFileUrls);
 const mockDeleteFile = vi.mocked(deleteFile);
+const mockDeleteFiles = vi.mocked(deleteFiles);
+const mockIsStorageFilePath = vi.mocked(isStorageFilePath);
+const mockIsOwnedStoragePath = vi.mocked(isOwnedStoragePath);
 const mockGetRecordsByConversationAndDateRange = vi.mocked(
   getRecordsByConversationAndDateRange,
 );
@@ -347,10 +354,85 @@ describe("recordUseCases", () => {
   });
 
   describe("deleteExistingRecord", () => {
-    it("deletes record via repository", async () => {
+    it("deletes DB row and owned storage files for an attached record", async () => {
+      mockGetAttachmentsByRecord.mockResolvedValue([
+        {
+          id: "att-1",
+          recordId: "rec-1",
+          filePath: "user-1/conv-1/rec-1/photo.jpg",
+          mimeType: "image/jpeg",
+          fileSize: 100,
+          createdAt: "2026-01-01T00:00:00Z",
+        },
+      ]);
+      mockIsStorageFilePath.mockReturnValue(true);
+      mockIsOwnedStoragePath.mockReturnValue(true);
+      mockDeleteRecord.mockResolvedValue(undefined);
+      mockDeleteFiles.mockResolvedValue(undefined);
+
+      await deleteExistingRecord(client, "rec-1", "user-1");
+
+      expect(mockGetAttachmentsByRecord).toHaveBeenCalledWith(client, "rec-1");
+      expect(mockDeleteRecord).toHaveBeenCalledWith(client, "rec-1");
+      expect(mockDeleteFiles).toHaveBeenCalledWith(client, [
+        "user-1/conv-1/rec-1/photo.jpg",
+      ]);
+    });
+
+    it("deletes DB row without calling deleteFiles for a text record without attachments", async () => {
+      mockGetAttachmentsByRecord.mockResolvedValue([]);
       mockDeleteRecord.mockResolvedValue(undefined);
 
-      await deleteExistingRecord(client, "rec-1");
+      await deleteExistingRecord(client, "rec-1", "user-1");
+
+      expect(mockDeleteRecord).toHaveBeenCalledWith(client, "rec-1");
+      expect(mockDeleteFiles).not.toHaveBeenCalled();
+    });
+
+    it("excludes another user's storage paths from deletion", async () => {
+      mockGetAttachmentsByRecord.mockResolvedValue([
+        {
+          id: "att-1",
+          recordId: "rec-1",
+          filePath: "user-2/conv-1/rec-1/photo.jpg",
+          mimeType: "image/jpeg",
+          fileSize: 100,
+          createdAt: "2026-01-01T00:00:00Z",
+        },
+      ]);
+      mockIsStorageFilePath.mockReturnValue(true);
+      mockIsOwnedStoragePath.mockReturnValue(false);
+      mockDeleteRecord.mockResolvedValue(undefined);
+
+      await deleteExistingRecord(client, "rec-1", "user-1");
+
+      expect(mockIsOwnedStoragePath).toHaveBeenCalledWith(
+        "user-1",
+        "user-2/conv-1/rec-1/photo.jpg",
+      );
+      expect(mockDeleteRecord).toHaveBeenCalledWith(client, "rec-1");
+      expect(mockDeleteFiles).not.toHaveBeenCalled();
+    });
+
+    it("deletes the DB row and throws StorageCleanupError when deleteFiles fails", async () => {
+      mockGetAttachmentsByRecord.mockResolvedValue([
+        {
+          id: "att-1",
+          recordId: "rec-1",
+          filePath: "user-1/conv-1/rec-1/photo.jpg",
+          mimeType: "image/jpeg",
+          fileSize: 100,
+          createdAt: "2026-01-01T00:00:00Z",
+        },
+      ]);
+      mockIsStorageFilePath.mockReturnValue(true);
+      mockIsOwnedStoragePath.mockReturnValue(true);
+      mockDeleteRecord.mockResolvedValue(undefined);
+      mockDeleteFiles.mockRejectedValue(new Error("Storage error"));
+
+      await expect(
+        deleteExistingRecord(client, "rec-1", "user-1"),
+      ).rejects.toThrow(StorageCleanupError);
 
       expect(mockDeleteRecord).toHaveBeenCalledWith(client, "rec-1");
     });

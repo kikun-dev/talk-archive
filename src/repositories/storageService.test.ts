@@ -4,6 +4,7 @@ import type { Database } from "@/types/database";
 import {
   buildParticipantThumbnailPath,
   buildStoragePath,
+  isOwnedStoragePath,
   uploadFile,
   getFileUrl,
   getFileUrls,
@@ -56,6 +57,26 @@ describe("storageService", () => {
       });
 
       expect(path).toBe("user-1/participants/participant-1/photo.jpg");
+    });
+  });
+
+  describe("isOwnedStoragePath", () => {
+    it("returns true when the path is prefixed with the user id", () => {
+      expect(
+        isOwnedStoragePath("user-1", "user-1/conv-1/rec-1/photo.jpg"),
+      ).toBe(true);
+    });
+
+    it("returns false when the path belongs to another user", () => {
+      expect(
+        isOwnedStoragePath("user-1", "user-2/conv-1/rec-1/photo.jpg"),
+      ).toBe(false);
+    });
+
+    it("returns false when the path merely starts with the user id as a substring", () => {
+      expect(
+        isOwnedStoragePath("user-1", "user-12/conv-1/rec-1/photo.jpg"),
+      ).toBe(false);
     });
   });
 
@@ -275,6 +296,63 @@ describe("storageService", () => {
       await expect(
         deleteFiles(client, ["user-1/conv-1/rec-1/photo.jpg"]),
       ).rejects.toEqual(storageError);
+    });
+
+    function buildPaths(count: number): string[] {
+      return Array.from(
+        { length: count },
+        (_, i) => `user-1/conv-1/rec-1/file-${i}.jpg`,
+      );
+    }
+
+    it("calls remove once when paths are exactly the batch size", async () => {
+      const remove = vi.fn().mockResolvedValue({ data: [], error: null });
+      const client = createMockStorageClient({ remove });
+
+      const paths = buildPaths(1000);
+      await expect(deleteFiles(client, paths)).resolves.toBeUndefined();
+
+      expect(remove).toHaveBeenCalledTimes(1);
+      expect(remove).toHaveBeenNthCalledWith(1, paths);
+    });
+
+    it("splits into two chunks when paths exceed the batch size by one", async () => {
+      const remove = vi.fn().mockResolvedValue({ data: [], error: null });
+      const client = createMockStorageClient({ remove });
+
+      const paths = buildPaths(1001);
+      await expect(deleteFiles(client, paths)).resolves.toBeUndefined();
+
+      expect(remove).toHaveBeenCalledTimes(2);
+      expect(remove).toHaveBeenNthCalledWith(1, paths.slice(0, 1000));
+      expect(remove).toHaveBeenNthCalledWith(2, paths.slice(1000, 1001));
+    });
+
+    it("splits into multiple chunks and calls remove sequentially in order", async () => {
+      const remove = vi.fn().mockResolvedValue({ data: [], error: null });
+      const client = createMockStorageClient({ remove });
+
+      const paths = buildPaths(2500);
+      await expect(deleteFiles(client, paths)).resolves.toBeUndefined();
+
+      expect(remove).toHaveBeenCalledTimes(3);
+      expect(remove).toHaveBeenNthCalledWith(1, paths.slice(0, 1000));
+      expect(remove).toHaveBeenNthCalledWith(2, paths.slice(1000, 2000));
+      expect(remove).toHaveBeenNthCalledWith(3, paths.slice(2000, 2500));
+    });
+
+    it("throws when a later chunk fails, without processing further chunks", async () => {
+      const storageError = { message: "Bulk delete failed", statusCode: "500" };
+      const remove = vi
+        .fn()
+        .mockResolvedValueOnce({ data: [], error: null })
+        .mockResolvedValueOnce({ data: null, error: storageError });
+      const client = createMockStorageClient({ remove });
+
+      const paths = buildPaths(2500);
+      await expect(deleteFiles(client, paths)).rejects.toEqual(storageError);
+
+      expect(remove).toHaveBeenCalledTimes(2);
     });
   });
 });

@@ -12,6 +12,9 @@ function TestConsumer() {
       <button onClick={() => addToast("失敗しました", "error")}>
         error
       </button>
+      <button onClick={() => addToast("一部失敗しました", "warning")}>
+        warning
+      </button>
     </div>
   );
 }
@@ -50,6 +53,17 @@ describe("ToastProvider", () => {
 
     fireEvent.click(screen.getByText("error"));
     expect(screen.getByText("失敗しました")).toBeDefined();
+  });
+
+  it("shows warning toast", () => {
+    render(
+      <ToastProvider>
+        <TestConsumer />
+      </ToastProvider>,
+    );
+
+    fireEvent.click(screen.getByText("warning"));
+    expect(screen.getByText("一部失敗しました")).toBeDefined();
   });
 
   it("dismisses toast when close button clicked", () => {

@@ -67,6 +67,24 @@ export async function getAttachmentsByRecordIds(
   return data.map(toAttachment);
 }
 
+export async function getAttachmentFilePathsByConversation(
+  client: SupabaseClient<Database>,
+  conversationId: string,
+): Promise<string[]> {
+  const { data, error } = await client
+    .from("attachments")
+    .select("file_path, records!inner(conversation_id)")
+    .eq("records.conversation_id", conversationId);
+
+  if (error) {
+    throw error;
+  }
+
+  return (data as Pick<AttachmentRow, "file_path">[]).map(
+    (row) => row.file_path,
+  );
+}
+
 export async function getAttachmentsByType(
   client: SupabaseClient<Database>,
   userId: string,
