@@ -4,6 +4,7 @@ import type { Database } from "@/types/database";
 import {
   buildParticipantThumbnailPath,
   buildStoragePath,
+  isOwnedStoragePath,
   uploadFile,
   getFileUrl,
   getFileUrls,
@@ -56,6 +57,26 @@ describe("storageService", () => {
       });
 
       expect(path).toBe("user-1/participants/participant-1/photo.jpg");
+    });
+  });
+
+  describe("isOwnedStoragePath", () => {
+    it("returns true when the path is prefixed with the user id", () => {
+      expect(
+        isOwnedStoragePath("user-1", "user-1/conv-1/rec-1/photo.jpg"),
+      ).toBe(true);
+    });
+
+    it("returns false when the path belongs to another user", () => {
+      expect(
+        isOwnedStoragePath("user-1", "user-2/conv-1/rec-1/photo.jpg"),
+      ).toBe(false);
+    });
+
+    it("returns false when the path merely starts with the user id as a substring", () => {
+      expect(
+        isOwnedStoragePath("user-1", "user-12/conv-1/rec-1/photo.jpg"),
+      ).toBe(false);
     });
   });
 

@@ -5,6 +5,7 @@ import {
   getAttachmentsByRecord,
   getAttachmentsByRecordIds,
   getAttachmentsByType,
+  getAttachmentFilePathsByConversation,
   createAttachment,
   deleteAttachment,
 } from "./attachmentRepository";
@@ -240,6 +241,50 @@ describe("attachmentRepository", () => {
 
       await expect(
         getAttachmentsByType(client, "user-1", "image"),
+      ).rejects.toEqual(dbError);
+    });
+  });
+
+  describe("getAttachmentFilePathsByConversation", () => {
+    it("returns file paths joined via records in a single query", async () => {
+      builder = createMockQueryBuilder({
+        eq: vi.fn().mockResolvedValue({
+          data: [
+            { file_path: "user-1/conv-1/rec-1/photo.jpg" },
+            { file_path: "user-1/conv-1/rec-2/video.mp4" },
+          ],
+          error: null,
+        }),
+      });
+      client = createMockClient(builder);
+
+      const result = await getAttachmentFilePathsByConversation(
+        client,
+        "conv-1",
+      );
+
+      expect(result).toEqual([
+        "user-1/conv-1/rec-1/photo.jpg",
+        "user-1/conv-1/rec-2/video.mp4",
+      ]);
+      expect(builder.select).toHaveBeenCalledWith(
+        "file_path, records!inner(conversation_id)",
+      );
+      expect(builder.eq).toHaveBeenCalledWith(
+        "records.conversation_id",
+        "conv-1",
+      );
+    });
+
+    it("throws on error", async () => {
+      const dbError = { message: "DB error", code: "42000" };
+      builder = createMockQueryBuilder({
+        eq: vi.fn().mockResolvedValue({ data: null, error: dbError }),
+      });
+      client = createMockClient(builder);
+
+      await expect(
+        getAttachmentFilePathsByConversation(client, "conv-1"),
       ).rejects.toEqual(dbError);
     });
   });

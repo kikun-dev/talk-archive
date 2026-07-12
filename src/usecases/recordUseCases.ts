@@ -20,7 +20,11 @@ import {
   uploadFile,
   getFileUrls,
   deleteFile,
+  deleteFiles,
+  isStorageFilePath,
+  isOwnedStoragePath,
 } from "@/repositories/storageService";
+import { StorageCleanupError } from "./storageCleanupError";
 
 export type AddTextRecordInput = {
   conversationId: string;
@@ -164,8 +168,34 @@ export async function updateExistingRecord(
 export async function deleteExistingRecord(
   client: SupabaseClient<Database>,
   id: string,
+  userId: string,
 ): Promise<void> {
-  return deleteRecord(client, id);
+  const attachments = await getAttachmentsByRecord(client, id);
+  const filePaths = attachments
+    .map((attachment) => attachment.filePath)
+    .filter(
+      (filePath) =>
+        isStorageFilePath(filePath) && isOwnedStoragePath(userId, filePath),
+    );
+
+  await deleteRecord(client, id);
+
+  if (filePaths.length === 0) {
+    return;
+  }
+
+  try {
+    await deleteFiles(client, filePaths);
+  } catch (error) {
+    console.error("Failed to delete storage files for record", {
+      recordId: id,
+      filePaths,
+      error,
+    });
+    throw new StorageCleanupError(
+      `レコード（${id}）のDB削除は完了しましたが、Storageファイルの削除に失敗しました`,
+    );
+  }
 }
 
 // --- メディアレコード ---

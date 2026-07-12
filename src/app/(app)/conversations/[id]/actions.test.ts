@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { StorageCleanupError } from "@/usecases/storageCleanupError";
 
 const getUserMock = vi.fn();
 const createSupabaseServerClientMock = vi.fn();
@@ -413,7 +414,24 @@ describe("deleteConversationAction", () => {
     expect(deleteExistingConversationMock).toHaveBeenCalledWith(
       expect.anything(),
       "conv-1",
+      "user-1",
     );
+  });
+
+  it("returns a warning without redirecting when storage cleanup fails", async () => {
+    mockSupabaseClient({ id: "user-1" });
+    deleteExistingConversationMock.mockRejectedValue(
+      new StorageCleanupError("cleanup failed"),
+    );
+
+    const { deleteConversationAction } = await import("./actions");
+    const result = await deleteConversationAction("conv-1");
+
+    expect(result).toEqual({
+      error:
+        "トークは削除しましたが、メディアファイルの削除に失敗しました。",
+    });
+    expect(redirectMock).not.toHaveBeenCalled();
   });
 });
 
@@ -504,7 +522,24 @@ describe("deleteRecordAction", () => {
     expect(deleteExistingRecordMock).toHaveBeenCalledWith(
       expect.anything(),
       "rec-1",
+      "user-1",
     );
+    expect(revalidatePathMock).toHaveBeenCalledWith("/conversations/conv-1");
+  });
+
+  it("revalidates and returns a warning when storage cleanup fails", async () => {
+    mockSupabaseClient({ id: "user-1" });
+    deleteExistingRecordMock.mockRejectedValue(
+      new StorageCleanupError("cleanup failed"),
+    );
+
+    const { deleteRecordAction } = await import("./actions");
+    const result = await deleteRecordAction("conv-1", "rec-1");
+
+    expect(result).toEqual({
+      error:
+        "レコードは削除しましたが、メディアファイルの削除に失敗しました。",
+    });
     expect(revalidatePathMock).toHaveBeenCalledWith("/conversations/conv-1");
   });
 });

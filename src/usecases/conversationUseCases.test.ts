@@ -26,11 +26,13 @@ import {
   validateUpdateConversationInput,
   validateParticipantsPreserveExisting,
 } from "./conversationUseCases";
+import { StorageCleanupError } from "./storageCleanupError";
 
 vi.mock("@/repositories/conversationRepository");
 vi.mock("@/repositories/conversationActivePeriodRepository");
 vi.mock("@/repositories/conversationParticipantRepository");
 vi.mock("@/repositories/recordRepository");
+vi.mock("@/repositories/attachmentRepository");
 vi.mock("@/repositories/storageService", async (importOriginal) => {
   const actual =
     await importOriginal<typeof import("@/repositories/storageService")>();
@@ -38,6 +40,7 @@ vi.mock("@/repositories/storageService", async (importOriginal) => {
     ...actual,
     getFileUrls: vi.fn(),
     uploadFile: vi.fn(),
+    deleteFiles: vi.fn(),
   };
 });
 
@@ -58,7 +61,8 @@ import {
   updateConversationParticipantThumbnail,
 } from "@/repositories/conversationParticipantRepository";
 import { getRecordsByConversation } from "@/repositories/recordRepository";
-import { getFileUrls, uploadFile } from "@/repositories/storageService";
+import { getAttachmentFilePathsByConversation } from "@/repositories/attachmentRepository";
+import { getFileUrls, uploadFile, deleteFiles } from "@/repositories/storageService";
 
 const mockGetConversations = vi.mocked(getConversations);
 const mockGetConversation = vi.mocked(getConversation);
@@ -85,6 +89,10 @@ const mockUpdateConversationParticipantThumbnail = vi.mocked(
 const mockGetRecordsByConversation = vi.mocked(getRecordsByConversation);
 const mockGetFileUrls = vi.mocked(getFileUrls);
 const mockUploadFile = vi.mocked(uploadFile);
+const mockDeleteFiles = vi.mocked(deleteFiles);
+const mockGetAttachmentFilePathsByConversation = vi.mocked(
+  getAttachmentFilePathsByConversation,
+);
 
 const client = {} as SupabaseClient<Database>;
 
@@ -592,10 +600,97 @@ describe("conversationUseCases", () => {
   });
 
   describe("deleteExistingConversation", () => {
-    it("deletes conversation via repository", async () => {
+    it("deletes conversation and owned storage files gathered from attachments, cover, and thumbnails in one deleteFiles call", async () => {
+      mockGetAttachmentFilePathsByConversation.mockResolvedValue([
+        "user-1/conv-1/rec-1/photo.jpg",
+      ]);
+      mockGetConversation.mockResolvedValue({
+        ...baseConversation,
+        coverImagePath: "user-1/conversations/conv-1/cover/cover.jpg",
+      });
+      mockGetConversationParticipants.mockResolvedValue([
+        {
+          ...participants[0],
+          thumbnailPath: "user-1/participants/participant-1/photo.jpg",
+        },
+      ]);
+      mockDeleteConversation.mockResolvedValue(undefined);
+      mockDeleteFiles.mockResolvedValue(undefined);
+
+      await deleteExistingConversation(client, "conv-1", "user-1");
+
+      expect(mockDeleteConversation).toHaveBeenCalledWith(client, "conv-1");
+      expect(mockDeleteFiles).toHaveBeenCalledTimes(1);
+      const deletedPaths = mockDeleteFiles.mock.calls[0][1];
+      expect(new Set(deletedPaths)).toEqual(
+        new Set([
+          "user-1/conv-1/rec-1/photo.jpg",
+          "user-1/conversations/conv-1/cover/cover.jpg",
+          "user-1/participants/participant-1/photo.jpg",
+        ]),
+      );
+    });
+
+    it("deduplicates paths when the cover image reuses a participant thumbnail path", async () => {
+      mockGetAttachmentFilePathsByConversation.mockResolvedValue([]);
+      mockGetConversation.mockResolvedValue({
+        ...baseConversation,
+        coverImagePath: "user-1/participants/participant-1/photo.jpg",
+      });
+      mockGetConversationParticipants.mockResolvedValue([
+        {
+          ...participants[0],
+          thumbnailPath: "user-1/participants/participant-1/photo.jpg",
+        },
+      ]);
+      mockDeleteConversation.mockResolvedValue(undefined);
+      mockDeleteFiles.mockResolvedValue(undefined);
+
+      await deleteExistingConversation(client, "conv-1", "user-1");
+
+      expect(mockDeleteFiles).toHaveBeenCalledWith(client, [
+        "user-1/participants/participant-1/photo.jpg",
+      ]);
+    });
+
+    it("deletes conversation without calling deleteFiles when there are no storage paths", async () => {
+      mockGetAttachmentFilePathsByConversation.mockResolvedValue([]);
+      mockGetConversation.mockResolvedValue(baseConversation);
+      mockGetConversationParticipants.mockResolvedValue(participants);
       mockDeleteConversation.mockResolvedValue(undefined);
 
-      await deleteExistingConversation(client, "conv-1");
+      await deleteExistingConversation(client, "conv-1", "user-1");
+
+      expect(mockDeleteConversation).toHaveBeenCalledWith(client, "conv-1");
+      expect(mockDeleteFiles).not.toHaveBeenCalled();
+    });
+
+    it("excludes another user's storage paths from deletion", async () => {
+      mockGetAttachmentFilePathsByConversation.mockResolvedValue([
+        "user-2/conv-1/rec-1/photo.jpg",
+      ]);
+      mockGetConversation.mockResolvedValue(baseConversation);
+      mockGetConversationParticipants.mockResolvedValue(participants);
+      mockDeleteConversation.mockResolvedValue(undefined);
+
+      await deleteExistingConversation(client, "conv-1", "user-1");
+
+      expect(mockDeleteConversation).toHaveBeenCalledWith(client, "conv-1");
+      expect(mockDeleteFiles).not.toHaveBeenCalled();
+    });
+
+    it("deletes the conversation and throws StorageCleanupError when deleteFiles fails", async () => {
+      mockGetAttachmentFilePathsByConversation.mockResolvedValue([
+        "user-1/conv-1/rec-1/photo.jpg",
+      ]);
+      mockGetConversation.mockResolvedValue(baseConversation);
+      mockGetConversationParticipants.mockResolvedValue(participants);
+      mockDeleteConversation.mockResolvedValue(undefined);
+      mockDeleteFiles.mockRejectedValue(new Error("Storage error"));
+
+      await expect(
+        deleteExistingConversation(client, "conv-1", "user-1"),
+      ).rejects.toThrow(StorageCleanupError);
 
       expect(mockDeleteConversation).toHaveBeenCalledWith(client, "conv-1");
     });

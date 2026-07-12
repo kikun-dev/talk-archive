@@ -59,6 +59,14 @@ export function isStorageFilePath(path: string | null): path is string {
 }
 
 /**
+ * Storage パスが指定ユーザーの所有物か判定する
+ * 規約: {userId}/... で始まるパスのみそのユーザーの所有物とみなす
+ */
+export function isOwnedStoragePath(userId: string, path: string): boolean {
+  return path.startsWith(`${userId}/`);
+}
+
+/**
  * ファイルを Supabase Storage にアップロードする
  */
 export async function uploadFile(
