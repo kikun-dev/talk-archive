@@ -6,12 +6,22 @@
  * サイズ上限の強制（ストリーム読み込み中の打ち切り）のみを行う
  */
 
+/**
+ * 失敗側すべてに `bytesRead`（その試行で実際に本体から読み込んだバイト数）を持つ
+ * （#139 P1-2: バッチ合計サイズ上限は成功した取得分だけでなく、失敗した試行で
+ * 実際にダウンロードしたバイト数も含めて判定する必要があるため。各試行は実際に
+ * 別の通信を行っており、失敗して捨てたバイト数も回線・配信元の負荷としては
+ * 発生済みである）。本体を読む前に確定する理由（http_error・too_large の
+ * Content-Length 事前チェック・no_body・fetch 呼び出し自体の例外としての network）は
+ * 常に0。ストリーム読み込み中に確定する理由（too_large のストリーム打ち切り・
+ * ストリーム読み込み中の例外としての network）は、確定した時点までの累計バイト数
+ */
 export type RemoteImageFetchResult =
   | { ok: true; data: Uint8Array; contentType: string }
-  | { ok: false; reason: "network"; networkKind: "timeout" | "other" }
-  | { ok: false; reason: "http_error"; status: number }
-  | { ok: false; reason: "too_large" }
-  | { ok: false; reason: "no_body" };
+  | { ok: false; reason: "network"; networkKind: "timeout" | "other"; bytesRead: number }
+  | { ok: false; reason: "http_error"; status: number; bytesRead: number }
+  | { ok: false; reason: "too_large"; bytesRead: number }
+  | { ok: false; reason: "no_body"; bytesRead: number };
 
 export type RemoteImageFetchOptions = {
   /** fetch 全体のタイムアウト（ミリ秒） */
@@ -61,7 +71,13 @@ export async function fetchRemoteImage(
       redirect: "error",
     });
   } catch (error) {
-    return { ok: false, reason: "network", networkKind: classifyNetworkError(error) };
+    // fetch 呼び出し自体の例外なので本体は一切読んでいない（bytesRead: 0、#139 P1-2）
+    return {
+      ok: false,
+      reason: "network",
+      networkKind: classifyNetworkError(error),
+      bytesRead: 0,
+    };
   }
 
   if (!response.ok) {
@@ -69,7 +85,8 @@ export async function fetchRemoteImage(
     // 明示的にキャンセルする。キャンセル自体の失敗は返す reason に影響させない
     // （#132 レビュー対応 P1-2: 未消費のまま返すとコネクションプールを圧迫し得る）
     await response.body?.cancel().catch(() => {});
-    return { ok: false, reason: "http_error", status: response.status };
+    // 本体を読まずに cancel しているため bytesRead: 0（#139 P1-2）
+    return { ok: false, reason: "http_error", status: response.status, bytesRead: 0 };
   }
 
   const contentLengthHeader = response.headers.get("content-length");
@@ -79,12 +96,13 @@ export async function fetchRemoteImage(
       // 同上（#132 レビュー対応 P1-2）: Content-Length の事前チェックで本体を
       // 読まずに返す経路も、未消費のまま放置しない
       await response.body?.cancel().catch(() => {});
-      return { ok: false, reason: "too_large" };
+      // Content-Length の事前チェックで打ち切るため本体を読んでいない（bytesRead: 0、#139 P1-2）
+      return { ok: false, reason: "too_large", bytesRead: 0 };
     }
   }
 
   if (response.body === null) {
-    return { ok: false, reason: "no_body" };
+    return { ok: false, reason: "no_body", bytesRead: 0 };
   }
 
   const reader = response.body.getReader();
@@ -99,12 +117,20 @@ export async function fetchRemoteImage(
       totalBytes += value.byteLength;
       if (totalBytes > options.maxBytes) {
         await reader.cancel();
-        return { ok: false, reason: "too_large" };
+        // ストリーム読み込み中に上限超過を検知した時点の累計を返す（#139 P1-2）
+        return { ok: false, reason: "too_large", bytesRead: totalBytes };
       }
       chunks.push(value);
     }
   } catch (error) {
-    return { ok: false, reason: "network", networkKind: classifyNetworkError(error) };
+    // 本文ストリーム読み込み中の例外なので、それまでに読んだ累計バイト数を返す
+    // （捨てずに保持する。#139 P1-2: バッチ合計サイズ上限の判定に必要）
+    return {
+      ok: false,
+      reason: "network",
+      networkKind: classifyNetworkError(error),
+      bytesRead: totalBytes,
+    };
   }
 
   const data = new Uint8Array(totalBytes);

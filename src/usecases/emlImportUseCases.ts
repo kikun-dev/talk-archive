@@ -615,6 +615,19 @@ const REMOTE_IMAGE_FETCH_TIMEOUT_MS = 15_000;
 const REMOTE_IMAGE_FETCH_CONCURRENCY = 2;
 
 /**
+ * リモート画像取得バッチ全体のデッドライン（45秒、#139 P1-1）
+ * このプロジェクトの Vercel プランは Hobby で、Server Action（関数）の実行時間上限は
+ * 60秒（maxDuration 未設定時のデフォルト）。1タスクは最大「15秒 × 3試行 + リトライ
+ * 待機」かかり得るため、最大200通の画像がすべてタイムアウトし続けると、バッチ全体で
+ * 実行時間上限を大幅に超過し、実行環境に打ち切られる。打ち切られると record 作成 RPC
+ * は画像取得より前に完了しているため、多数の未添付レコードを作ったまま結果集計・
+ * 画面再検証にも到達できない。取得後の Storage 添付処理と結果集計に残り時間を残す
+ * ため、60秒に対し45秒に設定する。バッチ開始からこのデッドラインを過ぎたタスクは
+ * 新規取得・リトライを行わず、取得済み画像の添付と結果返却まで進めるようにする
+ */
+export const REMOTE_IMAGE_FETCH_BATCH_DEADLINE_MS = 45_000;
+
+/**
  * リモート画像取得のリトライ上限（初回 + リトライ2回、#137）
  * 配信元が一時的に 502/504 を返すケースの実測（同時実行数5で31件中6件失敗）に対し、
  * 数回の再試行で回復する見込みが高いため3回とする
@@ -640,14 +653,16 @@ export type FetchedRemoteImage = {
 };
 
 /**
- * リモート画像取得の失敗理由（#132 レビュー対応 P1-3、#137: 判別可能ユニオンに構造化）
+ * リモート画像取得の失敗理由（#132 レビュー対応 P1-3、#137: 判別可能ユニオンに構造化、
+ * #139 P1-1: batch_deadline_exceeded を追加）
  * URL や image_name 等の個人情報を含み得る情報はここに含めない。ログに出す場合は
  * この構造化された理由をそのまま出力してよい（reason・status・attempts・networkKind は
  * いずれも個人情報を含まない）。
  * `attempts` は実際に repository を呼んだ試行回数（リトライを含む）。not_allowed・
- * not_image・batch_size_exceeded は repository 呼び出しの成否に関する理由ではない
- * （URL 検証・Content-Type 判定・バッチ上限判定というアプリ側のポリシー判定で、
- * リトライの余地がない）ため attempts を持たない
+ * not_image・batch_size_exceeded・batch_deadline_exceeded は repository 呼び出しの
+ * 成否に関する理由ではない（URL 検証・Content-Type 判定・バッチ上限判定・バッチ
+ * デッドライン判定というアプリ側のポリシー判定で、リトライの余地がない）ため
+ * attempts を持たない
  */
 export type RemoteImageImportFailure =
   | { reason: "not_allowed" } // URL が許可リストの再検証に失敗した
@@ -656,7 +671,8 @@ export type RemoteImageImportFailure =
   | { reason: "too_large"; attempts: number } // repository がサイズ上限超過を返した
   | { reason: "no_body"; attempts: number } // repository が本文なしを返した
   | { reason: "not_image" } // Content-Type が image/ 始まりでない
-  | { reason: "batch_size_exceeded" }; // バッチ合計サイズの上限に達した
+  | { reason: "batch_size_exceeded" } // バッチ合計サイズの上限に達した
+  | { reason: "batch_deadline_exceeded" }; // バッチ全体のデッドライン（45秒）を過ぎた
 
 export type RemoteImageImportResult =
   | { ok: true; image: FetchedRemoteImage }
@@ -672,8 +688,10 @@ const RETRYABLE_HTTP_STATUSES: ReadonlySet<number> = new Set([502, 503, 504]);
  *   再起動を示す）
  * - リトライ対象外: http_error の上記以外（4xx を含む。リクエスト自体が誤っており
  *   再試行しても結果は変わらない）、too_large・no_body（配信元の応答内容そのものが
- *   原因で再試行しても変わらない）、not_allowed・not_image・batch_size_exceeded
- *   （アプリ側のポリシー判定でありネットワークの一時的な問題ではない）
+ *   原因で再試行しても変わらない）、not_allowed・not_image・batch_size_exceeded・
+ *   batch_deadline_exceeded（アプリ側のポリシー判定でありネットワークの一時的な
+ *   問題ではない。batch_deadline_exceeded はバッチ全体の残り時間が尽きたことが
+ *   理由であり、この1タスクを再試行しても状況は変わらない）
  */
 export function isRetryableRemoteImageFailure(
   failure: RemoteImageImportFailure,
@@ -688,6 +706,7 @@ export function isRetryableRemoteImageFailure(
     case "not_allowed":
     case "not_image":
     case "batch_size_exceeded":
+    case "batch_deadline_exceeded":
       return false;
   }
 }
@@ -722,22 +741,30 @@ export type FetchRemoteImagesForImportOptions = {
    * 待たないよう、即座に解決するフェイクを注入する
    */
   sleep?: (ms: number) => Promise<void>;
+  /**
+   * バッチ開始時刻・残り時間の計算に使う時計関数（既定は Date.now、#139 P1-1）。
+   * sleep と同様、テストでは実時間を進めずにバッチデッドライン超過を再現できるよう
+   * フェイクを注入する
+   */
+  now?: () => number;
 };
 
 /**
  * .eml インポート用にリモート画像をまとめて取得する
- * （#129、#132 レビュー対応 P1-3/P2-1/P2-2、#137: 失敗理由の構造化・リトライ追加）
+ * （#129、#132 レビュー対応 P1-3/P2-1/P2-2、#137: 失敗理由の構造化・リトライ追加、
+ * #139: バッチ全体のデッドライン・失敗した試行のバイト数加算を追加）
  * - fetchOne は repository（fetchRemoteImage）を呼ぶ前に必ず isAllowedRemoteImageUrl で
  *   URL を再検証する（P2-1: SSRF チェックの自己完結性。呼び出し元の事前フィルタに
  *   依存せず、許可外 URL に対して outbound I/O を一切行わない）
- * - 1件あたり MAX_EML_FILE_SIZE（10MB）・タイムアウト15秒で repository の
- *   fetchRemoteImage を呼ぶ。配信元が一時的に 502/503/504 を返す、またはネットワーク
- *   エラー・タイムアウトになった場合は、isRetryableRemoteImageFailure が true を返す間
+ * - 1件あたり MAX_EML_FILE_SIZE（10MB）・タイムアウト最大15秒（バッチデッドラインの
+ *   残り時間で切り詰められる場合がある。後述）で repository の fetchRemoteImage を
+ *   呼ぶ。配信元が一時的に 502/503/504 を返す、またはネットワークエラー・タイムアウト
+ *   になった場合は、isRetryableRemoteImageFailure が true を返す間
  *   REMOTE_IMAGE_FETCH_MAX_ATTEMPTS（3 = 初回 + リトライ2回）まで再試行する。リトライ前は
  *   computeRemoteImageRetryDelayMs（指数バックオフ + jitter）の分だけ options.sleep で
- *   待つ。4xx・too_large・no_body・not_allowed・not_image・batch_size_exceeded は
- *   再試行しない。最終的に失敗した場合、最後の失敗理由と実際に試行した回数
- *   （attempts）を返す
+ *   待つ。4xx・too_large・no_body・not_allowed・not_image・batch_size_exceeded・
+ *   batch_deadline_exceeded は再試行しない。最終的に失敗した場合、最後の失敗理由と
+ *   実際に試行した回数（attempts）を返す
  * - 同時実行数 REMOTE_IMAGE_FETCH_CONCURRENCY（2）のワーカープールで並列化する。
  *   実測（同時実行数5で配信元の 502/504 が多発）を踏まえて5から2へ下げた。このため
  *   最大 REMOTE_IMAGE_FETCH_CONCURRENCY 件が同時に進行中になり得て、バッチ合計サイズの
@@ -745,12 +772,24 @@ export type FetchRemoteImagesForImportOptions = {
  *   バイト数は上限を最大 (REMOTE_IMAGE_FETCH_CONCURRENCY - 1) × MAX_EML_FILE_SIZE
  *   （約10MB）超過し得る（同時実行中のタスクは上限到達を検知できないまま最後まで
  *   読み切るため）
- * - ダウンロードした全バイト数（非画像コンテンツを含む）を Content-Type 判定より
- *   前に合計へ加算する（P2-2: 非画像コンテンツの大量ダウンロードでバッチ上限を
- *   迂回できてしまう不具合の修正）。合計が MAX_EML_TOTAL_SIZE（50MB）を超えた時点で、
- *   当該タスクと以降のタスクは batch_size_exceeded にする。リトライで複数回
- *   ダウンロードした場合も、成功した最終レスポンスのバイト数のみを加算し、
- *   失敗した試行分は加算しない（二重計上防止、#137）
+ * - 成功・失敗を問わず、各試行で実際にダウンロードしたバイト数（成功時は
+ *   fetched.data.byteLength、失敗時は fetched.bytesRead）を Content-Type 判定より前に
+ *   合計へ加算する（P2-2: 非画像コンテンツの大量ダウンロードでバッチ上限を迂回できて
+ *   しまう不具合の修正。#139 P1-2: 「失敗した試行を加算すると二重計上になる」という
+ *   #137時点の前提は誤りで、各試行は実際に別の通信を行っているため全試行分を加算する
+ *   のが正しい）。合計が MAX_EML_TOTAL_SIZE（50MB）を超えた時点で、当該タスク（その
+ *   試行が失敗だった場合もリトライせず）と以降のタスクは batch_size_exceeded にする
+ * - バッチ全体で REMOTE_IMAGE_FETCH_BATCH_DEADLINE_MS（45秒）のデッドラインを設ける
+ *   （#139 P1-1: Vercel Hobby プランの関数実行時間上限60秒に対し、取得後の添付処理・
+ *   結果集計に残り時間を残すため）。バッチ開始時刻は options.now（既定 Date.now）で
+ *   記録する。(1) ワーカーがタスクを取り出した時点でデッドラインを過ぎていれば、
+ *   repository を呼ばずに batch_deadline_exceeded にする（isTotalSizeExceeded の
+ *   早期確定と同じ形）。(2) リトライしようとする時点でデッドラインを過ぎていれば、
+ *   リトライせずその時点の最後の失敗理由をそのまま返す（batch_deadline_exceeded で
+ *   上書きしない。診断情報を保持するため）。(3) repository に渡す timeoutMs を
+ *   Math.min(REMOTE_IMAGE_FETCH_TIMEOUT_MS, 残り時間) にする（上記(1)(2)により残り
+ *   時間は常に正）。これにより、全タスクがタイムアウトし続けてもバッチ期限内に
+ *   呼び出し元へ戻り、取得済み画像の添付と結果返却まで進められる
  * - Content-Type はメディアタイプのみに正規化（`;` 以降除去・trim・小文字化）し、
  *   `image/` 始まりでなければ not_image。filename は正規化後の subtype から導出する
  * - 戻り値は task.key → RemoteImageImportResult の Map。呼び出し元は ok: false を
@@ -762,10 +801,14 @@ export async function fetchRemoteImagesForImport(
   options: FetchRemoteImagesForImportOptions = {},
 ): Promise<Map<string, RemoteImageImportResult>> {
   const sleep = options.sleep ?? defaultSleep;
+  const now = options.now ?? Date.now;
   const results = new Map<string, RemoteImageImportResult>();
   let totalFetchedBytes = 0;
   let isTotalSizeExceeded = false;
   let nextTaskIndex = 0;
+
+  const startedAt = now();
+  const deadline = startedAt + REMOTE_IMAGE_FETCH_BATCH_DEADLINE_MS;
 
   async function fetchOne(url: string): Promise<RemoteImageImportResult> {
     // P2-1: repository を呼ぶ前に必ず許可リストを再検証する。呼び出し元
@@ -780,20 +823,30 @@ export async function fetchRemoteImagesForImport(
       attempt <= REMOTE_IMAGE_FETCH_MAX_ATTEMPTS;
       attempt += 1
     ) {
+      // #139 P1-1: 残り時間で1試行あたりのタイムアウトを切り詰める。呼び出し元
+      // （runWorker のデッドライン確認・下記リトライ判断時のデッドライン確認）が
+      // すでに残り時間が正であることを保証しているため、ここでは Math.min のみ行う
+      const remainingMs = deadline - now();
+      const timeoutMs = Math.max(
+        0,
+        Math.min(REMOTE_IMAGE_FETCH_TIMEOUT_MS, remainingMs),
+      );
       const fetched = await fetchRemoteImage(url, {
-        timeoutMs: REMOTE_IMAGE_FETCH_TIMEOUT_MS,
+        timeoutMs,
         maxBytes: MAX_EML_FILE_SIZE,
       });
 
-      if (fetched.ok) {
-        // P2-2: 非画像コンテンツのバイト数もバッチ合計に含めてから上限判定する。
-        // リトライした場合も成功した最終レスポンスの分のみ加算する（#137: 二重計上防止）
-        totalFetchedBytes += fetched.data.byteLength;
-        if (totalFetchedBytes > MAX_EML_TOTAL_SIZE) {
-          isTotalSizeExceeded = true;
-          return { ok: false, reason: "batch_size_exceeded" };
-        }
+      // #139 P1-2: 成功・失敗を問わず、各試行で実際にダウンロードしたバイト数を
+      // 合計へ加算する（各試行は実際に別の通信を行っているため、失敗分も含めて
+      // 全試行分を加算するのが正しい。「失敗分は二重計上になる」という#137時点の
+      // 前提は誤りだった）
+      totalFetchedBytes += fetched.ok ? fetched.data.byteLength : fetched.bytesRead;
+      if (totalFetchedBytes > MAX_EML_TOTAL_SIZE) {
+        isTotalSizeExceeded = true;
+        return { ok: false, reason: "batch_size_exceeded" };
+      }
 
+      if (fetched.ok) {
         const contentType = fetched.contentType
           .split(";")[0]
           .trim()
@@ -836,12 +889,28 @@ export async function fetchRemoteImagesForImport(
           break;
       }
 
+      // #139 P1-1: リトライしようとする時点でバッチデッドラインを過ぎていたら、
+      // リトライせずこの時点の最後の失敗理由をそのまま返す（診断情報を保持するため、
+      // batch_deadline_exceeded で上書きしない）
       const isLastAttempt = attempt === REMOTE_IMAGE_FETCH_MAX_ATTEMPTS;
-      if (isLastAttempt || !isRetryableRemoteImageFailure(failure)) {
+      const isDeadlineExceeded = now() > deadline;
+      if (
+        isLastAttempt ||
+        !isRetryableRemoteImageFailure(failure) ||
+        isDeadlineExceeded
+      ) {
         return { ok: false, ...failure };
       }
 
       await sleep(computeRemoteImageRetryDelayMs(attempt));
+
+      // #139 P1-1: バックオフ待機中にデッドラインを跨いだ場合も、タイムアウト0秒の
+      // 無駄な試行を挟まずにこの時点の失敗理由を返す（待機前の判定だけでは、
+      // 待機によって残り時間が尽きるケースを取りこぼし、本来の失敗理由が
+      // タイムアウト由来の network で上書きされてしまう）
+      if (now() > deadline) {
+        return { ok: false, ...failure };
+      }
     }
 
     // for ループは最終試行（isLastAttempt）で必ず return するため実行されない。
@@ -857,6 +926,13 @@ export async function fetchRemoteImagesForImport(
       nextTaskIndex += 1;
       if (isTotalSizeExceeded) {
         results.set(task.key, { ok: false, reason: "batch_size_exceeded" });
+        continue;
+      }
+      // #139 P1-1: ワーカーがタスクを取り出した時点でバッチデッドラインを過ぎていたら、
+      // repository を呼ばずに batch_deadline_exceeded にする
+      // （isTotalSizeExceeded の早期確定と同じ形）
+      if (now() > deadline) {
+        results.set(task.key, { ok: false, reason: "batch_deadline_exceeded" });
         continue;
       }
       results.set(task.key, await fetchOne(task.url));

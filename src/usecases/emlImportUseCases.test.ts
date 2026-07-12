@@ -13,6 +13,7 @@ import {
   REMOTE_IMAGE_FETCH_MAX_ATTEMPTS,
   REMOTE_IMAGE_FETCH_RETRY_BASE_DELAY_MS,
   REMOTE_IMAGE_FETCH_RETRY_JITTER_MS,
+  REMOTE_IMAGE_FETCH_BATCH_DEADLINE_MS,
   type ParsedEmlMessage,
   type RemoteImageImportFailure,
 } from "./emlImportUseCases";
@@ -1143,7 +1144,7 @@ describe("fetchRemoteImagesForImport (#129, #132 レビュー対応 P1-3/P2-1/P2
   it("maps a non-retryable repository failure to a structured RemoteImageImportFailure while other tasks still succeed", async () => {
     fetchRemoteImageRepositoryMock.mockImplementation(async (url: string) =>
       url === allowedImageUrl("bad")
-        ? { ok: false, reason: "too_large" }
+        ? { ok: false, reason: "too_large", bytesRead: 0 }
         : {
             ok: true,
             data: new Uint8Array([1, 2]),
@@ -1177,6 +1178,7 @@ describe("fetchRemoteImagesForImport (#129, #132 レビュー対応 P1-3/P2-1/P2
     fetchRemoteImageRepositoryMock.mockResolvedValue({
       ok: false,
       reason: "no_body",
+      bytesRead: 0,
     });
 
     const result = await fetchRemoteImagesForImport([
@@ -1233,6 +1235,7 @@ describe("fetchRemoteImagesForImport (#129, #132 レビュー対応 P1-3/P2-1/P2
       ok: false,
       reason: "http_error",
       status: 502,
+      bytesRead: 0,
     });
 
     const result = await fetchRemoteImagesForImport(
@@ -1261,7 +1264,7 @@ describe("fetchRemoteImagesForImport (#129, #132 レビュー対応 P1-3/P2-1/P2
       fetchRemoteImageRepositoryMock.mockImplementation(async () => {
         callCount += 1;
         if (callCount < 2) {
-          return { ok: false, reason: "http_error", status };
+          return { ok: false, reason: "http_error", status, bytesRead: 0 };
         }
         return {
           ok: true,
@@ -1296,6 +1299,7 @@ describe("fetchRemoteImagesForImport (#129, #132 レビュー対応 P1-3/P2-1/P2
         ok: false,
         reason: "network",
         networkKind,
+        bytesRead: 0,
       });
 
       const result = await fetchRemoteImagesForImport(
@@ -1321,6 +1325,7 @@ describe("fetchRemoteImagesForImport (#129, #132 レビュー対応 P1-3/P2-1/P2
       ok: false,
       reason: "http_error",
       status: 404,
+      bytesRead: 0,
     });
 
     const result = await fetchRemoteImagesForImport(
@@ -1341,8 +1346,8 @@ describe("fetchRemoteImagesForImport (#129, #132 レビュー対応 P1-3/P2-1/P2
     const { sleep } = createFakeSleep();
     fetchRemoteImageRepositoryMock.mockImplementation(async (url: string) =>
       url === allowedImageUrl("too-large")
-        ? { ok: false, reason: "too_large" }
-        : { ok: false, reason: "no_body" },
+        ? { ok: false, reason: "too_large", bytesRead: 0 }
+        : { ok: false, reason: "no_body", bytesRead: 0 },
     );
 
     const result = await fetchRemoteImagesForImport(
@@ -1400,50 +1405,111 @@ describe("fetchRemoteImagesForImport (#129, #132 レビュー対応 P1-3/P2-1/P2
     expect(fetchRemoteImageRepositoryMock).toHaveBeenCalledTimes(2);
   });
 
-  it("does not double-count bytes toward the batch cap when each task's first attempt fails and only the retry succeeds", async () => {
+  // #139 P1-2: 前回（#137）は「失敗した試行を加算すると二重計上になる」という前提で
+  // 失敗分を加算していなかったが、これは誤り。各試行は実際に別の通信を行っており、
+  // 失敗して捨てたバイト数も回線・配信元の負荷としては発生済みのため、成功・失敗を
+  // 問わず全試行分を加算するのが正しい（「二重計上しない」テストは前提が誤りのため削除し、
+  // 下記のテストに置き換える）
+  it("adds bytes read from a failed attempt to the running batch total across retries, tripping the cap with reason 'batch_size_exceeded' instead of the network failure", async () => {
     const { sleep } = createFakeSleep();
     const twentyMb = 20 * 1024 * 1024;
-    // 各タスクとも1回目は502で失敗し（このとき data を持たないため加算されない）、
-    // 2回目のリトライで成功する。実際にダウンロードされるのは成功した最終レスポンス
-    // 分の20MB×2件=40MBのみのはずで、50MB上限を超えないため両方とも成功するはず。
-    // 失敗した1回目の分まで誤って加算される実装だと、合計が50MBを超えて
-    // どちらかが batch_size_exceeded になってしまう
-    const seenUrls = new Set<string>();
-    fetchRemoteImageRepositoryMock.mockImplementation(async (url: string) => {
-      const isFirstAttemptForUrl = !seenUrls.has(url);
-      seenUrls.add(url);
-      if (isFirstAttemptForUrl) {
-        return { ok: false, reason: "http_error", status: 502 };
+    // 3回とも network 失敗だが bytesRead: 20MB を返す。失敗分が加算されなければ
+    // 合計は0MBのままで最終的に reason: "network", attempts: 3 になるはずだが、
+    // 加算される実装では 20MB×3=60MB > 50MB のため3回目で batch_size_exceeded になる
+    fetchRemoteImageRepositoryMock.mockResolvedValue({
+      ok: false,
+      reason: "network",
+      networkKind: "other",
+      bytesRead: twentyMb,
+    });
+
+    const result = await fetchRemoteImagesForImport(
+      [{ key: "record-1", url: allowedImageUrl("1") }],
+      { sleep },
+    );
+
+    expect(result.get("record-1")).toEqual({
+      ok: false,
+      reason: "batch_size_exceeded",
+    });
+    expect(fetchRemoteImageRepositoryMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("adds a failed attempt's bytesRead to the batch total even when the following retry succeeds", async () => {
+    const { sleep } = createFakeSleep();
+    // 失敗分は MAX_EML_TOTAL_SIZE 直前まで（実データは確保せず bytesRead という
+    // 数値だけで表現する）。巨大な Uint8Array を toEqual で比較すると chai の
+    // deep-eql が極端に遅くなり OOM するため（前回のハマり）、成功側のデータは
+    // 数バイトの小さな配列にとどめる
+    const almostTheCap = MAX_EML_TOTAL_SIZE - 1;
+    let attempt = 0;
+    fetchRemoteImageRepositoryMock.mockImplementation(async () => {
+      attempt += 1;
+      if (attempt === 1) {
+        // 1回目は上限直前まで読んだところで network 失敗
+        // （このバイト数もバッチ合計に加算される）
+        return {
+          ok: false,
+          reason: "network",
+          networkKind: "other",
+          bytesRead: almostTheCap,
+        };
       }
+      // リトライは成功するが、失敗分（上限直前）+ 成功分（3バイト）で上限を超える
       return {
         ok: true,
-        data: new Uint8Array(twentyMb),
+        data: new Uint8Array([1, 2, 3]),
         contentType: "image/jpeg",
       };
     });
 
     const result = await fetchRemoteImagesForImport(
-      [
-        { key: "record-1", url: allowedImageUrl("1") },
-        { key: "record-2", url: allowedImageUrl("2") },
-      ],
+      [{ key: "record-1", url: allowedImageUrl("1") }],
       { sleep },
     );
 
-    // MB単位のUint8Arrayを丸ごと toEqual で要素比較すると極端に遅い（chai の
-    // deep-eql が全インデックスを比較するため）ため、このテストの関心事（バイト数の
-    // 二重計上防止）に必要な byteLength・ok・contentType のみを個別に検証する。
-    // データの忠実性そのものは別テスト（小さな配列を使うもの）でカバー済み
-    for (const key of ["record-1", "record-2"]) {
-      const entry = result.get(key);
-      expect(entry?.ok).toBe(true);
-      if (entry?.ok) {
-        expect(entry.image.data.byteLength).toBe(twentyMb);
-        expect(entry.image.contentType).toBe("image/jpeg");
-        expect(entry.image.filename).toBe("image-1.jpeg");
-      }
-    }
-    expect(fetchRemoteImageRepositoryMock).toHaveBeenCalledTimes(4);
+    // 失敗分（上限直前のバイト数）が加算されていなければ成功分の3バイトだけでは
+    // 上限を超えないため、この結果が batch_size_exceeded になっていることが
+    // 失敗試行の加算を証明する
+    expect(result.get("record-1")).toEqual({
+      ok: false,
+      reason: "batch_size_exceeded",
+    });
+    expect(fetchRemoteImageRepositoryMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("stops retrying and calling the repository for later tasks once bytes read from failed (non-retryable) attempts alone cross the batch cap", async () => {
+    // 9MB × 7件、すべて too_large（ストリーム打ち切り、非リトライ対象）で bytesRead: 9MB を
+    // 返す。5件目まで（累計45MB）は通常どおり too_large として確定する。6件目で累計が
+    // 50MBを超え、その試行自体は repository を呼ぶが結果は batch_size_exceeded に
+    // 上書きされる。7件目は isTotalSizeExceeded が立った後に取り出されるため
+    // repository を呼ばずに batch_size_exceeded になる
+    const nineMb = 9 * 1024 * 1024;
+    fetchRemoteImageRepositoryMock.mockResolvedValue({
+      ok: false,
+      reason: "too_large",
+      bytesRead: nineMb,
+    });
+
+    const tasks = Array.from({ length: 7 }, (_, i) => ({
+      key: `record-${i}`,
+      url: allowedImageUrl(String(i)),
+    }));
+    const result = await fetchRemoteImagesForImport(tasks);
+
+    const tooLarge = [...result.values()].filter(
+      (value) => !value.ok && value.reason === "too_large",
+    );
+    const batchExceeded = [...result.values()].filter(
+      (value) => !value.ok && value.reason === "batch_size_exceeded",
+    );
+    expect(result.size).toBe(7);
+    expect(tooLarge).toHaveLength(5);
+    expect(batchExceeded).toHaveLength(2);
+    // 6件目（累計を超えた試行）までは repository を呼ぶが、7件目は
+    // isTotalSizeExceeded が立った後に取り出されるため repository を呼ばない
+    // （同時実行数2のため、境界ちょうどの1件だけ「呼ばれたが結果は上書き」になる）
+    expect(fetchRemoteImageRepositoryMock).toHaveBeenCalledTimes(6);
   });
 
   // P2-2: 非画像でダウンロードされたバイト数もバッチ合計に含める
@@ -1542,6 +1608,135 @@ describe("fetchRemoteImagesForImport (#129, #132 レビュー対応 P1-3/P2-1/P2
   });
 });
 
+describe("fetchRemoteImagesForImport: batch deadline (#139 P1-1)", () => {
+  beforeEach(() => {
+    fetchRemoteImageRepositoryMock.mockReset();
+  });
+
+  // Vercel Hobby の関数実行時間上限（60秒）に対し、全タスクがタイムアウトし続ける
+  // 障害時でもバッチ期限（45秒）内に呼び出し元へ戻れることを確認する。injected `now`
+  // で、1回の repository 呼び出しごとに実際のタイムアウト（15秒）相当だけ時計を
+  // 進めるフェイクを使い、実タイマーを一切使わず検証する
+  it("falls back not-yet-started tasks to batch_deadline_exceeded once repeated timeouts exceed the batch deadline, so the batch still returns", async () => {
+    const { sleep } = createFakeSleep();
+    let currentTime = 0;
+    const now = () => currentTime;
+    fetchRemoteImageRepositoryMock.mockImplementation(async () => {
+      currentTime += 15_000;
+      return {
+        ok: false,
+        reason: "network",
+        networkKind: "timeout",
+        bytesRead: 0,
+      };
+    });
+
+    const tasks = Array.from({ length: 20 }, (_, i) => ({
+      key: `record-${i}`,
+      url: allowedImageUrl(String(i)),
+    }));
+    const result = await fetchRemoteImagesForImport(tasks, { sleep, now });
+
+    expect(result.size).toBe(20);
+    const deadlineExceeded = [...result.values()].filter(
+      (value) => !value.ok && value.reason === "batch_deadline_exceeded",
+    );
+    // 全タスクが最後まで（3回×20件=60回）リトライし続けていたら
+    // batch_deadline_exceeded は1件も生まれないはず。デッドラインが効いていれば、
+    // 未開始のタスクの一部がリトライを待たずに batch_deadline_exceeded になり、
+    // repository の呼び出し回数も60回未満に収まる
+    expect(deadlineExceeded.length).toBeGreaterThan(0);
+    expect(fetchRemoteImageRepositoryMock.mock.calls.length).toBeLessThan(
+      20 * REMOTE_IMAGE_FETCH_MAX_ATTEMPTS,
+    );
+  });
+
+  it("keeps the last failure reason (not overwritten by batch_deadline_exceeded) when the deadline passes right before a retry would be scheduled", async () => {
+    const { sleep, calls } = createFakeSleep();
+    // now() の呼び出し順: ①startedAt ②runWorker のデッドライン確認
+    // ③fetchOne 内の残り時間計算（timeoutMs算出） ④リトライ判断時のデッドライン確認
+    const nowValues = [0, 0, 1_000, 46_000];
+    let callIndex = 0;
+    const now = () => nowValues[Math.min(callIndex++, nowValues.length - 1)];
+    fetchRemoteImageRepositoryMock.mockResolvedValue({
+      ok: false,
+      reason: "network",
+      networkKind: "timeout",
+      bytesRead: 0,
+    });
+
+    const result = await fetchRemoteImagesForImport(
+      [{ key: "record-1", url: allowedImageUrl("1") }],
+      { sleep, now },
+    );
+
+    expect(result.get("record-1")).toEqual({
+      ok: false,
+      reason: "network",
+      networkKind: "timeout",
+      attempts: 1,
+    });
+    expect(fetchRemoteImageRepositoryMock).toHaveBeenCalledTimes(1);
+    // デッドライン超過によりリトライしなかったため sleep は呼ばれない
+    expect(calls).toHaveLength(0);
+  });
+
+  it("keeps the last failure reason when the deadline passes during the backoff sleep, without wasting a zero-timeout attempt", async () => {
+    const { sleep, calls } = createFakeSleep();
+    // now() の呼び出し順: ①startedAt ②runWorker のデッドライン確認
+    // ③fetchOne 内の残り時間計算 ④リトライ判断時のデッドライン確認（まだ期限内）
+    // ⑤sleep 後のデッドライン確認（バックオフ待機中に期限を跨いだ）
+    const nowValues = [0, 0, 1_000, 44_900, 46_000];
+    let callIndex = 0;
+    const now = () => nowValues[Math.min(callIndex++, nowValues.length - 1)];
+    fetchRemoteImageRepositoryMock.mockResolvedValue({
+      ok: false,
+      reason: "http_error",
+      status: 503,
+      bytesRead: 0,
+    });
+
+    const result = await fetchRemoteImagesForImport(
+      [{ key: "record-1", url: allowedImageUrl("1") }],
+      { sleep, now },
+    );
+
+    // 待機中に期限を跨いだため、タイムアウト0秒の無駄な試行を挟まず、
+    // 本来の失敗理由（503）がタイムアウト由来の network で上書きされない
+    expect(result.get("record-1")).toEqual({
+      ok: false,
+      reason: "http_error",
+      status: 503,
+      attempts: 1,
+    });
+    expect(fetchRemoteImageRepositoryMock).toHaveBeenCalledTimes(1);
+    expect(calls).toHaveLength(1);
+  });
+
+  it("caps the per-attempt timeoutMs passed to the repository to the remaining time on the batch deadline", async () => {
+    // startedAt=0, deadline=45000。fetchOne 内で残り時間を計算する時点では
+    // 31000msまで経過しており、残り14000ms（デフォルトの15秒タイムアウトより短い）
+    const nowValues = [0, 0, 31_000];
+    let callIndex = 0;
+    const now = () => nowValues[Math.min(callIndex++, nowValues.length - 1)];
+    fetchRemoteImageRepositoryMock.mockResolvedValue({
+      ok: true,
+      data: new Uint8Array([1, 2, 3]),
+      contentType: "image/jpeg",
+    });
+
+    await fetchRemoteImagesForImport(
+      [{ key: "record-1", url: allowedImageUrl("1") }],
+      { now },
+    );
+
+    expect(fetchRemoteImageRepositoryMock).toHaveBeenCalledWith(
+      allowedImageUrl("1"),
+      { timeoutMs: 14_000, maxBytes: MAX_EML_FILE_SIZE },
+    );
+  });
+});
+
 describe("isRetryableRemoteImageFailure (#137)", () => {
   it.each([502, 503, 504])(
     "returns true for http_error with status %i",
@@ -1588,6 +1783,7 @@ describe("isRetryableRemoteImageFailure (#137)", () => {
     { reason: "not_allowed" },
     { reason: "not_image" },
     { reason: "batch_size_exceeded" },
+    { reason: "batch_deadline_exceeded" },
   ] satisfies RemoteImageImportFailure[])(
     "returns false for non-retryable reason: $reason",
     (failure) => {
@@ -1811,5 +2007,10 @@ describe("constants", () => {
     expect(REMOTE_IMAGE_FETCH_MAX_ATTEMPTS).toBe(3);
     expect(REMOTE_IMAGE_FETCH_RETRY_BASE_DELAY_MS).toBe(500);
     expect(REMOTE_IMAGE_FETCH_RETRY_JITTER_MS).toBe(250);
+  });
+
+  // #139 P1-1
+  it("exposes the remote image batch deadline", () => {
+    expect(REMOTE_IMAGE_FETCH_BATCH_DEADLINE_MS).toBe(45_000);
   });
 });
