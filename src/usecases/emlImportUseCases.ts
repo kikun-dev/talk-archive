@@ -33,10 +33,10 @@ export type ParsedEmlMessage = {
   remoteImageUrls: string[];
   /**
    * このメールの安定した重複排除キーの元になる識別子（P1-2）。Message-ID があれば
-   * `msgid:<正規化したMessage-ID>`、無ければ生バイト列の SHA-256 ハッシュによる
-   * `sha256:<hex>`。expandEmlMessageToRecords が `${mailKey}#<連番>` として importKey を
-   * 組み立てる。ファイル名は使わない（同名だが別内容のメールの衝突・リネーム時の
-   * 重複判定崩れを防ぐため）
+   * `msgid:<正規化（大文字小文字は保持）した Message-ID の SHA-256 ハッシュ>`、無ければ
+   * 生バイト列の SHA-256 ハッシュによる `sha256:<hex>`。expandEmlMessageToRecords が
+   * `${mailKey}#<連番>` として importKey を組み立てる。ファイル名は使わない（同名だが
+   * 別内容のメールの衝突・リネーム時の重複判定崩れを防ぐため）
    */
   mailKey: string;
 };
@@ -305,8 +305,11 @@ function toArrayBuffer(raw: ArrayBuffer | string): ArrayBuffer {
 
 /**
  * Message-ID ヘッダの値を正規化する（P1-2）
- * 前後の空白を trim し、先頭の `<` と末尾の `>` を1つだけ取り除き、再度 trim してから
- * 小文字化する。結果が空文字列になる場合は呼び出し側で「Message-ID なし」として扱う
+ * 前後の空白を trim し、先頭の `<` と末尾の `>` を1つだけ取り除き、再度 trim する。
+ * 大文字小文字は保持したまま変更しない（Message-ID の比較は大文字小文字を区別する。
+ * RFC 5256）。小文字化すると大文字小文字だけが異なる別のメールが同一の mailKey に
+ * 潰れ、片方が重複排除 RPC で誤ってスキップされる（データ損失）ため、レビュー対応で
+ * 削除した。結果が空文字列になる場合は呼び出し側で「Message-ID なし」として扱う
  */
 function normalizeMessageId(value: string): string {
   let normalized = value.trim();
@@ -316,7 +319,7 @@ function normalizeMessageId(value: string): string {
   if (normalized.endsWith(">")) {
     normalized = normalized.slice(0, -1);
   }
-  return normalized.trim().toLowerCase();
+  return normalized.trim();
 }
 
 function bytesToHex(bytes: Uint8Array): string {
@@ -325,13 +328,21 @@ function bytesToHex(bytes: Uint8Array): string {
     .join("");
 }
 
+/** バイト列の SHA-256 ハッシュを16進文字列で返す（`msgid:` / `sha256:` 両方の mailKey 導出で共用） */
+async function sha256Hex(bytes: BufferSource): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  return bytesToHex(new Uint8Array(digest));
+}
+
 /**
  * メールの識別情報から、安定した重複排除キーの元になる mailKey を導出する（P1-2）。
  * 旧実装は `<元ファイル名>#<連番>` を import_key に使っていたが、ファイル名は
  * メールの内容と無関係な情報のため、同名だが別内容の .eml（2件目が誤って重複扱いされ
  * 取り込まれない）やファイルのリネーム（再インポート時に重複として検知できなくなる）に
  * 弱い。Message-ID（正規化のうえ `msgid:` 名前空間）を優先し、無ければメール本文の
- * 生バイト列の SHA-256 ハッシュ（`sha256:` 名前空間）にフォールバックする
+ * 生バイト列の SHA-256 ハッシュ（`sha256:` 名前空間）にフォールバックする。
+ * Message-ID がある場合も、大文字小文字を保持した正規化値をそのまま格納せず SHA-256
+ * ハッシュにする（保存長を一定に抑え、生の Message-ID を保存しないため）
  */
 async function deriveMailKey(
   messageId: string | undefined,
@@ -340,11 +351,10 @@ async function deriveMailKey(
   if (typeof messageId === "string") {
     const normalized = normalizeMessageId(messageId);
     if (normalized.length > 0) {
-      return `msgid:${normalized}`;
+      return `msgid:${await sha256Hex(new TextEncoder().encode(normalized))}`;
     }
   }
-  const digest = await crypto.subtle.digest("SHA-256", raw);
-  return `sha256:${bytesToHex(new Uint8Array(digest))}`;
+  return `sha256:${await sha256Hex(raw)}`;
 }
 
 /** mimeType の subtype から `image-N.ext` 形式のファイル名を組み立てる（添付・リモート画像共用） */

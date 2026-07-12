@@ -1,8 +1,10 @@
 -- #133: .eml インポートで複数画像を全件登録するにあたり、eml 由来の各レコードを
--- 安定したキー（"<元ファイル名>#<連番>"）で重複排除できるようにする。
--- records に import_key 列を追加し、import_records_atomic の重複判定を
--- import_key が非nullならそれを優先するよう変更する（JSON インポートは import_key が
--- 常に null のため、既存の本文プレフィックスベースの判定を維持する）
+-- 安定したキー（"<mailKey>#<画像序数>"。mailKey はメールの Message-ID を正規化・
+-- 大文字小文字保持のうえ SHA-256 ハッシュ化した "msgid:<hex>"、Message-ID が無ければ
+-- 生 EML バイト列の SHA-256 ハッシュ "sha256:<hex>" にフォールバック）で重複排除
+-- できるようにする。records に import_key 列を追加し、import_records_atomic の
+-- 重複判定を import_key が非nullならそれを優先するよう変更する（JSON インポートは
+-- import_key が常に null のため、既存の本文プレフィックスベースの判定を維持する）
 
 alter table records add column import_key text;
 

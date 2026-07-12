@@ -553,12 +553,36 @@ describe("parseEmlFile", () => {
 // メールが衝突（2件目が silently skip されデータ損失）したり、リネームで再インポート時に
 // 重複扱いされなくなったりするため
 describe("parseEmlFile: mailKey derivation (P1-2: stable per-mail dedup key, not filename-based)", () => {
-  it("derives mailKey from a normalized Message-ID (trimmed, angle brackets stripped, lowercased) when present", async () => {
+  it("derives a hashed mailKey (msgid: prefix + SHA-256 hex digest) from the normalized Message-ID (trimmed, angle brackets stripped) when present", async () => {
     const raw = buildAlternativeEml({ messageId: "<ABC-123@Example.com>" });
 
     const result = await parseEmlFile(raw, "test.eml");
 
-    expect(result.mailKey).toBe("msgid:abc-123@example.com");
+    expect(result.mailKey).toMatch(/^msgid:[0-9a-f]{64}$/);
+  });
+
+  it("derives the identical mailKey for the same Message-ID parsed twice (stable)", async () => {
+    const rawA = buildAlternativeEml({ messageId: "<stable@example.com>" });
+    const rawB = buildAlternativeEml({ messageId: "<stable@example.com>" });
+
+    const a = await parseEmlFile(rawA, "a.eml");
+    const b = await parseEmlFile(rawB, "b.eml");
+
+    expect(a.mailKey).toBe(b.mailKey);
+  });
+
+  // 回帰テスト: Message-ID の比較は大文字小文字を区別する（RFC 5256）。
+  // 旧実装は normalizeMessageId 内で .toLowerCase() していたため、大文字小文字だけが
+  // 異なる2通のメールが同一の mailKey/importKey に潰れ、後からインポートした方の
+  // レコードが重複排除 RPC によって丸ごとスキップされていた（データ損失）
+  it("produces DIFFERENT mailKeys for Message-IDs differing only in case (case must be preserved, not lowercased)", async () => {
+    const rawUpper = buildAlternativeEml({ messageId: "<Foo@example.com>" });
+    const rawLower = buildAlternativeEml({ messageId: "<foo@example.com>" });
+
+    const upper = await parseEmlFile(rawUpper, "upper.eml");
+    const lower = await parseEmlFile(rawLower, "lower.eml");
+
+    expect(upper.mailKey).not.toBe(lower.mailKey);
   });
 
   it("falls back to a sha256 content hash when Message-ID is absent", async () => {
