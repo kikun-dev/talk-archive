@@ -19,18 +19,26 @@ export type ParsedEmlMessage = {
   title: string | null;
   /** text/plain 優先、なければ html からタグ除去 + エンティティ復元。trim して空なら null */
   content: string | null;
-  /** inline/attachment 問わず image/* の最初の1件 */
-  image: { filename: string; mimeType: string; data: Uint8Array } | null;
   /**
-   * HTML 本文中の最初の `<img src="https://...">` （リモート画像参照）。
-   * 添付画像（image）がある場合は常に null（#129: 実メールは添付ファイルを持たず、画像は
-   * HTML パート内のリモート参照のみだが、添付画像がある .eml では cid 参照と重複する
-   * 可能性があるため、添付を優先し HTML 側の img は無視する）
+   * inline/attachment 問わず image/* の全件（出現順）。1件も無ければ空配列（#133）
    */
-  remoteImageUrl: string | null;
-  /** 2枚目以降の画像枚数（取り込み対象外の警告用）。添付画像がある場合は添付の残り枚数、
-   * ない場合は HTML 内リモート画像の残り枚数を数える */
-  extraImageCount: number;
+  images: { filename: string; mimeType: string; data: Uint8Array }[];
+  /**
+   * HTML 本文中の許可された `<img src="https://...">`（リモート画像参照）の全件（出現順、
+   * 完全一致の重複は除く）。添付画像（images）が1件でもある場合は常に空配列（#129: 実メールは
+   * 添付ファイルを持たず、画像は HTML パート内のリモート参照のみだが、添付画像がある .eml
+   * では cid 参照と重複する可能性があるため、添付を優先し HTML 側の img は無視する。#133:
+   * 複数画像インポートに伴い全件を保持する）
+   */
+  remoteImageUrls: string[];
+  /**
+   * このメールの安定した重複排除キーの元になる識別子（P1-2）。Message-ID があれば
+   * `msgid:<正規化（大文字小文字は保持）した Message-ID の SHA-256 ハッシュ>`、無ければ
+   * 生バイト列の SHA-256 ハッシュによる `sha256:<hex>`。expandEmlMessageToRecords が
+   * `${mailKey}#<連番>` として importKey を組み立てる。ファイル名は使わない（同名だが
+   * 別内容のメールの衝突・リネーム時の重複判定崩れを防ぐため）
+   */
+  mailKey: string;
 };
 
 /**
@@ -295,32 +303,77 @@ function toArrayBuffer(raw: ArrayBuffer | string): ArrayBuffer {
   );
 }
 
+/**
+ * Message-ID ヘッダの値を正規化する（P1-2）
+ * 前後の空白を trim し、先頭の `<` と末尾の `>` を1つだけ取り除き、再度 trim する。
+ * 大文字小文字は保持したまま変更しない（Message-ID の比較は大文字小文字を区別する。
+ * RFC 5256）。小文字化すると大文字小文字だけが異なる別のメールが同一の mailKey に
+ * 潰れ、片方が重複排除 RPC で誤ってスキップされる（データ損失）ため、レビュー対応で
+ * 削除した。結果が空文字列になる場合は呼び出し側で「Message-ID なし」として扱う
+ */
+function normalizeMessageId(value: string): string {
+  let normalized = value.trim();
+  if (normalized.startsWith("<")) {
+    normalized = normalized.slice(1);
+  }
+  if (normalized.endsWith(">")) {
+    normalized = normalized.slice(0, -1);
+  }
+  return normalized.trim();
+}
+
+function bytesToHex(bytes: Uint8Array): string {
+  return Array.from(bytes)
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+/** バイト列の SHA-256 ハッシュを16進文字列で返す（`msgid:` / `sha256:` 両方の mailKey 導出で共用） */
+async function sha256Hex(bytes: BufferSource): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  return bytesToHex(new Uint8Array(digest));
+}
+
+/**
+ * メールの識別情報から、安定した重複排除キーの元になる mailKey を導出する（P1-2）。
+ * 旧実装は `<元ファイル名>#<連番>` を import_key に使っていたが、ファイル名は
+ * メールの内容と無関係な情報のため、同名だが別内容の .eml（2件目が誤って重複扱いされ
+ * 取り込まれない）やファイルのリネーム（再インポート時に重複として検知できなくなる）に
+ * 弱い。Message-ID（正規化のうえ `msgid:` 名前空間）を優先し、無ければメール本文の
+ * 生バイト列の SHA-256 ハッシュ（`sha256:` 名前空間）にフォールバックする。
+ * Message-ID がある場合も、大文字小文字を保持した正規化値をそのまま格納せず SHA-256
+ * ハッシュにする（保存長を一定に抑え、生の Message-ID を保存しないため）
+ */
+async function deriveMailKey(
+  messageId: string | undefined,
+  raw: ArrayBuffer,
+): Promise<string> {
+  if (typeof messageId === "string") {
+    const normalized = normalizeMessageId(messageId);
+    if (normalized.length > 0) {
+      return `msgid:${await sha256Hex(new TextEncoder().encode(normalized))}`;
+    }
+  }
+  return `sha256:${await sha256Hex(raw)}`;
+}
+
 /** mimeType の subtype から `image-N.ext` 形式のファイル名を組み立てる（添付・リモート画像共用） */
 export function guessImageFilename(mimeType: string, index: number): string {
   const subtype = mimeType.split("/")[1]?.split("+")[0] || "bin";
   return `image-${index + 1}.${subtype}`;
 }
 
-function extractImage(
+/** attachments から image/* をすべて出現順で抽出する（#133: 複数画像インポート） */
+function extractImages(
   attachments: Email["attachments"],
-): { image: ParsedEmlMessage["image"]; extraImageCount: number } {
-  const imageAttachments = attachments.filter((attachment) =>
-    attachment.mimeType.startsWith("image/"),
-  );
-
-  if (imageAttachments.length === 0) {
-    return { image: null, extraImageCount: 0 };
-  }
-
-  const first = imageAttachments[0];
-  return {
-    image: {
-      filename: first.filename ?? guessImageFilename(first.mimeType, 0),
-      mimeType: first.mimeType,
-      data: toUint8Array(first.content),
-    },
-    extraImageCount: imageAttachments.length - 1,
-  };
+): ParsedEmlMessage["images"] {
+  return attachments
+    .filter((attachment) => attachment.mimeType.startsWith("image/"))
+    .map((attachment, index) => ({
+      filename: attachment.filename ?? guessImageFilename(attachment.mimeType, index),
+      mimeType: attachment.mimeType,
+      data: toUint8Array(attachment.content),
+    }));
 }
 
 const IMG_TAG_PATTERN = /<img\b[^>]*>/gi;
@@ -384,32 +437,22 @@ function isAllowedRemoteImageUrl(value: string): boolean {
 }
 
 /**
- * HTML 本文から最初の許可されたリモート画像 URL を抽出する（#129）。
- * 許可リスト（ALLOWED_REMOTE_IMAGE_SOURCES）に一致しない `<img>` は remoteImageUrl にも
- * extraImageCount にも数えない。実メールの img src には `&amp;` エンティティが
- * 含まれるため（例: `qimage?image_name=abc123&amp;token=...`）、デコードしてから
- * URL として検証する
+ * HTML 本文から許可されたリモート画像 URL を全件抽出する（#129、#133: 全件抽出に変更）。
+ * 許可リスト（ALLOWED_REMOTE_IMAGE_SOURCES）に一致しない `<img>` は含めない。実メールの
+ * img src には `&amp;` エンティティが含まれるため（例: `qimage?image_name=abc123&amp;
+ * token=...`）、デコードしてから URL として検証する。完全一致の重複 URL は取り除き、
+ * 出現順を保つ
  */
-function extractRemoteImageUrl(html: string | undefined): {
-  remoteImageUrl: string | null;
-  extraImageCount: number;
-} {
+function extractRemoteImageUrls(html: string | undefined): string[] {
   if (typeof html !== "string") {
-    return { remoteImageUrl: null, extraImageCount: 0 };
+    return [];
   }
 
   const allowedUrls = extractImgSrcValues(html)
     .map((rawSrc) => decodeHtmlEntities(rawSrc))
     .filter(isAllowedRemoteImageUrl);
 
-  if (allowedUrls.length === 0) {
-    return { remoteImageUrl: null, extraImageCount: 0 };
-  }
-
-  return {
-    remoteImageUrl: allowedUrls[0],
-    extraImageCount: allowedUrls.length - 1,
-  };
+  return [...new Set(allowedUrls)];
 }
 
 /**
@@ -420,9 +463,11 @@ export async function parseEmlFile(
   raw: ArrayBuffer | string,
   filename: string,
 ): Promise<ParsedEmlMessage> {
+  const rawArrayBuffer = toArrayBuffer(raw);
+
   let email: Email;
   try {
-    email = await PostalMime.parse(toArrayBuffer(raw));
+    email = await PostalMime.parse(rawArrayBuffer);
   } catch {
     throw new EmlImportError(`${filename}: メールの解析に失敗しました`);
   }
@@ -451,56 +496,107 @@ export async function parseEmlFile(
     throw new EmlImportError(`${filename}: 本文の解析に失敗しました`);
   }
 
-  const { image, extraImageCount: attachmentExtraImageCount } = extractImage(
-    email.attachments,
-  );
+  const images = extractImages(email.attachments);
 
   // 添付画像がある場合、HTML 内の img は cid 参照と重複する可能性があるため無視し、
-  // 添付を優先する（remoteImageUrl は常に null。ParsedEmlMessage.remoteImageUrl のコメント参照）
-  const { remoteImageUrl, extraImageCount: remoteExtraImageCount } =
-    image === null
-      ? extractRemoteImageUrl(email.html)
-      : { remoteImageUrl: null, extraImageCount: 0 };
-  const extraImageCount =
-    image !== null ? attachmentExtraImageCount : remoteExtraImageCount;
+  // 添付を優先する（remoteImageUrls は常に空配列。ParsedEmlMessage.remoteImageUrls の
+  // コメント参照）
+  const remoteImageUrls =
+    images.length > 0 ? [] : extractRemoteImageUrls(email.html);
 
   // 本文空・画像なし（添付・リモートいずれも無し）は text record（content 非null必須の
   // CHECK 制約 records_text_content_check）に違反し RPC のトランザクション全体を abort
   // させるため、ここで行エラーとして弾く（画像あり・本文空は image record として正当なので通す）
-  if (image === null && remoteImageUrl === null && content === null) {
+  if (images.length === 0 && remoteImageUrls.length === 0 && content === null) {
     throw new EmlImportError(`${filename}: 本文が空のため取り込めません`);
   }
+
+  const mailKey = await deriveMailKey(email.messageId, rawArrayBuffer);
 
   return {
     senderAddress,
     postedAt,
     title,
     content,
-    image,
-    remoteImageUrl,
-    extraImageCount,
+    images,
+    remoteImageUrls,
+    mailKey,
   };
 }
 
-// --- ParsedEmlMessage → TalkImportRecord 変換 ---
+// --- ParsedEmlMessage → TalkImportRecord[] 展開（#133） ---
+
+/** expandEmlMessageToRecords が返す各レコードのメディア添付元 */
+export type EmlMediaSource =
+  | { kind: "attachment"; data: Uint8Array; mimeType: string; filename: string }
+  | { kind: "remote"; url: string };
+
+/** expandEmlMessageToRecords の戻り値の1要素（作成すべき record と、その添付元） */
+export type EmlImportUnit = {
+  record: TalkImportRecord;
+  media: EmlMediaSource | null;
+};
 
 /**
- * ParsedEmlMessage を TalkImportRecord に変換する薄い変換関数
- * speaker には From アドレスをそのまま入れる（participant 割り当ては
- * 既存の speakerAssignments 機構をそのまま使う）。画像の実データはここでは扱わない
- * （record 作成後に attachRecordMedia で添付する）
+ * ParsedEmlMessage を、作成すべき TalkImportRecord（と、そのメディア添付元）の配列に
+ * 展開する（#133: 1通のメールに複数画像がある場合、全件を登録する）。
+ *
+ * - 画像（添付 or リモート）が無ければ、本文を持つ text record 1件のみを返す
+ * - 画像がある場合、mediaSources（添付があれば添付の全件、無ければリモート URL の全件）の
+ *   各要素につき1件の image record を作る。1件目（index 0）だけが本文（content）を持ち、
+ *   タイトルは全件で共通（Subject をそのまま使い回す）。2件目以降は独立した画像レコードとして
+ *   content を null にする
+ * - importKey は `${message.mailKey}#${index}`（index は展開後のこの配列内での連番、
+ *   0始まり）。.eml インポートの重複排除はこの importKey で行う（本文プレフィックスベースの
+ *   判定では、同一メールから作られる複数レコードが同一 participant/postedAt/type を持つため
+ *   区別できないケースがあるため、#133）。mailKey はファイル名ではなくメールの識別情報
+ *   （Message-ID、無ければ本文ハッシュ）から導出されるため、同名だが別内容のメールが
+ *   衝突したり、リネームで再インポート時に重複と判定されなくなったりしない（P1-2）
+ * - 画像の実データ・URL はここでは扱わない（record 作成後に呼び出し側が
+ *   attachRecordMedia / fetchRemoteImagesForImport で添付する）
  */
-export function toTalkImportRecord(
+export function expandEmlMessageToRecords(
   message: ParsedEmlMessage,
-): TalkImportRecord {
-  return {
-    speaker: message.senderAddress,
-    postedAt: message.postedAt,
-    type: message.image || message.remoteImageUrl ? "image" : "text",
-    title: message.title,
-    content: message.content,
-    hasAudio: false,
-  };
+): EmlImportUnit[] {
+  const mediaSources: EmlMediaSource[] =
+    message.images.length > 0
+      ? message.images.map((image) => ({
+          kind: "attachment" as const,
+          data: image.data,
+          mimeType: image.mimeType,
+          filename: image.filename,
+        }))
+      : message.remoteImageUrls.map((url) => ({ kind: "remote" as const, url }));
+
+  if (mediaSources.length === 0) {
+    return [
+      {
+        record: {
+          speaker: message.senderAddress,
+          postedAt: message.postedAt,
+          type: "text",
+          title: message.title,
+          content: message.content,
+          hasAudio: false,
+          importKey: `${message.mailKey}#0`,
+        },
+        media: null,
+      },
+    ];
+  }
+
+  return mediaSources.map((media, index) => ({
+    record: {
+      speaker: message.senderAddress,
+      postedAt: message.postedAt,
+      type: "image",
+      title: message.title,
+      content: index === 0 ? message.content : null,
+      hasAudio: false,
+      importKey: `${message.mailKey}#${index}`,
+    },
+    media,
+  }));
 }
 
 // --- リモート画像のバッチ取得（#129） ---

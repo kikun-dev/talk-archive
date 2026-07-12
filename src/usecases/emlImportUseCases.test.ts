@@ -2,7 +2,7 @@ import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 import PostalMime from "postal-mime";
 import {
   parseEmlFile,
-  toTalkImportRecord,
+  expandEmlMessageToRecords,
   fetchRemoteImagesForImport,
   EmlImportError,
   MAX_EML_FILE_SIZE,
@@ -47,6 +47,8 @@ function buildAlternativeEml(options: {
   textBody?: string | null;
   htmlBody?: string | null;
   attachments?: AttachmentFixture[];
+  /** Message-ID ヘッダの生の値（山括弧込み、例: "<abc123@example.com>"）。未指定ならヘッダ自体を省略する（P1-2） */
+  messageId?: string;
 }): string {
   // 明示的に `from: undefined` を渡してヘッダ自体を省略するテストがあるため、
   // 分割代入のデフォルト値（undefined と「未指定」を区別できない）ではなく
@@ -61,6 +63,7 @@ function buildAlternativeEml(options: {
     textBody = "こんにちは、これはテスト本文です。",
     htmlBody = "<p>こんにちは、これは<b>テスト</b>本文です。</p>",
     attachments = [],
+    messageId,
   } = options;
 
   const altParts: string[] = [];
@@ -101,6 +104,7 @@ function buildAlternativeEml(options: {
   headers.push("To: recipient@example.com");
   if (subject !== undefined) headers.push(`Subject: ${subject}`);
   if (date !== undefined) headers.push(`Date: ${date}`);
+  if (messageId !== undefined) headers.push(`Message-ID: ${messageId}`);
   headers.push("MIME-Version: 1.0");
 
   if (attachments.length === 0) {
@@ -170,8 +174,8 @@ describe("parseEmlFile", () => {
     expect(result.postedAt).toBe("2020-10-12T06:16:14.000Z");
     expect(result.title).toBe("テスト件名");
     expect(result.content).toBe("こんにちは、これはテスト本文です。");
-    expect(result.image).toBeNull();
-    expect(result.extraImageCount).toBe(0);
+    expect(result.images).toEqual([]);
+    expect(result.remoteImageUrls).toEqual([]);
   });
 
   it("returns null title for a blank subject", async () => {
@@ -233,8 +237,11 @@ describe("parseEmlFile", () => {
     const result = await parseEmlFile(raw, "image-only.eml");
 
     expect(result.content).toBeNull();
-    expect(result.image?.filename).toBe("photo.png");
-    expect(toTalkImportRecord(result).type).toBe("image");
+    expect(result.images).toHaveLength(1);
+    expect(result.images[0].filename).toBe("photo.png");
+    const units = expandEmlMessageToRecords(result);
+    expect(units).toHaveLength(1);
+    expect(units[0].record.type).toBe("image");
   });
 
   it("truncates a subject longer than 200 characters to 200 (consistent with the JSON import limit)", async () => {
@@ -248,7 +255,7 @@ describe("parseEmlFile", () => {
     expect(result.title).toBe("あ".repeat(200));
   });
 
-  it("extracts the first image attachment and counts remaining images as extraImageCount", async () => {
+  it("extracts all image attachments in order (#133: multi-image import)", async () => {
     const raw = buildAlternativeEml({
       attachments: [
         {
@@ -272,17 +279,26 @@ describe("parseEmlFile", () => {
 
     const result = await parseEmlFile(raw, "test.eml");
 
-    expect(result.image).not.toBeNull();
-    expect(result.image?.filename).toBe("photo1.png");
-    expect(result.image?.mimeType).toBe("image/png");
-    expect(result.image?.data).toBeInstanceOf(Uint8Array);
-    expect(Array.from(result.image?.data ?? [])).toEqual([
+    expect(result.images).toHaveLength(3);
+    expect(result.images[0].filename).toBe("photo1.png");
+    expect(result.images[0].mimeType).toBe("image/png");
+    expect(result.images[0].data).toBeInstanceOf(Uint8Array);
+    expect(Array.from(result.images[0].data)).toEqual([
       0x89, 0x50, 0x4e, 0x47, 0x00, 0x01,
     ]);
-    expect(result.extraImageCount).toBe(2);
+    expect(result.images[1].filename).toBe("photo2.jpg");
+    expect(Array.from(result.images[1].data)).toEqual([
+      0xff, 0xd8, 0xff, 0x00,
+    ]);
+    expect(result.images[2].filename).toBe("photo3.jpg");
+    expect(Array.from(result.images[2].data)).toEqual([
+      0xff, 0xd8, 0xff, 0x01,
+    ]);
+    // 添付画像がある場合、リモート画像は無視する（従来どおり）
+    expect(result.remoteImageUrls).toEqual([]);
   });
 
-  it("ignores non-image attachments when picking the image", async () => {
+  it("ignores non-image attachments when collecting images", async () => {
     const raw = buildAlternativeEml({
       attachments: [
         {
@@ -300,8 +316,8 @@ describe("parseEmlFile", () => {
 
     const result = await parseEmlFile(raw, "test.eml");
 
-    expect(result.image?.filename).toBe("photo.png");
-    expect(result.extraImageCount).toBe(0);
+    expect(result.images).toHaveLength(1);
+    expect(result.images[0].filename).toBe("photo.png");
   });
 
   // #128 レビュー対応（P1）: 異常な HTML 数値文字参照（範囲外・サロゲート範囲等）で
@@ -532,6 +548,97 @@ describe("parseEmlFile", () => {
   });
 });
 
+// P1-1レビュー対応P1-2: import_key はファイル名ではなくメールの識別情報（Message-ID、
+// 無ければ本文バイト列のハッシュ）から導出する。ファイル名ベースだと同名だが別内容の
+// メールが衝突（2件目が silently skip されデータ損失）したり、リネームで再インポート時に
+// 重複扱いされなくなったりするため
+describe("parseEmlFile: mailKey derivation (P1-2: stable per-mail dedup key, not filename-based)", () => {
+  it("derives a hashed mailKey (msgid: prefix + SHA-256 hex digest) from the normalized Message-ID (trimmed, angle brackets stripped) when present", async () => {
+    const raw = buildAlternativeEml({ messageId: "<ABC-123@Example.com>" });
+
+    const result = await parseEmlFile(raw, "test.eml");
+
+    expect(result.mailKey).toMatch(/^msgid:[0-9a-f]{64}$/);
+  });
+
+  it("derives the identical mailKey for the same Message-ID parsed twice (stable)", async () => {
+    const rawA = buildAlternativeEml({ messageId: "<stable@example.com>" });
+    const rawB = buildAlternativeEml({ messageId: "<stable@example.com>" });
+
+    const a = await parseEmlFile(rawA, "a.eml");
+    const b = await parseEmlFile(rawB, "b.eml");
+
+    expect(a.mailKey).toBe(b.mailKey);
+  });
+
+  // 回帰テスト: Message-ID の比較は大文字小文字を区別する（RFC 5256）。
+  // 旧実装は normalizeMessageId 内で .toLowerCase() していたため、大文字小文字だけが
+  // 異なる2通のメールが同一の mailKey/importKey に潰れ、後からインポートした方の
+  // レコードが重複排除 RPC によって丸ごとスキップされていた（データ損失）
+  it("produces DIFFERENT mailKeys for Message-IDs differing only in case (case must be preserved, not lowercased)", async () => {
+    const rawUpper = buildAlternativeEml({ messageId: "<Foo@example.com>" });
+    const rawLower = buildAlternativeEml({ messageId: "<foo@example.com>" });
+
+    const upper = await parseEmlFile(rawUpper, "upper.eml");
+    const lower = await parseEmlFile(rawLower, "lower.eml");
+
+    expect(upper.mailKey).not.toBe(lower.mailKey);
+  });
+
+  it("falls back to a sha256 content hash when Message-ID is absent", async () => {
+    const raw = buildAlternativeEml({});
+
+    const result = await parseEmlFile(raw, "test.eml");
+
+    expect(result.mailKey).toMatch(/^sha256:[0-9a-f]{64}$/);
+  });
+
+  it("produces the identical mailKey for identical content parsed under two different filenames (would dedup)", async () => {
+    const raw = buildAlternativeEml({ textBody: "同じ内容の本文です" });
+
+    const a = await parseEmlFile(raw, "message.eml");
+    const b = await parseEmlFile(raw, "message.eml");
+
+    expect(a.mailKey).toBe(b.mailKey);
+  });
+
+  it("produces different mailKeys for different content parsed under the same filename (both import, no data loss)", async () => {
+    const rawA = buildAlternativeEml({ textBody: "内容A" });
+    const rawB = buildAlternativeEml({ textBody: "内容B" });
+
+    const a = await parseEmlFile(rawA, "message.eml");
+    const b = await parseEmlFile(rawB, "message.eml");
+
+    expect(a.mailKey).not.toBe(b.mailKey);
+  });
+
+  it("produces the same mailKey for two mails sharing the same Message-ID, even with different content (dedup by mail identity)", async () => {
+    const rawA = buildAlternativeEml({
+      messageId: "<dup@example.com>",
+      textBody: "内容A",
+    });
+    const rawB = buildAlternativeEml({
+      messageId: "<dup@example.com>",
+      textBody: "内容B",
+    });
+
+    const a = await parseEmlFile(rawA, "a.eml");
+    const b = await parseEmlFile(rawB, "b.eml");
+
+    expect(a.mailKey).toBe(b.mailKey);
+  });
+
+  it("produces different mailKeys for two mails with different Message-IDs", async () => {
+    const rawA = buildAlternativeEml({ messageId: "<one@example.com>" });
+    const rawB = buildAlternativeEml({ messageId: "<two@example.com>" });
+
+    const a = await parseEmlFile(rawA, "a.eml");
+    const b = await parseEmlFile(rawB, "b.eml");
+
+    expect(a.mailKey).not.toBe(b.mailKey);
+  });
+});
+
 // #129: 実メール41通の調査結果対応（数値文字参照・Gmail画像マーカー・スタブ本文・
 // リモート画像）。実メールは添付ファイル0件で、画像は HTML パート内の
 // <img src="https://.../qimage?..."> というリモート参照のみを持つ
@@ -745,7 +852,7 @@ describe("parseEmlFile: stub text/plain body falls back to HTML (#129)", () => {
   });
 });
 
-describe("parseEmlFile: remote image extraction from HTML <img> (#129)", () => {
+describe("parseEmlFile: remote image extraction from HTML <img> (#129, #133: 全件抽出)", () => {
   it("extracts an allowed remote image URL and decodes &amp; in its query string", async () => {
     const raw = buildAlternativeEml({
       textBody: null,
@@ -755,11 +862,10 @@ describe("parseEmlFile: remote image extraction from HTML <img> (#129)", () => {
 
     const result = await parseEmlFile(raw, "test.eml");
 
-    expect(result.image).toBeNull();
-    expect(result.remoteImageUrl).toBe(
+    expect(result.images).toEqual([]);
+    expect(result.remoteImageUrls).toEqual([
       "https://mail-web.c-nogizaka46.com/mail/output/qimage?image_name=abc123&token=xyz",
-    );
-    expect(result.extraImageCount).toBe(0);
+    ]);
   });
 
   it("ignores non-http(s) img src values such as javascript: or cid:", async () => {
@@ -771,8 +877,7 @@ describe("parseEmlFile: remote image extraction from HTML <img> (#129)", () => {
 
     const result = await parseEmlFile(raw, "test.eml");
 
-    expect(result.remoteImageUrl).toBeNull();
-    expect(result.extraImageCount).toBe(0);
+    expect(result.remoteImageUrls).toEqual([]);
   });
 
   // #129 レビュー対応: SSRF・トラッキングピクセル対策として、リモート画像 URL は
@@ -788,8 +893,7 @@ describe("parseEmlFile: remote image extraction from HTML <img> (#129)", () => {
 
       const result = await parseEmlFile(raw, "test.eml");
 
-      expect(result.remoteImageUrl).toBeNull();
-      expect(result.extraImageCount).toBe(0);
+      expect(result.remoteImageUrls).toEqual([]);
     });
 
     it("rejects a URL on a different host", async () => {
@@ -801,8 +905,7 @@ describe("parseEmlFile: remote image extraction from HTML <img> (#129)", () => {
 
       const result = await parseEmlFile(raw, "test.eml");
 
-      expect(result.remoteImageUrl).toBeNull();
-      expect(result.extraImageCount).toBe(0);
+      expect(result.remoteImageUrls).toEqual([]);
     });
 
     it("rejects a URL with a different path", async () => {
@@ -814,8 +917,7 @@ describe("parseEmlFile: remote image extraction from HTML <img> (#129)", () => {
 
       const result = await parseEmlFile(raw, "test.eml");
 
-      expect(result.remoteImageUrl).toBeNull();
-      expect(result.extraImageCount).toBe(0);
+      expect(result.remoteImageUrls).toEqual([]);
     });
 
     it("rejects a URL with an explicit port", async () => {
@@ -827,8 +929,7 @@ describe("parseEmlFile: remote image extraction from HTML <img> (#129)", () => {
 
       const result = await parseEmlFile(raw, "test.eml");
 
-      expect(result.remoteImageUrl).toBeNull();
-      expect(result.extraImageCount).toBe(0);
+      expect(result.remoteImageUrls).toEqual([]);
     });
 
     it("rejects a URL with userinfo (https://user@mail-web...)", async () => {
@@ -840,11 +941,10 @@ describe("parseEmlFile: remote image extraction from HTML <img> (#129)", () => {
 
       const result = await parseEmlFile(raw, "test.eml");
 
-      expect(result.remoteImageUrl).toBeNull();
-      expect(result.extraImageCount).toBe(0);
+      expect(result.remoteImageUrls).toEqual([]);
     });
 
-    it("counts only allowlisted URLs when allowed and disallowed images are mixed", async () => {
+    it("keeps only allowlisted URLs when allowed and disallowed images are mixed", async () => {
       const raw = buildAlternativeEml({
         textBody: null,
         htmlBody:
@@ -857,12 +957,14 @@ describe("parseEmlFile: remote image extraction from HTML <img> (#129)", () => {
 
       const result = await parseEmlFile(raw, "test.eml");
 
-      expect(result.remoteImageUrl).toBe(allowedImageUrl("first"));
-      expect(result.extraImageCount).toBe(1);
+      expect(result.remoteImageUrls).toEqual([
+        allowedImageUrl("first"),
+        allowedImageUrl("second"),
+      ]);
     });
   });
 
-  it("picks the first allowed remote image and counts the rest as extraImageCount", async () => {
+  it("returns all allowed remote image URLs in order (#133: multi-image import)", async () => {
     const raw = buildAlternativeEml({
       textBody: null,
       htmlBody:
@@ -875,11 +977,32 @@ describe("parseEmlFile: remote image extraction from HTML <img> (#129)", () => {
 
     const result = await parseEmlFile(raw, "test.eml");
 
-    expect(result.remoteImageUrl).toBe(allowedImageUrl("1"));
-    expect(result.extraImageCount).toBe(2);
+    expect(result.remoteImageUrls).toEqual([
+      allowedImageUrl("1"),
+      allowedImageUrl("2"),
+      allowedImageUrl("3"),
+    ]);
   });
 
-  it("prefers an attachment image over an HTML <img> and ignores the HTML image entirely (avoids cid double-counting)", async () => {
+  it("dedupes exact-duplicate remote image URLs while preserving order", async () => {
+    const raw = buildAlternativeEml({
+      textBody: null,
+      htmlBody:
+        "<p>本文</p>" +
+        `<img src="${allowedImageUrl("1")}">` +
+        `<img src="${allowedImageUrl("2")}">` +
+        `<img src="${allowedImageUrl("1")}">`,
+    });
+
+    const result = await parseEmlFile(raw, "test.eml");
+
+    expect(result.remoteImageUrls).toEqual([
+      allowedImageUrl("1"),
+      allowedImageUrl("2"),
+    ]);
+  });
+
+  it("prefers attachment images over HTML <img> and ignores HTML images entirely (avoids cid double-counting)", async () => {
     const raw = buildAlternativeEml({
       textBody: null,
       htmlBody: `<p>本文</p><img src="${allowedImageUrl("1")}">`,
@@ -894,9 +1017,9 @@ describe("parseEmlFile: remote image extraction from HTML <img> (#129)", () => {
 
     const result = await parseEmlFile(raw, "test.eml");
 
-    expect(result.image?.filename).toBe("photo.png");
-    expect(result.remoteImageUrl).toBeNull();
-    expect(result.extraImageCount).toBe(0);
+    expect(result.images).toHaveLength(1);
+    expect(result.images[0].filename).toBe("photo.png");
+    expect(result.remoteImageUrls).toEqual([]);
   });
 
   it("parses a blank-body email with only a remote image as a valid image message", async () => {
@@ -908,8 +1031,10 @@ describe("parseEmlFile: remote image extraction from HTML <img> (#129)", () => {
     const result = await parseEmlFile(raw, "remote-image-only.eml");
 
     expect(result.content).toBeNull();
-    expect(result.remoteImageUrl).toBe(allowedImageUrl("1"));
-    expect(toTalkImportRecord(result).type).toBe("image");
+    expect(result.remoteImageUrls).toEqual([allowedImageUrl("1")]);
+    const units = expandEmlMessageToRecords(result);
+    expect(units).toHaveLength(1);
+    expect(units[0].record.type).toBe("image");
   });
 
   it("treats a blank-body email whose only image URL is disallowed as an empty-body row error", async () => {
@@ -923,7 +1048,7 @@ describe("parseEmlFile: remote image extraction from HTML <img> (#129)", () => {
     );
   });
 
-  it("throws EmlImportError when body, image, and remoteImageUrl are all absent", async () => {
+  it("throws EmlImportError when body, images, and remoteImageUrls are all absent", async () => {
     const raw = buildAlternativeEml({ textBody: "  ", htmlBody: "  " });
 
     await expect(parseEmlFile(raw, "all-empty.eml")).rejects.toThrow(
@@ -1153,7 +1278,7 @@ describe("fetchRemoteImagesForImport (#129, #132 レビュー対応 P1-3/P2-1/P2
   });
 });
 
-describe("toTalkImportRecord", () => {
+describe("expandEmlMessageToRecords (#133: 複数画像を全件登録する)", () => {
   function baseMessage(
     overrides: Partial<ParsedEmlMessage> = {},
   ): ParsedEmlMessage {
@@ -1162,49 +1287,166 @@ describe("toTalkImportRecord", () => {
       postedAt: "2020-10-12T06:16:14.000Z",
       title: "件名",
       content: "本文",
-      image: null,
-      remoteImageUrl: null,
-      extraImageCount: 0,
+      images: [],
+      remoteImageUrls: [],
+      mailKey: "msgid:mail-key@example.com",
       ...overrides,
     };
   }
 
-  it("maps a message without an image to a text record", () => {
+  it("maps a message without images to a single text record with importKey '<message.mailKey>#0' (P1-2: derived from mail identity, not filename)", () => {
     const message = baseMessage();
 
-    expect(toTalkImportRecord(message)).toEqual({
+    const units = expandEmlMessageToRecords(message);
+
+    expect(units).toEqual([
+      {
+        record: {
+          speaker: "sender@example.com",
+          postedAt: "2020-10-12T06:16:14.000Z",
+          type: "text",
+          title: "件名",
+          content: "本文",
+          hasAudio: false,
+          importKey: "msgid:mail-key@example.com#0",
+        },
+        media: null,
+      },
+    ]);
+  });
+
+  it("maps a message with a single attachment image to one image unit carrying the body content", () => {
+    const message = baseMessage({
+      images: [
+        {
+          filename: "photo.png",
+          mimeType: "image/png",
+          data: new Uint8Array([1, 2, 3]),
+        },
+      ],
+    });
+
+    const units = expandEmlMessageToRecords(message);
+
+    expect(units).toHaveLength(1);
+    expect(units[0].record.type).toBe("image");
+    expect(units[0].record.content).toBe("本文");
+    expect(units[0].record.title).toBe("件名");
+    expect(units[0].record.importKey).toBe("msgid:mail-key@example.com#0");
+    expect(units[0].media).toEqual({
+      kind: "attachment",
+      data: new Uint8Array([1, 2, 3]),
+      mimeType: "image/png",
+      filename: "photo.png",
+    });
+  });
+
+  it("maps a message with 3 attachment images to 3 units: main keeps content, extras have null content, all share title/postedAt/speaker", () => {
+    const message = baseMessage({
+      images: [
+        { filename: "photo1.png", mimeType: "image/png", data: new Uint8Array([1]) },
+        { filename: "photo2.jpg", mimeType: "image/jpeg", data: new Uint8Array([2]) },
+        { filename: "photo3.jpg", mimeType: "image/jpeg", data: new Uint8Array([3]) },
+      ],
+    });
+
+    const units = expandEmlMessageToRecords(message);
+
+    expect(units).toHaveLength(3);
+
+    expect(units[0].record).toEqual({
       speaker: "sender@example.com",
       postedAt: "2020-10-12T06:16:14.000Z",
-      type: "text",
+      type: "image",
       title: "件名",
       content: "本文",
       hasAudio: false,
+      importKey: "msgid:mail-key@example.com#0",
+    });
+    expect(units[0].media).toEqual({
+      kind: "attachment",
+      data: new Uint8Array([1]),
+      mimeType: "image/png",
+      filename: "photo1.png",
+    });
+
+    expect(units[1].record).toEqual({
+      speaker: "sender@example.com",
+      postedAt: "2020-10-12T06:16:14.000Z",
+      type: "image",
+      title: "件名",
+      content: null,
+      hasAudio: false,
+      importKey: "msgid:mail-key@example.com#1",
+    });
+    expect(units[1].media).toEqual({
+      kind: "attachment",
+      data: new Uint8Array([2]),
+      mimeType: "image/jpeg",
+      filename: "photo2.jpg",
+    });
+
+    expect(units[2].record).toEqual({
+      speaker: "sender@example.com",
+      postedAt: "2020-10-12T06:16:14.000Z",
+      type: "image",
+      title: "件名",
+      content: null,
+      hasAudio: false,
+      importKey: "msgid:mail-key@example.com#2",
+    });
+    expect(units[2].media).toEqual({
+      kind: "attachment",
+      data: new Uint8Array([3]),
+      mimeType: "image/jpeg",
+      filename: "photo3.jpg",
     });
   });
 
-  it("maps a message with an image to an image record (image data itself is not part of TalkImportRecord)", () => {
+  it("maps a message with 2 remote image URLs (no attachments) to 2 remote units", () => {
     const message = baseMessage({
-      image: {
-        filename: "photo.png",
-        mimeType: "image/png",
-        data: new Uint8Array([1, 2, 3]),
-      },
+      remoteImageUrls: [
+        "https://example.com/1.jpg",
+        "https://example.com/2.jpg",
+      ],
     });
 
-    const record = toTalkImportRecord(message);
+    const units = expandEmlMessageToRecords(message);
 
-    expect(record.type).toBe("image");
-    expect(record.content).toBe("本文");
+    expect(units).toHaveLength(2);
+    expect(units[0].record.type).toBe("image");
+    expect(units[0].record.content).toBe("本文");
+    expect(units[0].record.importKey).toBe("msgid:mail-key@example.com#0");
+    expect(units[0].media).toEqual({
+      kind: "remote",
+      url: "https://example.com/1.jpg",
+    });
+    expect(units[1].record.type).toBe("image");
+    expect(units[1].record.content).toBeNull();
+    expect(units[1].record.importKey).toBe("msgid:mail-key@example.com#1");
+    expect(units[1].media).toEqual({
+      kind: "remote",
+      url: "https://example.com/2.jpg",
+    });
   });
 
-  it("maps a message with only a remoteImageUrl (no attachment image) to an image record", () => {
+  it("ignores remoteImageUrls when attachment images are present (attachment takes precedence)", () => {
     const message = baseMessage({
-      remoteImageUrl: "https://example.com/1.jpg",
+      images: [
+        { filename: "photo.png", mimeType: "image/png", data: new Uint8Array([1]) },
+      ],
+      remoteImageUrls: ["https://example.com/1.jpg"],
     });
 
-    const record = toTalkImportRecord(message);
+    const units = expandEmlMessageToRecords(message);
 
-    expect(record.type).toBe("image");
+    expect(units).toHaveLength(1);
+    expect(units[0].media).toEqual({
+      kind: "attachment",
+      data: new Uint8Array([1]),
+      mimeType: "image/png",
+      filename: "photo.png",
+    });
   });
 });
 

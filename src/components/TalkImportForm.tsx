@@ -653,10 +653,10 @@ export function TalkImportForm({
 
           <p
             role="group"
-            aria-label={`画像付きメール数: ${emlPreview.imageCount}件`}
+            aria-label={`画像枚数: ${emlPreview.imageCount}件`}
             className="border-b border-gray-200 pb-3 text-sm text-gray-700"
           >
-            <span className="font-medium text-gray-900">画像付きメール数:</span>{" "}
+            <span className="font-medium text-gray-900">画像枚数:</span>{" "}
             {emlPreview.imageCount}件
           </p>
         </section>
@@ -676,19 +676,6 @@ export function TalkImportForm({
               <ul className="mt-2 ml-4 list-disc text-xs text-gray-700">
                 {emlPreview.rowErrors.map((rowError, index) => (
                   <li key={index}>{rowError}</li>
-                ))}
-              </ul>
-            </section>
-          )}
-
-          {emlPreview.extraImageWarnings.length > 0 && (
-            <section className="border-l-4 border-amber-500 bg-amber-50 px-4 py-3">
-              <h3 className="text-sm font-semibold text-gray-900">
-                2枚目以降の画像は取り込まれません
-              </h3>
-              <ul className="mt-2 ml-4 list-disc text-xs text-gray-700">
-                {emlPreview.extraImageWarnings.map((warning, index) => (
-                  <li key={index}>{warning}</li>
                 ))}
               </ul>
             </section>

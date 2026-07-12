@@ -52,6 +52,7 @@ function dedupCandidate(
     postedAt: "2026-07-07T06:19:00.000Z",
     recordType: "text",
     contentPrefix: "こんにちは",
+    importKey: null,
     ...overrides,
   };
 }
@@ -85,6 +86,7 @@ describe("importUseCases", () => {
             type: "video",
             content: null,
             hasAudio: true,
+            importKey: null,
           },
         ],
       });
@@ -102,6 +104,7 @@ describe("importUseCases", () => {
         title: null,
         content: "こんにちは",
         hasAudio: false,
+        importKey: null,
       });
       expect(result.records[1]).toEqual({
         speaker: "瀬戸口 心月",
@@ -110,6 +113,7 @@ describe("importUseCases", () => {
         title: null,
         content: null,
         hasAudio: true,
+        importKey: null,
       });
     });
 
@@ -644,6 +648,78 @@ describe("importUseCases", () => {
 
       expect(keyA).toBe(keyB);
     });
+
+    // #133: .eml インポートは同一メール（同一 participant + postedAt + type）から
+    // 複数レコード（メイン+追加画像）を作るため、本文プレフィックスだけでは
+    // 区別できないケースがある。importKey が指定された場合はそれを名前空間化した
+    // キーとして使い、participant/postedAt/type/content の組み合わせに関わらず一意にする
+    it("returns a namespaced key based solely on importKey when importKey is a non-null string, ignoring other fields", () => {
+      const key = buildRecordDedupKey(
+        "part-1",
+        "2026-07-07T15:19:00+09:00",
+        "text",
+        "hello",
+        "mail.eml#0",
+      );
+
+      expect(key).toBe("key:mail.eml#0");
+    });
+
+    it("falls back to the content-based key when importKey is null", () => {
+      const withNull = buildRecordDedupKey(
+        "part-1",
+        "2026-07-07T15:19:00+09:00",
+        "text",
+        "hello",
+        null,
+      );
+      const withoutArg = buildRecordDedupKey(
+        "part-1",
+        "2026-07-07T15:19:00+09:00",
+        "text",
+        "hello",
+      );
+
+      expect(withNull).toBe(withoutArg);
+    });
+
+    it("treats two records with distinct importKeys as different even with identical participant/postedAt/type/content", () => {
+      const keyA = buildRecordDedupKey(
+        "part-1",
+        "2026-07-07T15:19:00+09:00",
+        "image",
+        null,
+        "mail.eml#0",
+      );
+      const keyB = buildRecordDedupKey(
+        "part-1",
+        "2026-07-07T15:19:00+09:00",
+        "image",
+        null,
+        "mail.eml#1",
+      );
+
+      expect(keyA).not.toBe(keyB);
+    });
+
+    it("treats two records with the same importKey as duplicates", () => {
+      const keyA = buildRecordDedupKey(
+        "part-1",
+        "2026-07-07T15:19:00+09:00",
+        "image",
+        null,
+        "mail.eml#0",
+      );
+      const keyB = buildRecordDedupKey(
+        "part-2",
+        "2026-08-01T00:00:00+09:00",
+        "text",
+        "違う内容",
+        "mail.eml#0",
+      );
+
+      expect(keyA).toBe(keyB);
+    });
   });
 
   describe("buildImportPreview", () => {
@@ -673,6 +749,7 @@ describe("importUseCases", () => {
           title: null,
           content: "こんにちは",
           hasAudio: false,
+          importKey: null,
         },
         {
           speaker: "未知の人",
@@ -681,6 +758,7 @@ describe("importUseCases", () => {
           title: null,
           content: null,
           hasAudio: true,
+          importKey: null,
         },
       ];
 
@@ -727,6 +805,51 @@ describe("importUseCases", () => {
           title: null,
           content: "こんにちは",
           hasAudio: false,
+          importKey: null,
+        },
+      ];
+
+      const preview = await buildImportPreview(
+        client,
+        "conv-1",
+        parseResult(records),
+      );
+
+      expect(preview.duplicateCount).toBe(1);
+      expect(preview.importableCount).toBe(0);
+    });
+
+    // P1-1: プレビューと実行(RPC)の重複判定契約を一致させる。既存レコードが
+    // import_key を持つ場合（.eml インポート由来）、RPC（import_records_atomic）は
+    // import_key の一致のみで重複判定するため、participant/postedAt/type/content が
+    // 一致しなくても RPC はスキップする。プレビュー側（buildExistingDedupKeys）も同じ
+    // import_key を認識できなければ、プレビューの duplicateCount と RPC の
+    // skipped_record_count が食い違い、再インポート時に「重複なし」と表示されたのに
+    // 実際は全件スキップされる、という不整合が起きる
+    it("counts an existing record carrying an import_key as a duplicate for a re-imported eml record with the same import_key, even when participant/postedAt/type/content differ (matches the RPC's import_key-based skip, P1-1)", async () => {
+      mockGetConversationParticipants.mockResolvedValue([
+        participant({ id: "part-1", name: "瀬戸口 心月" }),
+      ]);
+      mockGetImportDedupCandidates.mockResolvedValue([
+        dedupCandidate({
+          participantId: "part-1",
+          postedAt: "2026-01-01T00:00:00.000Z",
+          recordType: "text",
+          contentPrefix: "元の本文",
+          importKey: "msgid:abc@example.com#0",
+        }),
+      ]);
+
+      const records: TalkImportRecord[] = [
+        {
+          speaker: "瀬戸口 心月",
+          // 既存レコードとは postedAt / type / content がすべて異なる
+          postedAt: "2026-07-07T06:19:00.000Z",
+          type: "image",
+          title: null,
+          content: null,
+          hasAudio: false,
+          importKey: "msgid:abc@example.com#0",
         },
       ];
 
@@ -753,6 +876,7 @@ describe("importUseCases", () => {
         title: null,
         content: "こんにちは",
         hasAudio: false,
+        importKey: null,
       };
 
       const preview = await buildImportPreview(
@@ -790,6 +914,7 @@ describe("importUseCases", () => {
           title: null,
           content: "こんにちは",
           hasAudio: false,
+          importKey: null,
         },
       ];
 
@@ -814,6 +939,7 @@ describe("importUseCases", () => {
       title: null,
       content: "こんにちは",
       hasAudio: false,
+      importKey: null,
     };
 
     it("throws ImportError when a speaker cannot be resolved", async () => {
@@ -1145,6 +1271,7 @@ describe("importUseCases", () => {
           title: null,
           content: "こんにちは",
           hasAudio: false,
+          importKey: null,
         },
       ];
 
@@ -1174,6 +1301,7 @@ describe("importUseCases", () => {
           title: null,
           content: "こんにちは",
           hasAudio: false,
+          importKey: null,
         },
         {
           speaker: "bob@example.com",
@@ -1182,6 +1310,7 @@ describe("importUseCases", () => {
           title: null,
           content: "こんにちは",
           hasAudio: false,
+          importKey: null,
         },
       ];
 
@@ -1217,6 +1346,7 @@ describe("importUseCases", () => {
           title: null,
           content: "A",
           hasAudio: false,
+          importKey: null,
         },
         {
           speaker: "not-assigned@example.com",
@@ -1225,6 +1355,7 @@ describe("importUseCases", () => {
           title: null,
           content: "B",
           hasAudio: false,
+          importKey: null,
         },
       ];
 
@@ -1252,6 +1383,7 @@ describe("importUseCases", () => {
           title: null,
           content: "こんにちは",
           hasAudio: false,
+          importKey: null,
         },
       ];
 
@@ -1276,6 +1408,7 @@ describe("importUseCases", () => {
           title: null,
           content: "こんにちは",
           hasAudio: false,
+          importKey: null,
         },
       ];
 

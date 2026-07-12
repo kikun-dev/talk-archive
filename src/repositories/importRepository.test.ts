@@ -8,7 +8,7 @@ import {
 
 describe("importRepository", () => {
   describe("getImportDedupCandidates", () => {
-    it("calls the projection RPC and maps its rows", async () => {
+    it("calls the projection RPC and maps its rows, including import_key (P1-1: preview/execute dedup contract)", async () => {
       const rpcMock = vi.fn().mockResolvedValue({
         data: [
           {
@@ -16,6 +16,14 @@ describe("importRepository", () => {
             posted_at: "2026-01-01T00:00:00.000Z",
             record_type: "text",
             content_prefix: "12345678901234567890",
+            import_key: "msgid:abc@example.com#0",
+          },
+          {
+            participant_id: "part-2",
+            posted_at: "2026-01-02T00:00:00.000Z",
+            record_type: "text",
+            content_prefix: "こんにちは",
+            import_key: null,
           },
         ],
         error: null,
@@ -33,6 +41,14 @@ describe("importRepository", () => {
           postedAt: "2026-01-01T00:00:00.000Z",
           recordType: "text",
           contentPrefix: "12345678901234567890",
+          importKey: "msgid:abc@example.com#0",
+        },
+        {
+          participantId: "part-2",
+          postedAt: "2026-01-02T00:00:00.000Z",
+          recordType: "text",
+          contentPrefix: "こんにちは",
+          importKey: null,
         },
       ]);
     });
@@ -84,6 +100,7 @@ describe("importRepository", () => {
             content: "こんにちは",
             hasAudio: false,
             postedAt: "2026-01-01T00:00:00.000Z",
+            importKey: "sample.eml#0",
           },
           {
             participantId: null,
@@ -93,6 +110,7 @@ describe("importRepository", () => {
             content: null,
             hasAudio: true,
             postedAt: "2026-01-02T00:00:00.000Z",
+            importKey: null,
           },
         ],
       });
@@ -109,6 +127,7 @@ describe("importRepository", () => {
             content: "こんにちは",
             has_audio: false,
             posted_at: "2026-01-01T00:00:00.000Z",
+            import_key: "sample.eml#0",
           },
           {
             participant_id: null,
@@ -118,6 +137,7 @@ describe("importRepository", () => {
             content: null,
             has_audio: true,
             posted_at: "2026-01-02T00:00:00.000Z",
+            import_key: null,
           },
         ],
       });

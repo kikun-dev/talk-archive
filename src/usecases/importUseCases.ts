@@ -19,6 +19,12 @@ export type TalkImportRecord = {
   title: string | null;
   content: string | null;
   hasAudio: boolean;
+  /**
+   * .eml インポート由来レコードの安定な重複排除キー（"<元ファイル名>#<連番>"）。
+   * JSON インポート由来のレコードは常に null（従来どおり本文プレフィックスベースで
+   * 重複判定する、#133）
+   */
+  importKey: string | null;
 };
 
 export type TalkImportParseResult = {
@@ -282,6 +288,7 @@ export function parseTalkImportJson(text: string): TalkImportParseResult {
       title,
       content,
       hasAudio,
+      importKey: null,
     });
   });
 
@@ -292,19 +299,35 @@ export function parseTalkImportJson(text: string): TalkImportParseResult {
 
 /**
  * レコードの重複排除キーを構築する
- * participantId + postedAt（ISO正規化） + recordType + content先頭20文字（trim後）
+ * importKey が非null文字列の場合は、それを名前空間化したキー（`key:${importKey}`）を返す
+ * （participant/postedAt/type/content には依存しない）。1メールから複数レコード
+ * （メイン+追加画像）を作る .eml インポートでは、これらの組み合わせだけでは
+ * 区別できないケースがあるため（#133）。
+ * importKey が null または未指定の場合は、従来どおり
+ * participantId + postedAt（ISO正規化） + recordType + content先頭20文字（trim後）を使う
  */
 export function buildRecordDedupKey(
   participantId: string,
   postedAt: string,
   recordType: string,
   content: string | null,
+  importKey?: string | null,
 ): string {
+  if (typeof importKey === "string") {
+    return `key:${importKey}`;
+  }
   const normalizedPostedAt = new Date(postedAt).toISOString();
   const normalizedContent = (content ?? "").trim().slice(0, 20);
   return `${participantId}|${normalizedPostedAt}|${recordType}|${normalizedContent}`;
 }
 
+/**
+ * 既存レコードの重複判定キー集合を構築する
+ * record.importKey を buildRecordDedupKey の5番目の引数として渡すことで、import_key を
+ * 持つ既存レコード（.eml インポート由来）は `key:${importKey}` 形式のキーになる。これは
+ * import_records_atomic RPC が import_key の一致のみで重複判定するのと同じ契約であり、
+ * プレビューの重複件数と RPC の実際のスキップ件数を一致させる（#133 / P1-1）
+ */
 function buildExistingDedupKeys(
   existingRecords: ImportDedupCandidate[],
 ): Set<string> {
@@ -316,6 +339,7 @@ function buildExistingDedupKeys(
         record.postedAt,
         record.recordType,
         record.contentPrefix,
+        record.importKey,
       ),
     );
   }
@@ -474,6 +498,7 @@ export async function buildImportPreview(
         record.postedAt,
         record.type,
         record.content,
+        record.importKey,
       ),
     existingKeys,
   );
@@ -607,6 +632,7 @@ export async function executeImport(
         record.postedAt,
         record.type,
         record.content,
+        record.importKey,
       ),
     new Set<string>(),
   );
@@ -644,6 +670,7 @@ export async function executeImport(
         content: record.content,
         hasAudio: record.hasAudio,
         postedAt: record.postedAt,
+        importKey: record.importKey,
       };
     }),
   });
