@@ -116,7 +116,10 @@ export async function fetchRemoteImage(
       }
       totalBytes += value.byteLength;
       if (totalBytes > options.maxBytes) {
-        await reader.cancel();
+        // cancel 自体の失敗は返す reason に影響させない（#139 P2-2: 外側の catch に
+        // 落とすと too_large が network に変わり、リトライ対象外のはずのサイズ超過が
+        // 再試行されてしまう。response.body.cancel() の経路と同じ扱いに揃える）
+        await reader.cancel().catch(() => {});
         // ストリーム読み込み中に上限超過を検知した時点の累計を返す（#139 P1-2）
         return { ok: false, reason: "too_large", bytesRead: totalBytes };
       }

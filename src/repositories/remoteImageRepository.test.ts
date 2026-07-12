@@ -252,6 +252,28 @@ describe("fetchRemoteImage", () => {
     expect(reader.cancel).toHaveBeenCalledTimes(1);
   });
 
+  // #139 P2-2: reader.cancel() の失敗で too_large が network に変わると、
+  // リトライ対象外のはずのサイズ超過が UseCase 側で再試行されてしまう
+  it("still returns { ok: false, reason: 'too_large' } even if reader.cancel() itself rejects", async () => {
+    const { response, reader } = buildMockResponse({
+      contentLength: null,
+      chunks: [new Uint8Array(60), new Uint8Array(60)],
+    });
+    reader.cancel.mockRejectedValue(new Error("cancel failed"));
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response));
+
+    const result = await fetchRemoteImage("https://example.com/image", {
+      timeoutMs: 15_000,
+      maxBytes: 100,
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      reason: "too_large",
+      bytesRead: 120,
+    });
+  });
+
   it("accepts a body whose total size is exactly maxBytes (boundary)", async () => {
     const { response } = buildMockResponse({
       chunks: [new Uint8Array(60), new Uint8Array(40)],

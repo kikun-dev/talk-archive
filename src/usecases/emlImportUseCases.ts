@@ -823,14 +823,11 @@ export async function fetchRemoteImagesForImport(
       attempt <= REMOTE_IMAGE_FETCH_MAX_ATTEMPTS;
       attempt += 1
     ) {
-      // #139 P1-1: 残り時間で1試行あたりのタイムアウトを切り詰める。呼び出し元
-      // （runWorker のデッドライン確認・下記リトライ判断時のデッドライン確認）が
-      // すでに残り時間が正であることを保証しているため、ここでは Math.min のみ行う
+      // #139 P1-1: 残り時間で1試行あたりのタイムアウトを切り詰める。デッドライン判定は
+      // すべて now() >= deadline で行うため（#139 P2-1）、ここに来る時点で残り時間は
+      // 正であることが保証されている
       const remainingMs = deadline - now();
-      const timeoutMs = Math.max(
-        0,
-        Math.min(REMOTE_IMAGE_FETCH_TIMEOUT_MS, remainingMs),
-      );
+      const timeoutMs = Math.min(REMOTE_IMAGE_FETCH_TIMEOUT_MS, remainingMs);
       const fetched = await fetchRemoteImage(url, {
         timeoutMs,
         maxBytes: MAX_EML_FILE_SIZE,
@@ -893,7 +890,7 @@ export async function fetchRemoteImagesForImport(
       // リトライせずこの時点の最後の失敗理由をそのまま返す（診断情報を保持するため、
       // batch_deadline_exceeded で上書きしない）
       const isLastAttempt = attempt === REMOTE_IMAGE_FETCH_MAX_ATTEMPTS;
-      const isDeadlineExceeded = now() > deadline;
+      const isDeadlineExceeded = now() >= deadline;
       if (
         isLastAttempt ||
         !isRetryableRemoteImageFailure(failure) ||
@@ -902,13 +899,17 @@ export async function fetchRemoteImagesForImport(
         return { ok: false, ...failure };
       }
 
-      await sleep(computeRemoteImageRetryDelayMs(attempt));
+      // #139 P2-1: バックオフ待機がデッドラインを超えないよう残り時間で切り詰める
+      // （切り詰めなければバッチ全体が最大 jitter 込みの待機時間分だけ期限を超過する）
+      await sleep(
+        Math.min(computeRemoteImageRetryDelayMs(attempt), deadline - now()),
+      );
 
-      // #139 P1-1: バックオフ待機中にデッドラインを跨いだ場合も、タイムアウト0秒の
+      // #139 P1-1: バックオフ待機でデッドラインに達した場合も、タイムアウト0秒の
       // 無駄な試行を挟まずにこの時点の失敗理由を返す（待機前の判定だけでは、
       // 待機によって残り時間が尽きるケースを取りこぼし、本来の失敗理由が
       // タイムアウト由来の network で上書きされてしまう）
-      if (now() > deadline) {
+      if (now() >= deadline) {
         return { ok: false, ...failure };
       }
     }
@@ -928,10 +929,10 @@ export async function fetchRemoteImagesForImport(
         results.set(task.key, { ok: false, reason: "batch_size_exceeded" });
         continue;
       }
-      // #139 P1-1: ワーカーがタスクを取り出した時点でバッチデッドラインを過ぎていたら、
+      // #139 P1-1: ワーカーがタスクを取り出した時点でバッチデッドラインに達していたら、
       // repository を呼ばずに batch_deadline_exceeded にする
       // （isTotalSizeExceeded の早期確定と同じ形）
-      if (now() > deadline) {
+      if (now() >= deadline) {
         results.set(task.key, { ok: false, reason: "batch_deadline_exceeded" });
         continue;
       }

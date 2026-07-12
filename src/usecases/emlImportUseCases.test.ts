@@ -1651,6 +1651,53 @@ describe("fetchRemoteImagesForImport: batch deadline (#139 P1-1)", () => {
     );
   });
 
+  // #139 P2-1: デッドライン判定は now() >= deadline。期限ちょうどの時刻では
+  // timeoutMs: 0 の無駄な取得を始めず、repository を呼ばない
+  it("does not call the repository when the clock is exactly at the deadline", async () => {
+    const { sleep } = createFakeSleep();
+    // ①startedAt=0（deadline=45000） ②runWorker のデッドライン確認が期限ちょうど
+    const nowValues = [0, REMOTE_IMAGE_FETCH_BATCH_DEADLINE_MS];
+    let callIndex = 0;
+    const now = () => nowValues[Math.min(callIndex++, nowValues.length - 1)];
+
+    const result = await fetchRemoteImagesForImport(
+      [{ key: "record-1", url: allowedImageUrl("1") }],
+      { sleep, now },
+    );
+
+    expect(result.get("record-1")).toEqual({
+      ok: false,
+      reason: "batch_deadline_exceeded",
+    });
+    expect(fetchRemoteImageRepositoryMock).not.toHaveBeenCalled();
+  });
+
+  // #139 P2-1: 期限直前のバックオフ待機は残り時間へ切り詰める
+  // （切り詰めないとバッチ全体が待機時間分だけ期限を超過する）
+  it("caps the backoff sleep to the remaining time before the deadline", async () => {
+    const { sleep, calls } = createFakeSleep();
+    // now() の呼び出し順: ①startedAt ②runWorker のデッドライン確認
+    // ③fetchOne 内の残り時間計算 ④リトライ判断時のデッドライン確認
+    // ⑤sleep の切り詰め計算（残り 200ms） ⑥sleep 後のデッドライン確認
+    const nowValues = [0, 0, 44_000, 44_800, 44_800, 45_000];
+    let callIndex = 0;
+    const now = () => nowValues[Math.min(callIndex++, nowValues.length - 1)];
+    fetchRemoteImageRepositoryMock.mockResolvedValue({
+      ok: false,
+      reason: "http_error",
+      status: 503,
+      bytesRead: 0,
+    });
+
+    await fetchRemoteImagesForImport(
+      [{ key: "record-1", url: allowedImageUrl("1") }],
+      { sleep, now },
+    );
+
+    // バックオフ本来の待機（500ms〜750ms）ではなく、残り時間の200msに切り詰まる
+    expect(calls).toEqual([200]);
+  });
+
   it("keeps the last failure reason (not overwritten by batch_deadline_exceeded) when the deadline passes right before a retry would be scheduled", async () => {
     const { sleep, calls } = createFakeSleep();
     // now() の呼び出し順: ①startedAt ②runWorker のデッドライン確認
