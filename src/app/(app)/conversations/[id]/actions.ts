@@ -840,7 +840,7 @@ export async function updateConversationCoverImageAction(
 
 export async function deleteConversationAction(
   conversationId: string,
-): Promise<{ error: string } | void> {
+): Promise<{ error: string } | { warning: string } | void> {
   const supabase = await createSupabaseServerClient();
   const {
     data: { user },
@@ -855,8 +855,10 @@ export async function deleteConversationAction(
   } catch (error) {
     if (error instanceof StorageCleanupError) {
       console.error("Failed to clean up storage for conversation:", error);
+      revalidatePath("/");
+      revalidatePath(`/conversations/${conversationId}`);
       return {
-        error:
+        warning:
           "トークは削除しましたが、メディアファイルの削除に失敗しました。",
       };
     }
@@ -917,7 +919,7 @@ export async function updateRecordAction(
 export async function deleteRecordAction(
   conversationId: string,
   recordId: string,
-): Promise<{ error: string } | void> {
+): Promise<{ error: string } | { warning: string } | void> {
   const supabase = await createSupabaseServerClient();
   const {
     data: { user },
@@ -934,7 +936,7 @@ export async function deleteRecordAction(
       console.error("Failed to clean up storage for record:", error);
       revalidatePath(`/conversations/${conversationId}`);
       return {
-        error:
+        warning:
           "レコードは削除しましたが、メディアファイルの削除に失敗しました。",
       };
     }

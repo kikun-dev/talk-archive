@@ -428,8 +428,23 @@ describe("deleteConversationAction", () => {
     const result = await deleteConversationAction("conv-1");
 
     expect(result).toEqual({
-      error:
+      warning:
         "トークは削除しましたが、メディアファイルの削除に失敗しました。",
+    });
+    expect(redirectMock).not.toHaveBeenCalled();
+    expect(revalidatePathMock).toHaveBeenCalledWith("/");
+    expect(revalidatePathMock).toHaveBeenCalledWith("/conversations/conv-1");
+  });
+
+  it("returns an error without redirecting when db deletion fails", async () => {
+    mockSupabaseClient({ id: "user-1" });
+    deleteExistingConversationMock.mockRejectedValue(new Error("DB error"));
+
+    const { deleteConversationAction } = await import("./actions");
+    const result = await deleteConversationAction("conv-1");
+
+    expect(result).toEqual({
+      error: "会話の削除に失敗しました。時間をおいて再度お試しください。",
     });
     expect(redirectMock).not.toHaveBeenCalled();
   });
@@ -537,10 +552,22 @@ describe("deleteRecordAction", () => {
     const result = await deleteRecordAction("conv-1", "rec-1");
 
     expect(result).toEqual({
-      error:
+      warning:
         "レコードは削除しましたが、メディアファイルの削除に失敗しました。",
     });
     expect(revalidatePathMock).toHaveBeenCalledWith("/conversations/conv-1");
+  });
+
+  it("returns an error when db deletion fails", async () => {
+    mockSupabaseClient({ id: "user-1" });
+    deleteExistingRecordMock.mockRejectedValue(new Error("DB error"));
+
+    const { deleteRecordAction } = await import("./actions");
+    const result = await deleteRecordAction("conv-1", "rec-1");
+
+    expect(result).toEqual({
+      error: "レコードの削除に失敗しました。時間をおいて再度お試しください。",
+    });
   });
 });
 

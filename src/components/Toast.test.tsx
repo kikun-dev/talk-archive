@@ -32,6 +32,21 @@ describe("Toast", () => {
     expect(alert.className).toContain("border-green-200");
   });
 
+  it("renders message with warning styling", () => {
+    const onDismiss = vi.fn();
+    render(
+      <Toast
+        id="t4"
+        message="一部の処理に失敗しました"
+        type="warning"
+        onDismiss={onDismiss}
+      />,
+    );
+    const alert = screen.getByRole("alert");
+    expect(alert.textContent).toContain("一部の処理に失敗しました");
+    expect(alert.className).toContain("border-amber-200");
+  });
+
   it("calls onDismiss when close button is clicked", () => {
     const onDismiss = vi.fn();
     render(

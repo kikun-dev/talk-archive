@@ -235,9 +235,14 @@ export const ChatMessage = memo(function ChatMessage({
     if (!window.confirm("このレコードを削除しますか？")) return;
     startDeleteTransition(async () => {
       const result = await deleteRecordAction(conversationId, record.id);
-      if (result?.error) {
-        addToast(result.error, "error");
+      if (!result) {
+        return;
       }
+      if ("error" in result) {
+        addToast(result.error, "error");
+        return;
+      }
+      addToast(result.warning, "warning");
     });
   }
 

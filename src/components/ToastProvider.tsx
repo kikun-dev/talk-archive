@@ -12,7 +12,7 @@ import {
 import { createPortal } from "react-dom";
 import { Toast } from "@/components/Toast";
 
-type ToastType = "success" | "error";
+type ToastType = "success" | "error" | "warning";
 
 type ToastItem = {
   id: string;
