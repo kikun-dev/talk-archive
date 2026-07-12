@@ -185,26 +185,43 @@ function htmlToText(html: string): string {
 const IMAGE_MARKER_LINE_PATTERN = /^\s*\[image:[^\]]*\]\s*$/i;
 
 /**
- * text/plain 本文から `[image: ...]` マーカーのみの行を取り除き、除去によってできた
- * 連続空行を1行に詰める（#129）
+ * text/plain 本文から `[image: ...]` マーカーのみの行を取り除く（#129）
+ * マーカー行が1行も無い場合は入力を完全に無変更（byte-identical）で返す。改行の
+ * 正規化（CRLF→LF）や既存の連続空行の畳み込みは行わない（#132 レビュー対応 P1-1:
+ * マーカーが無い大多数の通常本文まで一律に書き換えていたことで、CRLF や意図的な
+ * 連続空行が失われ、本文の忠実性・既存の重複排除を損なっていた不具合の修正）。
+ * マーカー行がある場合は、そのマーカー行を取り除き、除去によって直接できた空行の
+ * 連続（マーカーの直前・直後がともに空行だった場合の2行）のみを1行に畳み込む。
+ * マーカーと無関係な既存の連続空行は手を付けずそのまま残す
  */
 function removeImageMarkerLines(text: string): string {
-  const lines = text.split(/\r\n|\r|\n/).filter(
-    (line) => !IMAGE_MARKER_LINE_PATTERN.test(line),
+  const lines = text.split(/\r\n|\r|\n/);
+  const hasMarkerLine = lines.some((line) =>
+    IMAGE_MARKER_LINE_PATTERN.test(line),
   );
+  if (!hasMarkerLine) {
+    return text;
+  }
 
-  const collapsed: string[] = [];
-  for (const line of lines) {
-    const isBlank = line.trim().length === 0;
-    const previousIsBlank =
-      collapsed.length > 0 &&
-      collapsed[collapsed.length - 1].trim().length === 0;
-    if (isBlank && previousIsBlank) {
+  const result: string[] = [];
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+    if (!IMAGE_MARKER_LINE_PATTERN.test(line)) {
+      result.push(line);
       continue;
     }
-    collapsed.push(line);
+    // マーカー行は取り除く。直前（出力済みの最後の行）と直後の行がともに空行の
+    // 場合のみ、マーカー除去でできた空行の重なりとみなして直後の空行も1行分
+    // 読み飛ばし、空行1行に畳み込む
+    const previousIsBlank =
+      result.length > 0 && result[result.length - 1].trim().length === 0;
+    const nextLine = lines[i + 1];
+    const nextIsBlank = nextLine !== undefined && nextLine.trim().length === 0;
+    if (previousIsBlank && nextIsBlank) {
+      i += 1;
+    }
   }
-  return collapsed.join("\n");
+  return result.join("\n");
 }
 
 /**
@@ -507,49 +524,86 @@ export type FetchedRemoteImage = {
 };
 
 /**
- * .eml インポート用にリモート画像をまとめて取得する（#129）
+ * リモート画像取得の失敗理由（#132 レビュー対応 P1-3）
+ * URL や image_name 等の個人情報を含み得る情報はここに含めない。ログに出す場合は
+ * この理由コードのみを出力し、message.remoteImageUrl 自体は出力しないこと
+ */
+export type RemoteImageImportFailureReason =
+  | "not_allowed" // URL が許可リストの再検証に失敗した
+  | "fetch_failed" // repository での取得に失敗した（ネットワーク・http_error・too_large・no_body）
+  | "not_image" // Content-Type が image/ 始まりでない
+  | "batch_size_exceeded"; // バッチ合計サイズの上限に達した
+
+export type RemoteImageImportResult =
+  | { ok: true; image: FetchedRemoteImage }
+  | { ok: false; reason: RemoteImageImportFailureReason };
+
+/**
+ * .eml インポート用にリモート画像をまとめて取得する（#129、#132 レビュー対応 P1-3/P2-1/P2-2）
+ * - fetchOne は repository（fetchRemoteImage）を呼ぶ前に必ず isAllowedRemoteImageUrl で
+ *   URL を再検証する（P2-1: SSRF チェックの自己完結性。呼び出し元の事前フィルタに
+ *   依存せず、許可外 URL に対して outbound I/O を一切行わない）
  * - 1件あたり MAX_EML_FILE_SIZE（10MB）・タイムアウト15秒で repository の
  *   fetchRemoteImage を呼ぶ
- * - 同時実行数 REMOTE_IMAGE_FETCH_CONCURRENCY（5）のワーカープールで並列化する
- * - 成功分の合計サイズが MAX_EML_TOTAL_SIZE（50MB）を超えた時点で、当該タスクと
- *   以降のタスクは失敗（null）にする（バッチ全体のメモリ使用量の上限）
+ * - 同時実行数 REMOTE_IMAGE_FETCH_CONCURRENCY（5）のワーカープールで並列化する。
+ *   このため最大 REMOTE_IMAGE_FETCH_CONCURRENCY 件が同時に進行中になり得て、
+ *   バッチ合計サイズの上限（MAX_EML_TOTAL_SIZE）チェックが効くまでの間に、実際に
+ *   ダウンロードされるバイト数は上限を最大 (REMOTE_IMAGE_FETCH_CONCURRENCY - 1) ×
+ *   MAX_EML_FILE_SIZE（約40MB）超過し得る（同時実行中のタスクは上限到達を検知
+ *   できないまま最後まで読み切るため）
+ * - ダウンロードした全バイト数（非画像コンテンツを含む）を Content-Type 判定より
+ *   前に合計へ加算する（P2-2: 非画像コンテンツの大量ダウンロードでバッチ上限を
+ *   迂回できてしまう不具合の修正）。合計が MAX_EML_TOTAL_SIZE（50MB）を超えた時点で、
+ *   当該タスクと以降のタスクは batch_size_exceeded にする
  * - Content-Type はメディアタイプのみに正規化（`;` 以降除去・trim・小文字化）し、
- *   `image/` 始まりでなければ失敗（null）。filename は正規化後の subtype から導出する
- * - 戻り値は task.key → 取得結果（失敗は null）の Map。呼び出し元は null を
- *   添付失敗として扱う（メディア未添付レコードとして残る）
+ *   `image/` 始まりでなければ not_image。filename は正規化後の subtype から導出する
+ * - 戻り値は task.key → RemoteImageImportResult の Map。呼び出し元は ok: false を
+ *   添付失敗として扱う（メディア未添付レコードとして残る）。reason は個人情報を
+ *   含まないため、そのままログへ出力してよい
  */
 export async function fetchRemoteImagesForImport(
   tasks: RemoteImageFetchTask[],
-): Promise<Map<string, FetchedRemoteImage | null>> {
-  const results = new Map<string, FetchedRemoteImage | null>();
+): Promise<Map<string, RemoteImageImportResult>> {
+  const results = new Map<string, RemoteImageImportResult>();
   let totalFetchedBytes = 0;
   let isTotalSizeExceeded = false;
   let nextTaskIndex = 0;
 
-  async function fetchOne(url: string): Promise<FetchedRemoteImage | null> {
+  async function fetchOne(url: string): Promise<RemoteImageImportResult> {
+    // P2-1: repository を呼ぶ前に必ず許可リストを再検証する。呼び出し元
+    // （action 層）がすでに許可済み URL のみをタスク化していたとしても、この
+    // 関数単体で SSRF チェックが完結しているようにする
+    if (!isAllowedRemoteImageUrl(url)) {
+      return { ok: false, reason: "not_allowed" };
+    }
+
     const fetched = await fetchRemoteImage(url, {
       timeoutMs: REMOTE_IMAGE_FETCH_TIMEOUT_MS,
       maxBytes: MAX_EML_FILE_SIZE,
     });
     if (!fetched.ok) {
-      return null;
+      return { ok: false, reason: "fetch_failed" };
+    }
+
+    // P2-2: 非画像コンテンツのバイト数もバッチ合計に含めてから上限判定する
+    totalFetchedBytes += fetched.data.byteLength;
+    if (totalFetchedBytes > MAX_EML_TOTAL_SIZE) {
+      isTotalSizeExceeded = true;
+      return { ok: false, reason: "batch_size_exceeded" };
     }
 
     const contentType = fetched.contentType.split(";")[0].trim().toLowerCase();
     if (!contentType.startsWith("image/")) {
-      return null;
-    }
-
-    totalFetchedBytes += fetched.data.byteLength;
-    if (totalFetchedBytes > MAX_EML_TOTAL_SIZE) {
-      isTotalSizeExceeded = true;
-      return null;
+      return { ok: false, reason: "not_image" };
     }
 
     return {
-      data: fetched.data,
-      contentType,
-      filename: guessImageFilename(contentType, 0),
+      ok: true,
+      image: {
+        data: fetched.data,
+        contentType,
+        filename: guessImageFilename(contentType, 0),
+      },
     };
   }
 
@@ -558,7 +612,7 @@ export async function fetchRemoteImagesForImport(
       const task = tasks[nextTaskIndex];
       nextTaskIndex += 1;
       if (isTotalSizeExceeded) {
-        results.set(task.key, null);
+        results.set(task.key, { ok: false, reason: "batch_size_exceeded" });
         continue;
       }
       results.set(task.key, await fetchOne(task.url));

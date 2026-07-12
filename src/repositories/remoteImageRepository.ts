@@ -41,6 +41,10 @@ export async function fetchRemoteImage(
   }
 
   if (!response.ok) {
+    // 本体を読まずに早期returnするため、undici の接続を確実に解放するよう
+    // 明示的にキャンセルする。キャンセル自体の失敗は返す reason に影響させない
+    // （#132 レビュー対応 P1-2: 未消費のまま返すとコネクションプールを圧迫し得る）
+    await response.body?.cancel().catch(() => {});
     return { ok: false, reason: "http_error" };
   }
 
@@ -48,6 +52,9 @@ export async function fetchRemoteImage(
   if (contentLengthHeader !== null) {
     const contentLength = Number(contentLengthHeader);
     if (Number.isFinite(contentLength) && contentLength > options.maxBytes) {
+      // 同上（#132 レビュー対応 P1-2）: Content-Length の事前チェックで本体を
+      // 読まずに返す経路も、未消費のまま放置しない
+      await response.body?.cancel().catch(() => {});
       return { ok: false, reason: "too_large" };
     }
   }

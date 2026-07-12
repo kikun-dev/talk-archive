@@ -489,18 +489,22 @@ export async function executeEmlImportAction(
       }
 
       // 添付が無く remoteImageUrl のみを持つ場合は、事前に一括取得した結果を使う。
-      // 取得失敗（許可外・サイズ超過・非画像・ネットワーク等 = null）は添付失敗として
-      // 集計し、メディア未添付レコードとして残す（#113 の導線で個別に復旧可能）
+      // 取得失敗（許可外・サイズ超過・非画像・ネットワーク等）は添付失敗として集計し、
+      // メディア未添付レコードとして残す（#113 の導線で個別に復旧可能）。
+      // ログには reason（個人情報を含まない失敗理由コード）のみを出し、
+      // message.remoteImageUrl（image_name にメールを識別する情報を含む）は
+      // 出力しない（#132 レビュー対応 P1-3: ログへの PII 混入防止）
       if (message.remoteImageUrl) {
-        const fetched = fetchedRemoteImages.get(id);
-        if (!fetched) {
-          console.error(
-            "Failed to attach eml remote image:",
-            message.remoteImageUrl,
-          );
+        const fetchResult = fetchedRemoteImages.get(id);
+        if (!fetchResult || !fetchResult.ok) {
+          console.error("Failed to attach eml remote image", {
+            recordId: id,
+            reason: fetchResult ? fetchResult.reason : "missing",
+          });
           attachFailedCount += 1;
           continue;
         }
+        const fetched = fetchResult.image;
         try {
           await attachRecordMedia(supabase, {
             userId: user.id,

@@ -18,7 +18,12 @@ function buildMockResponse(options: {
   contentLength?: string | null;
   chunks?: Uint8Array[];
   bodyNull?: boolean;
-}): { response: Response; reader: MockReader; getReaderMock: ReturnType<typeof vi.fn> } {
+}): {
+  response: Response;
+  reader: MockReader;
+  getReaderMock: ReturnType<typeof vi.fn>;
+  bodyCancelMock: ReturnType<typeof vi.fn>;
+} {
   const {
     ok = true,
     contentType = "image/jpeg",
@@ -37,6 +42,9 @@ function buildMockResponse(options: {
     cancel: vi.fn(async () => {}),
   };
   const getReaderMock = vi.fn(() => reader);
+  // response.body 自体の cancel()（早期return時の未消費ボディ解放、#132 レビュー対応
+  // P1-2）を reader.cancel() とは別に検証できるよう、専用のモックを用意する
+  const bodyCancelMock = vi.fn(async () => {});
 
   const headers = {
     get: (name: string) => {
@@ -54,10 +62,12 @@ function buildMockResponse(options: {
   const response = {
     ok,
     headers,
-    body: bodyNull ? null : { getReader: getReaderMock },
+    body: bodyNull
+      ? null
+      : { getReader: getReaderMock, cancel: bodyCancelMock },
   } as unknown as Response;
 
-  return { response, reader, getReaderMock };
+  return { response, reader, getReaderMock, bodyCancelMock };
 }
 
 const DEFAULT_OPTIONS = { timeoutMs: 15_000, maxBytes: 100 };
@@ -118,7 +128,7 @@ describe("fetchRemoteImage", () => {
   });
 
   it("returns { ok: false, reason: 'http_error' } without reading the body when the response is not ok", async () => {
-    const { response, getReaderMock } = buildMockResponse({
+    const { response, getReaderMock, bodyCancelMock } = buildMockResponse({
       ok: false,
       chunks: [new Uint8Array([1])],
     });
@@ -131,10 +141,29 @@ describe("fetchRemoteImage", () => {
 
     expect(result).toEqual({ ok: false, reason: "http_error" });
     expect(getReaderMock).not.toHaveBeenCalled();
+    // #132 レビュー対応 P1-2: 本体を読まずに返す経路でも response.body を
+    // cancel() して undici の接続を解放する
+    expect(bodyCancelMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("still returns { ok: false, reason: 'http_error' } even if response.body.cancel() itself rejects", async () => {
+    const { response } = buildMockResponse({ ok: false });
+    // cancel() 自体が失敗しても reason は変えず、例外も外へ漏らさない
+    (response.body as { cancel: () => Promise<void> }).cancel = vi
+      .fn()
+      .mockRejectedValue(new Error("cancel failed"));
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response));
+
+    const result = await fetchRemoteImage(
+      "https://example.com/image",
+      DEFAULT_OPTIONS,
+    );
+
+    expect(result).toEqual({ ok: false, reason: "http_error" });
   });
 
   it("returns { ok: false, reason: 'too_large' } before reading the body when Content-Length exceeds maxBytes", async () => {
-    const { response, getReaderMock } = buildMockResponse({
+    const { response, getReaderMock, bodyCancelMock } = buildMockResponse({
       contentLength: "101",
       chunks: [new Uint8Array(101)],
     });
@@ -147,6 +176,9 @@ describe("fetchRemoteImage", () => {
 
     expect(result).toEqual({ ok: false, reason: "too_large" });
     expect(getReaderMock).not.toHaveBeenCalled();
+    // #132 レビュー対応 P1-2: Content-Length の事前チェックで返す経路でも
+    // response.body を cancel() して未消費のまま放置しない
+    expect(bodyCancelMock).toHaveBeenCalledTimes(1);
   });
 
   it("returns { ok: false, reason: 'too_large' } and cancels the reader mid-stream when cumulative bytes exceed maxBytes without Content-Length", async () => {

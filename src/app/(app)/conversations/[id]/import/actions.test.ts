@@ -1105,9 +1105,12 @@ describe("executeEmlImportAction", () => {
           [
             "record-remote",
             {
-              data: new Uint8Array([9, 8, 7]),
-              contentType: "image/jpeg",
-              filename: "image-1.jpeg",
+              ok: true,
+              image: {
+                data: new Uint8Array([9, 8, 7]),
+                contentType: "image/jpeg",
+                filename: "image-1.jpeg",
+              },
             },
           ],
         ]),
@@ -1155,7 +1158,7 @@ describe("executeEmlImportAction", () => {
       expect(result.result.attachFailedCount).toBe(0);
     });
 
-    it("counts attachFailedCount when the batch result for a record is null and continues with other attachments", async () => {
+    it("counts attachFailedCount when the batch result for a record is { ok: false } and continues with other attachments, without logging the URL", async () => {
       mockSupabaseClient({ id: "user-1" });
       const formData = buildFormDataWithFiles([
         { name: "remote-image.eml" },
@@ -1209,10 +1212,14 @@ describe("executeEmlImportAction", () => {
         ],
       });
       fetchRemoteImagesForImportMock.mockResolvedValue(
-        new Map([["record-remote", null]]),
+        new Map([
+          ["record-remote", { ok: false, reason: "not_image" as const }],
+        ]),
       );
       attachRecordMediaMock.mockResolvedValue({});
-      vi.spyOn(console, "error").mockImplementation(() => {});
+      const consoleErrorSpy = vi
+        .spyOn(console, "error")
+        .mockImplementation(() => {});
 
       const { executeEmlImportAction } = await import("./actions");
       const result = await executeEmlImportAction(
@@ -1232,6 +1239,11 @@ describe("executeEmlImportAction", () => {
       }
       expect(result.result.attachedCount).toBe(1);
       expect(result.result.attachFailedCount).toBe(1);
+      // #132 レビュー対応 P1-3: ログに URL（image_name にメール識別情報を含む）を
+      // 一切出力しない
+      for (const call of consoleErrorSpy.mock.calls) {
+        expect(JSON.stringify(call)).not.toContain(REMOTE_IMAGE_URL);
+      }
     });
 
     it("treats a record missing from the batch result as an attach failure", async () => {
@@ -1301,9 +1313,12 @@ describe("executeEmlImportAction", () => {
           [
             "record-remote",
             {
-              data: new Uint8Array([1]),
-              contentType: "image/png",
-              filename: "image-1.png",
+              ok: true,
+              image: {
+                data: new Uint8Array([1]),
+                contentType: "image/png",
+                filename: "image-1.png",
+              },
             },
           ],
         ]),
