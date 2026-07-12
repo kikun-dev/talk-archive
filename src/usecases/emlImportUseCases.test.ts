@@ -4,12 +4,30 @@ import {
   parseEmlFile,
   expandEmlMessageToRecords,
   fetchRemoteImagesForImport,
+  isRetryableRemoteImageFailure,
+  computeRemoteImageRetryDelayMs,
   EmlImportError,
   MAX_EML_FILE_SIZE,
   MAX_EML_FILE_COUNT,
   MAX_EML_TOTAL_SIZE,
+  REMOTE_IMAGE_FETCH_MAX_ATTEMPTS,
+  REMOTE_IMAGE_FETCH_RETRY_BASE_DELAY_MS,
+  REMOTE_IMAGE_FETCH_RETRY_JITTER_MS,
   type ParsedEmlMessage,
+  type RemoteImageImportFailure,
 } from "./emlImportUseCases";
+
+/** テストで待たずに済ませるための即時解決 sleep フェイク。呼ばれた ms を記録する */
+function createFakeSleep(): {
+  sleep: (ms: number) => Promise<void>;
+  calls: number[];
+} {
+  const calls: number[] = [];
+  const sleep = async (ms: number): Promise<void> => {
+    calls.push(ms);
+  };
+  return { sleep, calls };
+}
 
 const { fetchRemoteImageRepositoryMock } = vi.hoisted(() => ({
   fetchRemoteImageRepositoryMock: vi.fn(),
@@ -1120,10 +1138,12 @@ describe("fetchRemoteImagesForImport (#129, #132 レビュー対応 P1-3/P2-1/P2
     expect(result.get("record-1")).toEqual({ ok: false, reason: "not_image" });
   });
 
-  it("maps repository failures to { ok: false, reason: 'fetch_failed' } while other tasks still succeed", async () => {
+  // too_large は非リトライ対象なので、リトライの有無に関わらず1回の呼び出しで
+  // 確定する（#137: 失敗理由が判別可能ユニオンに構造化され、attempts を持つ）
+  it("maps a non-retryable repository failure to a structured RemoteImageImportFailure while other tasks still succeed", async () => {
     fetchRemoteImageRepositoryMock.mockImplementation(async (url: string) =>
       url === allowedImageUrl("bad")
-        ? { ok: false, reason: "network" }
+        ? { ok: false, reason: "too_large" }
         : {
             ok: true,
             data: new Uint8Array([1, 2]),
@@ -1138,7 +1158,8 @@ describe("fetchRemoteImagesForImport (#129, #132 レビュー対応 P1-3/P2-1/P2
 
     expect(result.get("record-bad")).toEqual({
       ok: false,
-      reason: "fetch_failed",
+      reason: "too_large",
+      attempts: 1,
     });
     expect(result.get("record-ok")).toEqual({
       ok: true,
@@ -1148,6 +1169,26 @@ describe("fetchRemoteImagesForImport (#129, #132 レビュー対応 P1-3/P2-1/P2
         filename: "image-1.png",
       },
     });
+    // too_large はリトライ対象外なので1回しか呼ばれない
+    expect(fetchRemoteImageRepositoryMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("maps repository { reason: 'no_body' } to a structured failure without retrying", async () => {
+    fetchRemoteImageRepositoryMock.mockResolvedValue({
+      ok: false,
+      reason: "no_body",
+    });
+
+    const result = await fetchRemoteImagesForImport([
+      { key: "record-1", url: allowedImageUrl("1") },
+    ]);
+
+    expect(result.get("record-1")).toEqual({
+      ok: false,
+      reason: "no_body",
+      attempts: 1,
+    });
+    expect(fetchRemoteImageRepositoryMock).toHaveBeenCalledTimes(1);
   });
 
   // P2-1: SSRF 自己完結性。fetchOne は repository を呼ぶ前に必ず
@@ -1182,6 +1223,227 @@ describe("fetchRemoteImagesForImport (#129, #132 レビュー対応 P1-3/P2-1/P2
         filename: "image-1.jpeg",
       },
     });
+  });
+
+  // --- リトライ（#137） ---
+
+  it("retries a 502/503/504 http_error up to REMOTE_IMAGE_FETCH_MAX_ATTEMPTS and returns the last failure with attempts", async () => {
+    const { sleep, calls } = createFakeSleep();
+    fetchRemoteImageRepositoryMock.mockResolvedValue({
+      ok: false,
+      reason: "http_error",
+      status: 502,
+    });
+
+    const result = await fetchRemoteImagesForImport(
+      [{ key: "record-1", url: allowedImageUrl("1") }],
+      { sleep },
+    );
+
+    expect(result.get("record-1")).toEqual({
+      ok: false,
+      reason: "http_error",
+      status: 502,
+      attempts: REMOTE_IMAGE_FETCH_MAX_ATTEMPTS,
+    });
+    expect(fetchRemoteImageRepositoryMock).toHaveBeenCalledTimes(
+      REMOTE_IMAGE_FETCH_MAX_ATTEMPTS,
+    );
+    // リトライ2回分（初回は待たない）だけ sleep が呼ばれる
+    expect(calls).toHaveLength(REMOTE_IMAGE_FETCH_MAX_ATTEMPTS - 1);
+  });
+
+  it.each([502, 503, 504])(
+    "retries an http_error with status %i and succeeds if a later attempt returns ok",
+    async (status) => {
+      const { sleep } = createFakeSleep();
+      let callCount = 0;
+      fetchRemoteImageRepositoryMock.mockImplementation(async () => {
+        callCount += 1;
+        if (callCount < 2) {
+          return { ok: false, reason: "http_error", status };
+        }
+        return {
+          ok: true,
+          data: new Uint8Array([1, 2, 3]),
+          contentType: "image/jpeg",
+        };
+      });
+
+      const result = await fetchRemoteImagesForImport(
+        [{ key: "record-1", url: allowedImageUrl("1") }],
+        { sleep },
+      );
+
+      // 成功時の ok:true の形は attempts に依存しない（成功した最終レスポンスのみ返す）
+      expect(result.get("record-1")).toEqual({
+        ok: true,
+        image: {
+          data: new Uint8Array([1, 2, 3]),
+          contentType: "image/jpeg",
+          filename: "image-1.jpeg",
+        },
+      });
+      expect(fetchRemoteImageRepositoryMock).toHaveBeenCalledTimes(2);
+    },
+  );
+
+  it.each(["timeout", "other"] as const)(
+    "retries a network failure (networkKind: %s) and returns the last failure with attempts on final failure",
+    async (networkKind) => {
+      const { sleep } = createFakeSleep();
+      fetchRemoteImageRepositoryMock.mockResolvedValue({
+        ok: false,
+        reason: "network",
+        networkKind,
+      });
+
+      const result = await fetchRemoteImagesForImport(
+        [{ key: "record-1", url: allowedImageUrl("1") }],
+        { sleep },
+      );
+
+      expect(result.get("record-1")).toEqual({
+        ok: false,
+        reason: "network",
+        networkKind,
+        attempts: REMOTE_IMAGE_FETCH_MAX_ATTEMPTS,
+      });
+      expect(fetchRemoteImageRepositoryMock).toHaveBeenCalledTimes(
+        REMOTE_IMAGE_FETCH_MAX_ATTEMPTS,
+      );
+    },
+  );
+
+  it("does not retry a non-retryable http_error status (e.g. 404)", async () => {
+    const { sleep } = createFakeSleep();
+    fetchRemoteImageRepositoryMock.mockResolvedValue({
+      ok: false,
+      reason: "http_error",
+      status: 404,
+    });
+
+    const result = await fetchRemoteImagesForImport(
+      [{ key: "record-1", url: allowedImageUrl("1") }],
+      { sleep },
+    );
+
+    expect(result.get("record-1")).toEqual({
+      ok: false,
+      reason: "http_error",
+      status: 404,
+      attempts: 1,
+    });
+    expect(fetchRemoteImageRepositoryMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not retry too_large or no_body failures", async () => {
+    const { sleep } = createFakeSleep();
+    fetchRemoteImageRepositoryMock.mockImplementation(async (url: string) =>
+      url === allowedImageUrl("too-large")
+        ? { ok: false, reason: "too_large" }
+        : { ok: false, reason: "no_body" },
+    );
+
+    const result = await fetchRemoteImagesForImport(
+      [
+        { key: "record-too-large", url: allowedImageUrl("too-large") },
+        { key: "record-no-body", url: allowedImageUrl("no-body") },
+      ],
+      { sleep },
+    );
+
+    expect(result.get("record-too-large")).toEqual({
+      ok: false,
+      reason: "too_large",
+      attempts: 1,
+    });
+    expect(result.get("record-no-body")).toEqual({
+      ok: false,
+      reason: "no_body",
+      attempts: 1,
+    });
+    expect(fetchRemoteImageRepositoryMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not retry not_allowed, not_image, or batch_size_exceeded", async () => {
+    const { sleep } = createFakeSleep();
+    const disallowedUrl = "https://evil.example.com/mail/output/qimage?image_name=x";
+    fetchRemoteImageRepositoryMock.mockImplementation(async (url: string) =>
+      url === allowedImageUrl("not-image")
+        ? { ok: true, data: new Uint8Array([1]), contentType: "text/plain" }
+        : { ok: true, data: new Uint8Array(60 * 1024 * 1024), contentType: "image/jpeg" },
+    );
+
+    const result = await fetchRemoteImagesForImport(
+      [
+        { key: "record-not-allowed", url: disallowedUrl },
+        { key: "record-not-image", url: allowedImageUrl("not-image") },
+        { key: "record-too-big", url: allowedImageUrl("too-big") },
+      ],
+      { sleep },
+    );
+
+    expect(result.get("record-not-allowed")).toEqual({
+      ok: false,
+      reason: "not_allowed",
+    });
+    expect(result.get("record-not-image")).toEqual({
+      ok: false,
+      reason: "not_image",
+    });
+    expect(result.get("record-too-big")).toEqual({
+      ok: false,
+      reason: "batch_size_exceeded",
+    });
+    // not_allowed は repository を呼ばないため、呼び出しは残り2件分のみ
+    expect(fetchRemoteImageRepositoryMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not double-count bytes toward the batch cap when each task's first attempt fails and only the retry succeeds", async () => {
+    const { sleep } = createFakeSleep();
+    const twentyMb = 20 * 1024 * 1024;
+    // 各タスクとも1回目は502で失敗し（このとき data を持たないため加算されない）、
+    // 2回目のリトライで成功する。実際にダウンロードされるのは成功した最終レスポンス
+    // 分の20MB×2件=40MBのみのはずで、50MB上限を超えないため両方とも成功するはず。
+    // 失敗した1回目の分まで誤って加算される実装だと、合計が50MBを超えて
+    // どちらかが batch_size_exceeded になってしまう
+    const seenUrls = new Set<string>();
+    fetchRemoteImageRepositoryMock.mockImplementation(async (url: string) => {
+      const isFirstAttemptForUrl = !seenUrls.has(url);
+      seenUrls.add(url);
+      if (isFirstAttemptForUrl) {
+        return { ok: false, reason: "http_error", status: 502 };
+      }
+      return {
+        ok: true,
+        data: new Uint8Array(twentyMb),
+        contentType: "image/jpeg",
+      };
+    });
+
+    const result = await fetchRemoteImagesForImport(
+      [
+        { key: "record-1", url: allowedImageUrl("1") },
+        { key: "record-2", url: allowedImageUrl("2") },
+      ],
+      { sleep },
+    );
+
+    // MB単位のUint8Arrayを丸ごと toEqual で要素比較すると極端に遅い（chai の
+    // deep-eql が全インデックスを比較するため）ため、このテストの関心事（バイト数の
+    // 二重計上防止）に必要な byteLength・ok・contentType のみを個別に検証する。
+    // データの忠実性そのものは別テスト（小さな配列を使うもの）でカバー済み
+    for (const key of ["record-1", "record-2"]) {
+      const entry = result.get(key);
+      expect(entry?.ok).toBe(true);
+      if (entry?.ok) {
+        expect(entry.image.data.byteLength).toBe(twentyMb);
+        expect(entry.image.contentType).toBe("image/jpeg");
+        expect(entry.image.filename).toBe("image-1.jpeg");
+      }
+    }
+    expect(fetchRemoteImageRepositoryMock).toHaveBeenCalledTimes(4);
   });
 
   // P2-2: 非画像でダウンロードされたバイト数もバッチ合計に含める
@@ -1250,7 +1512,9 @@ describe("fetchRemoteImagesForImport (#129, #132 レビュー対応 P1-3/P2-1/P2
     ).toBe(true);
   });
 
-  it("never runs more than 5 fetches concurrently", async () => {
+  // #137: 5→2に変更（配信元が同時アクセスに弱く、実測で502/504の発生率が
+  // 同時実行数に強く相関することが分かったため）
+  it("never runs more than 2 fetches concurrently", async () => {
     let activeCount = 0;
     let maxActiveCount = 0;
     fetchRemoteImageRepositoryMock.mockImplementation(async () => {
@@ -1272,9 +1536,94 @@ describe("fetchRemoteImagesForImport (#129, #132 レビュー対応 P1-3/P2-1/P2
     const result = await fetchRemoteImagesForImport(tasks);
 
     expect(result.size).toBe(12);
-    expect(maxActiveCount).toBeLessThanOrEqual(5);
+    expect(maxActiveCount).toBeLessThanOrEqual(2);
     // 直列実行に退化していないこと（並列で動いている）
     expect(maxActiveCount).toBeGreaterThan(1);
+  });
+});
+
+describe("isRetryableRemoteImageFailure (#137)", () => {
+  it.each([502, 503, 504])(
+    "returns true for http_error with status %i",
+    (status) => {
+      expect(
+        isRetryableRemoteImageFailure({
+          reason: "http_error",
+          status,
+          attempts: 1,
+        }),
+      ).toBe(true);
+    },
+  );
+
+  it.each([400, 401, 403, 404, 429, 500, 501])(
+    "returns false for http_error with status %i",
+    (status) => {
+      expect(
+        isRetryableRemoteImageFailure({
+          reason: "http_error",
+          status,
+          attempts: 1,
+        }),
+      ).toBe(false);
+    },
+  );
+
+  it.each(["timeout", "other"] as const)(
+    "returns true for network failures (networkKind: %s)",
+    (networkKind) => {
+      expect(
+        isRetryableRemoteImageFailure({
+          reason: "network",
+          networkKind,
+          attempts: 1,
+        }),
+      ).toBe(true);
+    },
+  );
+
+  it.each([
+    { reason: "too_large", attempts: 1 },
+    { reason: "no_body", attempts: 1 },
+    { reason: "not_allowed" },
+    { reason: "not_image" },
+    { reason: "batch_size_exceeded" },
+  ] satisfies RemoteImageImportFailure[])(
+    "returns false for non-retryable reason: $reason",
+    (failure) => {
+      expect(isRetryableRemoteImageFailure(failure)).toBe(false);
+    },
+  );
+});
+
+describe("computeRemoteImageRetryDelayMs (#137)", () => {
+  it("computes BASE * 2^(n-1) plus a jitter in [0, JITTER) for the 1st retry", () => {
+    expect(computeRemoteImageRetryDelayMs(1, () => 0)).toBe(
+      REMOTE_IMAGE_FETCH_RETRY_BASE_DELAY_MS,
+    );
+    expect(computeRemoteImageRetryDelayMs(1, () => 0.999999)).toBeCloseTo(
+      REMOTE_IMAGE_FETCH_RETRY_BASE_DELAY_MS + REMOTE_IMAGE_FETCH_RETRY_JITTER_MS,
+      0,
+    );
+  });
+
+  it("computes BASE * 2^(n-1) plus a jitter in [0, JITTER) for the 2nd retry", () => {
+    expect(computeRemoteImageRetryDelayMs(2, () => 0)).toBe(
+      REMOTE_IMAGE_FETCH_RETRY_BASE_DELAY_MS * 2,
+    );
+    expect(computeRemoteImageRetryDelayMs(2, () => 0.999999)).toBeCloseTo(
+      REMOTE_IMAGE_FETCH_RETRY_BASE_DELAY_MS * 2 +
+        REMOTE_IMAGE_FETCH_RETRY_JITTER_MS,
+      0,
+    );
+  });
+
+  it("defaults to Math.random for jitter when no random function is injected", () => {
+    const delay = computeRemoteImageRetryDelayMs(1);
+    expect(delay).toBeGreaterThanOrEqual(REMOTE_IMAGE_FETCH_RETRY_BASE_DELAY_MS);
+    expect(delay).toBeLessThan(
+      REMOTE_IMAGE_FETCH_RETRY_BASE_DELAY_MS + REMOTE_IMAGE_FETCH_RETRY_JITTER_MS,
+    );
   });
 });
 
@@ -1455,5 +1804,12 @@ describe("constants", () => {
     expect(MAX_EML_FILE_SIZE).toBe(10 * 1024 * 1024);
     expect(MAX_EML_FILE_COUNT).toBe(200);
     expect(MAX_EML_TOTAL_SIZE).toBe(50 * 1024 * 1024);
+  });
+
+  // #137
+  it("exposes the remote image retry constants", () => {
+    expect(REMOTE_IMAGE_FETCH_MAX_ATTEMPTS).toBe(3);
+    expect(REMOTE_IMAGE_FETCH_RETRY_BASE_DELAY_MS).toBe(500);
+    expect(REMOTE_IMAGE_FETCH_RETRY_JITTER_MS).toBe(250);
   });
 });

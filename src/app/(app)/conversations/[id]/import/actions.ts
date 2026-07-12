@@ -508,16 +508,25 @@ export async function executeEmlImportAction(
       }
 
       // リモート画像の場合は、事前に一括取得した結果を使う。
-      // 取得失敗（許可外・サイズ超過・非画像・ネットワーク等）は添付失敗として集計し、
-      // メディア未添付レコードとして残す（#113 の導線で個別に復旧可能）。
-      // ログには reason（個人情報を含まない失敗理由コード）のみを出し、
-      // media.url（image_name にメールを識別する情報を含む）は出力しない
-      // （#132 レビュー対応 P1-3: ログへの PII 混入防止）
+      // 取得失敗（許可外・サイズ超過・非画像・ネットワーク・リトライ後の最終失敗等）は
+      // 添付失敗として集計し、メディア未添付レコードとして残す（#113 の導線で個別に
+      // 復旧可能）。ログには失敗理由の構造（reason・status・attempts・networkKind。
+      // #137: リトライ追加に伴い理由を構造化）のみを出し、media.url（image_name に
+      // メールを識別する情報を含む）は出力しない（#132 レビュー対応 P1-3: ログへの
+      // PII 混入防止）
       const fetchResult = fetchedRemoteImages.get(id);
-      if (!fetchResult || !fetchResult.ok) {
+      if (!fetchResult) {
         console.error("Failed to attach eml remote image", {
           recordId: id,
-          reason: fetchResult ? fetchResult.reason : "missing",
+          reason: "missing",
+        });
+        attachFailedCount += 1;
+        continue;
+      }
+      if (!fetchResult.ok) {
+        console.error("Failed to attach eml remote image", {
+          recordId: id,
+          ...fetchResult,
         });
         attachFailedCount += 1;
         continue;

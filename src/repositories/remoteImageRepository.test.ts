@@ -14,6 +14,7 @@ type MockReader = {
  */
 function buildMockResponse(options: {
   ok?: boolean;
+  status?: number;
   contentType?: string | null;
   contentLength?: string | null;
   chunks?: Uint8Array[];
@@ -26,6 +27,7 @@ function buildMockResponse(options: {
 } {
   const {
     ok = true,
+    status = ok ? 200 : 500,
     contentType = "image/jpeg",
     contentLength = null,
     chunks = [],
@@ -61,6 +63,7 @@ function buildMockResponse(options: {
 
   const response = {
     ok,
+    status,
     headers,
     body: bodyNull
       ? null
@@ -113,7 +116,7 @@ describe("fetchRemoteImage", () => {
     );
   });
 
-  it("returns { ok: false, reason: 'network' } when fetch rejects (network error / timeout / redirect)", async () => {
+  it("returns { ok: false, reason: 'network', networkKind: 'other' } when fetch rejects with a non-timeout error (network error / redirect)", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockRejectedValue(new Error("network down")),
@@ -124,12 +127,38 @@ describe("fetchRemoteImage", () => {
       DEFAULT_OPTIONS,
     );
 
-    expect(result).toEqual({ ok: false, reason: "network" });
+    expect(result).toEqual({
+      ok: false,
+      reason: "network",
+      networkKind: "other",
+    });
   });
 
-  it("returns { ok: false, reason: 'http_error' } without reading the body when the response is not ok", async () => {
+  // #137: AbortSignal.timeout による中断は DOMException（name: "TimeoutError"）として
+  // 届く。UseCase 層のリトライ判定はタイムアウトとそれ以外を区別しないが、Vercel の
+  // ログから原因が判別できるよう repository 側で分類する
+  it("returns { ok: false, reason: 'network', networkKind: 'timeout' } when fetch rejects with a TimeoutError DOMException", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockRejectedValue(new DOMException("The operation timed out.", "TimeoutError")),
+    );
+
+    const result = await fetchRemoteImage(
+      "https://example.com/image",
+      DEFAULT_OPTIONS,
+    );
+
+    expect(result).toEqual({
+      ok: false,
+      reason: "network",
+      networkKind: "timeout",
+    });
+  });
+
+  it("returns { ok: false, reason: 'http_error', status } without reading the body when the response is not ok", async () => {
     const { response, getReaderMock, bodyCancelMock } = buildMockResponse({
       ok: false,
+      status: 502,
       chunks: [new Uint8Array([1])],
     });
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response));
@@ -139,15 +168,15 @@ describe("fetchRemoteImage", () => {
       DEFAULT_OPTIONS,
     );
 
-    expect(result).toEqual({ ok: false, reason: "http_error" });
+    expect(result).toEqual({ ok: false, reason: "http_error", status: 502 });
     expect(getReaderMock).not.toHaveBeenCalled();
     // #132 レビュー対応 P1-2: 本体を読まずに返す経路でも response.body を
     // cancel() して undici の接続を解放する
     expect(bodyCancelMock).toHaveBeenCalledTimes(1);
   });
 
-  it("still returns { ok: false, reason: 'http_error' } even if response.body.cancel() itself rejects", async () => {
-    const { response } = buildMockResponse({ ok: false });
+  it("still returns { ok: false, reason: 'http_error', status } even if response.body.cancel() itself rejects", async () => {
+    const { response } = buildMockResponse({ ok: false, status: 404 });
     // cancel() 自体が失敗しても reason は変えず、例外も外へ漏らさない
     (response.body as { cancel: () => Promise<void> }).cancel = vi
       .fn()
@@ -159,7 +188,7 @@ describe("fetchRemoteImage", () => {
       DEFAULT_OPTIONS,
     );
 
-    expect(result).toEqual({ ok: false, reason: "http_error" });
+    expect(result).toEqual({ ok: false, reason: "http_error", status: 404 });
   });
 
   it("returns { ok: false, reason: 'too_large' } before reading the body when Content-Length exceeds maxBytes", async () => {
@@ -229,7 +258,7 @@ describe("fetchRemoteImage", () => {
     expect(result).toEqual({ ok: false, reason: "no_body" });
   });
 
-  it("returns { ok: false, reason: 'network' } when reading the body stream fails midway", async () => {
+  it("returns { ok: false, reason: 'network', networkKind: 'other' } when reading the body stream fails midway with a non-timeout error", async () => {
     const { response, reader } = buildMockResponse({});
     reader.read
       .mockResolvedValueOnce({ done: false, value: new Uint8Array(10) })
@@ -241,6 +270,31 @@ describe("fetchRemoteImage", () => {
       DEFAULT_OPTIONS,
     );
 
-    expect(result).toEqual({ ok: false, reason: "network" });
+    expect(result).toEqual({
+      ok: false,
+      reason: "network",
+      networkKind: "other",
+    });
+  });
+
+  it("returns { ok: false, reason: 'network', networkKind: 'timeout' } when reading the body stream fails midway with a TimeoutError DOMException", async () => {
+    const { response, reader } = buildMockResponse({});
+    reader.read
+      .mockResolvedValueOnce({ done: false, value: new Uint8Array(10) })
+      .mockRejectedValueOnce(
+        new DOMException("The operation timed out.", "TimeoutError"),
+      );
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response));
+
+    const result = await fetchRemoteImage(
+      "https://example.com/image",
+      DEFAULT_OPTIONS,
+    );
+
+    expect(result).toEqual({
+      ok: false,
+      reason: "network",
+      networkKind: "timeout",
+    });
   });
 });

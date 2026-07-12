@@ -8,7 +8,10 @@
 
 export type RemoteImageFetchResult =
   | { ok: true; data: Uint8Array; contentType: string }
-  | { ok: false; reason: "network" | "http_error" | "too_large" | "no_body" };
+  | { ok: false; reason: "network"; networkKind: "timeout" | "other" }
+  | { ok: false; reason: "http_error"; status: number }
+  | { ok: false; reason: "too_large" }
+  | { ok: false; reason: "no_body" };
 
 export type RemoteImageFetchOptions = {
   /** fetch 全体のタイムアウト（ミリ秒） */
@@ -16,6 +19,27 @@ export type RemoteImageFetchOptions = {
   /** 本体サイズの上限（バイト）。超過が確定した時点で読み込みを打ち切る */
   maxBytes: number;
 };
+
+/**
+ * fetch 呼び出し自体、または本文ストリーム読み込み中に投げられた例外を network の
+ * サブ分類に振り分ける（#137: 配信元の一時的な 502/504 をリトライ対象にするため、
+ * UseCase 層がタイムアウトとそれ以外を区別できるようにする）。
+ * `AbortSignal.timeout(options.timeoutMs)` による中断は、fetch 実装によらず
+ * `DOMException`（`name: "TimeoutError"`）として届くため、これを timeout、
+ * それ以外（DNS解決失敗・接続断・redirect: "error" によるリダイレクト拒否など）を
+ * other として扱う。
+ *
+ * redirect: "error" によるリダイレクト拒否もここを通り other に分類される
+ * （undici が投げる例外は TimeoutError ではないため）。これは意図的な設計判断で、
+ * 許可リスト済み URL への再試行が数回増えるだけで実害はなく、undici の例外
+ * メッセージ文字列（バージョン依存で変わりうる）を判定条件にする脆い実装を
+ * 避けるためのトレードオフとして受け入れる
+ */
+function classifyNetworkError(error: unknown): "timeout" | "other" {
+  return error instanceof DOMException && error.name === "TimeoutError"
+    ? "timeout"
+    : "other";
+}
 
 /**
  * URL から画像を取得する
@@ -36,8 +60,8 @@ export async function fetchRemoteImage(
       signal: AbortSignal.timeout(options.timeoutMs),
       redirect: "error",
     });
-  } catch {
-    return { ok: false, reason: "network" };
+  } catch (error) {
+    return { ok: false, reason: "network", networkKind: classifyNetworkError(error) };
   }
 
   if (!response.ok) {
@@ -45,7 +69,7 @@ export async function fetchRemoteImage(
     // 明示的にキャンセルする。キャンセル自体の失敗は返す reason に影響させない
     // （#132 レビュー対応 P1-2: 未消費のまま返すとコネクションプールを圧迫し得る）
     await response.body?.cancel().catch(() => {});
-    return { ok: false, reason: "http_error" };
+    return { ok: false, reason: "http_error", status: response.status };
   }
 
   const contentLengthHeader = response.headers.get("content-length");
@@ -79,8 +103,8 @@ export async function fetchRemoteImage(
       }
       chunks.push(value);
     }
-  } catch {
-    return { ok: false, reason: "network" };
+  } catch (error) {
+    return { ok: false, reason: "network", networkKind: classifyNetworkError(error) };
   }
 
   const data = new Uint8Array(totalBytes);
