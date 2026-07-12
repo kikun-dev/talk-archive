@@ -1,6 +1,7 @@
 import PostalMime from "postal-mime";
 import type { Address, Email } from "postal-mime";
 import type { TalkImportRecord } from "@/usecases/importUseCases";
+import { fetchRemoteImage } from "@/repositories/remoteImageRepository";
 
 // --- .eml パース ---
 
@@ -20,7 +21,15 @@ export type ParsedEmlMessage = {
   content: string | null;
   /** inline/attachment 問わず image/* の最初の1件 */
   image: { filename: string; mimeType: string; data: Uint8Array } | null;
-  /** 2枚目以降の画像枚数（取り込み対象外の警告用） */
+  /**
+   * HTML 本文中の最初の `<img src="https://...">` （リモート画像参照）。
+   * 添付画像（image）がある場合は常に null（#129: 実メールは添付ファイルを持たず、画像は
+   * HTML パート内のリモート参照のみだが、添付画像がある .eml では cid 参照と重複する
+   * 可能性があるため、添付を優先し HTML 側の img は無視する）
+   */
+  remoteImageUrl: string | null;
+  /** 2枚目以降の画像枚数（取り込み対象外の警告用）。添付画像がある場合は添付の残り枚数、
+   * ない場合は HTML 内リモート画像の残り枚数を数える */
   extraImageCount: number;
 };
 
@@ -118,9 +127,14 @@ function isValidCodePoint(codePoint: number): boolean {
   );
 }
 
-// html-entities.js は postal-mime の公開 API（package.json の exports）に含まれず
-// 深いパスからの import はできないため、フォールバック用に最小限のデコードを自前で持つ
-function decodeHtmlEntities(text: string): string {
+/**
+ * `&#NNNN;`（10進）・`&#xHHHH;`（16進）の数値文字参照のみをデコードする
+ * isValidCodePoint による検証を通し、無効なコードポイント（範囲外・サロゲート範囲・NUL）は
+ * 元の表記のまま残す（#128）。text/plain・HTML どちらの経路からも呼べるよう、
+ * 名前付きエンティティ（`&amp;` 等）のデコードとは切り離してある（#129: text/plain の
+ * `&amp;` 等はリテラルの可能性があるため、text/plain 経路では数値文字参照のみを対象とする）
+ */
+function decodeNumericCharacterReferences(text: string): string {
   return text
     .replace(/&#x([0-9a-fA-F]+);/g, (match, hex: string) => {
       const codePoint = parseInt(hex, 16);
@@ -133,7 +147,13 @@ function decodeHtmlEntities(text: string): string {
       return isValidCodePoint(codePoint)
         ? String.fromCodePoint(codePoint)
         : match;
-    })
+    });
+}
+
+// html-entities.js は postal-mime の公開 API（package.json の exports）に含まれず
+// 深いパスからの import はできないため、フォールバック用に最小限のデコードを自前で持つ
+function decodeHtmlEntities(text: string): string {
+  return decodeNumericCharacterReferences(text)
     .replace(/&nbsp;/gi, " ")
     .replace(/&amp;/gi, "&")
     .replace(/&lt;/gi, "<")
@@ -157,19 +177,84 @@ function htmlToText(html: string): string {
 }
 
 /**
+ * Gmail アプリが画像添付を text/plain 側に残す際のマーカー行（例:
+ * `[image: 1142-20220301-041051.jpg]`）にのみマッチする（#129）。
+ * 行全体（前後の空白を除く）がこの形式である場合のみ除去対象とし、本文中に
+ * 偶然似た文字列が現れても誤って消さないようにする
+ */
+const IMAGE_MARKER_LINE_PATTERN = /^\s*\[image:[^\]]*\]\s*$/i;
+
+/**
+ * text/plain 本文から `[image: ...]` マーカーのみの行を取り除く（#129）
+ * マーカー行が1行も無い場合は入力を完全に無変更（byte-identical）で返す。改行の
+ * 正規化（CRLF→LF）や既存の連続空行の畳み込みは行わない（#132 レビュー対応 P1-1:
+ * マーカーが無い大多数の通常本文まで一律に書き換えていたことで、CRLF や意図的な
+ * 連続空行が失われ、本文の忠実性・既存の重複排除を損なっていた不具合の修正）。
+ * マーカー行がある場合は、そのマーカー行を取り除き、除去によって直接できた空行の
+ * 連続（マーカーの直前・直後がともに空行だった場合の2行）のみを1行に畳み込む。
+ * マーカーと無関係な既存の連続空行は手を付けずそのまま残す
+ */
+function removeImageMarkerLines(text: string): string {
+  const lines = text.split(/\r\n|\r|\n/);
+  const hasMarkerLine = lines.some((line) =>
+    IMAGE_MARKER_LINE_PATTERN.test(line),
+  );
+  if (!hasMarkerLine) {
+    return text;
+  }
+
+  const result: string[] = [];
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+    if (!IMAGE_MARKER_LINE_PATTERN.test(line)) {
+      result.push(line);
+      continue;
+    }
+    // マーカー行は取り除く。直前（出力済みの最後の行）と直後の行がともに空行の
+    // 場合のみ、マーカー除去でできた空行の重なりとみなして直後の空行も1行分
+    // 読み飛ばし、空行1行に畳み込む
+    const previousIsBlank =
+      result.length > 0 && result[result.length - 1].trim().length === 0;
+    const nextLine = lines[i + 1];
+    const nextIsBlank = nextLine !== undefined && nextLine.trim().length === 0;
+    if (previousIsBlank && nextIsBlank) {
+      i += 1;
+    }
+  }
+  return result.join("\n");
+}
+
+/**
+ * 配信システム（cuenote 等）が HTML を表示できないクライアント向けに text/plain 側へ
+ * 埋め込む定型スタブ本文（実本文は HTML パートにある）にのみマッチする（#129）
+ */
+const STUB_BODY_PATTERN =
+  /^メールがうまく表示されない方はこちらをご覧ください\s*(https?:\/\/\S+)?$/;
+
+/**
  * text/plain・html いずれの経路の最終結果にも NUL 除去を適用する（防御の多重化）。
  * decodeHtmlEntities 側で数値文字参照由来の NUL は無効化しているが、text/plain 本文には
  * 生の NUL バイトがそのまま混入し得るため、ここでも取り除く。NUL を除去した結果が空に
  * なった場合は「本文なし」として扱い、text 経路なら html 経路へ、両方とも空なら呼び出し元
  * の「本文が空」判定（画像なしなら行エラー）へ自然に流す（#128 第3ラウンドレビュー対応 P1）
+ *
+ * text/plain 経路は以下の順で処理する（#129: 実メール41通の調査結果対応）
+ *   1. Gmail の `[image: ...]` マーカー行を除去
+ *   2. 数値文字参照（`&#NNNN;` / `&#xHHHH;`）をデコード（名前付きエンティティは対象外。
+ *      text/plain では `&amp;` 等がリテラルの可能性があるため）
+ *   3. NUL 除去 → trim
+ * その結果が空、またはスタブ本文（STUB_BODY_PATTERN）に一致する場合は、実本文が
+ * HTML パートにあると判断して html 経路へフォールバックする
  */
 function normalizeContent(
   text: string | undefined,
   html: string | undefined,
 ): string | null {
   if (typeof text === "string") {
-    const cleanedText = stripNulCharacters(text).trim();
-    if (cleanedText.length > 0) {
+    const withoutMarkers = removeImageMarkerLines(text);
+    const decoded = decodeNumericCharacterReferences(withoutMarkers);
+    const cleanedText = stripNulCharacters(decoded).trim();
+    if (cleanedText.length > 0 && !STUB_BODY_PATTERN.test(cleanedText)) {
       return cleanedText;
     }
   }
@@ -210,7 +295,8 @@ function toArrayBuffer(raw: ArrayBuffer | string): ArrayBuffer {
   );
 }
 
-function guessImageFilename(mimeType: string, index: number): string {
+/** mimeType の subtype から `image-N.ext` 形式のファイル名を組み立てる（添付・リモート画像共用） */
+export function guessImageFilename(mimeType: string, index: number): string {
   const subtype = mimeType.split("/")[1]?.split("+")[0] || "bin";
   return `image-${index + 1}.${subtype}`;
 }
@@ -234,6 +320,95 @@ function extractImage(
       data: toUint8Array(first.content),
     },
     extraImageCount: imageAttachments.length - 1,
+  };
+}
+
+const IMG_TAG_PATTERN = /<img\b[^>]*>/gi;
+const IMG_SRC_ATTR_PATTERN = /\bsrc\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i;
+
+/** `<img>` タグ群から src 属性の生の値（未デコード）を出現順に列挙する */
+function extractImgSrcValues(html: string): string[] {
+  const imgTags = html.match(IMG_TAG_PATTERN) ?? [];
+  const srcValues: string[] = [];
+  for (const tag of imgTags) {
+    const match = IMG_SRC_ATTR_PATTERN.exec(tag);
+    const rawSrc = match?.[1] ?? match?.[2] ?? match?.[3];
+    if (rawSrc !== undefined) {
+      srcValues.push(rawSrc);
+    }
+  }
+  return srcValues;
+}
+
+/**
+ * リモート画像の取得を許可する配信元の許可リスト（#129 レビュー対応: SSRF・
+ * トラッキングピクセル対策）。任意の http/https を取得すると、細工した .eml の投入で
+ * 内部ネットワークへの SSRF になり、一般の HTML メールではトラッキングピクセルを
+ * 踏んでしまうため、実データに必要な配信元のみに限定する。
+ * 新しい配信元を許可する場合は、この配列に `{ hostname, pathname }` を追加する
+ * （hostname・pathname とも完全一致で判定。https・userinfo なし・ポート指定なしは
+ * isAllowedRemoteImageUrl 側で共通に強制される）
+ */
+const ALLOWED_REMOTE_IMAGE_SOURCES: ReadonlyArray<{
+  hostname: string;
+  pathname: string;
+}> = [
+  { hostname: "mail-web.c-nogizaka46.com", pathname: "/mail/output/qimage" },
+];
+
+/**
+ * リモート画像 URL が許可リストに一致するか検証する
+ * https のみ・userinfo（username/password）なし・ポート指定なし・hostname と pathname が
+ * 許可リストに完全一致、のすべてを満たす場合のみ許可する
+ */
+function isAllowedRemoteImageUrl(value: string): boolean {
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return false;
+  }
+  if (url.protocol !== "https:") {
+    return false;
+  }
+  if (url.username !== "" || url.password !== "") {
+    return false;
+  }
+  if (url.port !== "") {
+    return false;
+  }
+  return ALLOWED_REMOTE_IMAGE_SOURCES.some(
+    (source) =>
+      source.hostname === url.hostname && source.pathname === url.pathname,
+  );
+}
+
+/**
+ * HTML 本文から最初の許可されたリモート画像 URL を抽出する（#129）。
+ * 許可リスト（ALLOWED_REMOTE_IMAGE_SOURCES）に一致しない `<img>` は remoteImageUrl にも
+ * extraImageCount にも数えない。実メールの img src には `&amp;` エンティティが
+ * 含まれるため（例: `qimage?image_name=abc123&amp;token=...`）、デコードしてから
+ * URL として検証する
+ */
+function extractRemoteImageUrl(html: string | undefined): {
+  remoteImageUrl: string | null;
+  extraImageCount: number;
+} {
+  if (typeof html !== "string") {
+    return { remoteImageUrl: null, extraImageCount: 0 };
+  }
+
+  const allowedUrls = extractImgSrcValues(html)
+    .map((rawSrc) => decodeHtmlEntities(rawSrc))
+    .filter(isAllowedRemoteImageUrl);
+
+  if (allowedUrls.length === 0) {
+    return { remoteImageUrl: null, extraImageCount: 0 };
+  }
+
+  return {
+    remoteImageUrl: allowedUrls[0],
+    extraImageCount: allowedUrls.length - 1,
   };
 }
 
@@ -276,12 +451,23 @@ export async function parseEmlFile(
     throw new EmlImportError(`${filename}: 本文の解析に失敗しました`);
   }
 
-  const { image, extraImageCount } = extractImage(email.attachments);
+  const { image, extraImageCount: attachmentExtraImageCount } = extractImage(
+    email.attachments,
+  );
 
-  // 本文空・画像なしは text record（content 非null必須の CHECK 制約
-  // records_text_content_check）に違反し RPC のトランザクション全体を abort させるため、
-  // ここで行エラーとして弾く（画像あり・本文空は image record として正当なので通す）
-  if (image === null && content === null) {
+  // 添付画像がある場合、HTML 内の img は cid 参照と重複する可能性があるため無視し、
+  // 添付を優先する（remoteImageUrl は常に null。ParsedEmlMessage.remoteImageUrl のコメント参照）
+  const { remoteImageUrl, extraImageCount: remoteExtraImageCount } =
+    image === null
+      ? extractRemoteImageUrl(email.html)
+      : { remoteImageUrl: null, extraImageCount: 0 };
+  const extraImageCount =
+    image !== null ? attachmentExtraImageCount : remoteExtraImageCount;
+
+  // 本文空・画像なし（添付・リモートいずれも無し）は text record（content 非null必須の
+  // CHECK 制約 records_text_content_check）に違反し RPC のトランザクション全体を abort
+  // させるため、ここで行エラーとして弾く（画像あり・本文空は image record として正当なので通す）
+  if (image === null && remoteImageUrl === null && content === null) {
     throw new EmlImportError(`${filename}: 本文が空のため取り込めません`);
   }
 
@@ -291,6 +477,7 @@ export async function parseEmlFile(
     title,
     content,
     image,
+    remoteImageUrl,
     extraImageCount,
   };
 }
@@ -309,9 +496,134 @@ export function toTalkImportRecord(
   return {
     speaker: message.senderAddress,
     postedAt: message.postedAt,
-    type: message.image ? "image" : "text",
+    type: message.image || message.remoteImageUrl ? "image" : "text",
     title: message.title,
     content: message.content,
     hasAudio: false,
   };
+}
+
+// --- リモート画像のバッチ取得（#129） ---
+
+/** リモート画像1件の取得タイムアウト */
+const REMOTE_IMAGE_FETCH_TIMEOUT_MS = 15_000;
+
+/**
+ * リモート画像取得の同時実行数
+ * 最大200通 × タイムアウト15秒の直列実行は最悪50分かかるため並列化する。
+ * 配信元サーバーへの負荷と Server Action のメモリ使用量を抑えるため5に制限する
+ */
+const REMOTE_IMAGE_FETCH_CONCURRENCY = 5;
+
+export type RemoteImageFetchTask = { key: string; url: string };
+
+export type FetchedRemoteImage = {
+  data: Uint8Array;
+  contentType: string;
+  filename: string;
+};
+
+/**
+ * リモート画像取得の失敗理由（#132 レビュー対応 P1-3）
+ * URL や image_name 等の個人情報を含み得る情報はここに含めない。ログに出す場合は
+ * この理由コードのみを出力し、message.remoteImageUrl 自体は出力しないこと
+ */
+export type RemoteImageImportFailureReason =
+  | "not_allowed" // URL が許可リストの再検証に失敗した
+  | "fetch_failed" // repository での取得に失敗した（ネットワーク・http_error・too_large・no_body）
+  | "not_image" // Content-Type が image/ 始まりでない
+  | "batch_size_exceeded"; // バッチ合計サイズの上限に達した
+
+export type RemoteImageImportResult =
+  | { ok: true; image: FetchedRemoteImage }
+  | { ok: false; reason: RemoteImageImportFailureReason };
+
+/**
+ * .eml インポート用にリモート画像をまとめて取得する（#129、#132 レビュー対応 P1-3/P2-1/P2-2）
+ * - fetchOne は repository（fetchRemoteImage）を呼ぶ前に必ず isAllowedRemoteImageUrl で
+ *   URL を再検証する（P2-1: SSRF チェックの自己完結性。呼び出し元の事前フィルタに
+ *   依存せず、許可外 URL に対して outbound I/O を一切行わない）
+ * - 1件あたり MAX_EML_FILE_SIZE（10MB）・タイムアウト15秒で repository の
+ *   fetchRemoteImage を呼ぶ
+ * - 同時実行数 REMOTE_IMAGE_FETCH_CONCURRENCY（5）のワーカープールで並列化する。
+ *   このため最大 REMOTE_IMAGE_FETCH_CONCURRENCY 件が同時に進行中になり得て、
+ *   バッチ合計サイズの上限（MAX_EML_TOTAL_SIZE）チェックが効くまでの間に、実際に
+ *   ダウンロードされるバイト数は上限を最大 (REMOTE_IMAGE_FETCH_CONCURRENCY - 1) ×
+ *   MAX_EML_FILE_SIZE（約40MB）超過し得る（同時実行中のタスクは上限到達を検知
+ *   できないまま最後まで読み切るため）
+ * - ダウンロードした全バイト数（非画像コンテンツを含む）を Content-Type 判定より
+ *   前に合計へ加算する（P2-2: 非画像コンテンツの大量ダウンロードでバッチ上限を
+ *   迂回できてしまう不具合の修正）。合計が MAX_EML_TOTAL_SIZE（50MB）を超えた時点で、
+ *   当該タスクと以降のタスクは batch_size_exceeded にする
+ * - Content-Type はメディアタイプのみに正規化（`;` 以降除去・trim・小文字化）し、
+ *   `image/` 始まりでなければ not_image。filename は正規化後の subtype から導出する
+ * - 戻り値は task.key → RemoteImageImportResult の Map。呼び出し元は ok: false を
+ *   添付失敗として扱う（メディア未添付レコードとして残る）。reason は個人情報を
+ *   含まないため、そのままログへ出力してよい
+ */
+export async function fetchRemoteImagesForImport(
+  tasks: RemoteImageFetchTask[],
+): Promise<Map<string, RemoteImageImportResult>> {
+  const results = new Map<string, RemoteImageImportResult>();
+  let totalFetchedBytes = 0;
+  let isTotalSizeExceeded = false;
+  let nextTaskIndex = 0;
+
+  async function fetchOne(url: string): Promise<RemoteImageImportResult> {
+    // P2-1: repository を呼ぶ前に必ず許可リストを再検証する。呼び出し元
+    // （action 層）がすでに許可済み URL のみをタスク化していたとしても、この
+    // 関数単体で SSRF チェックが完結しているようにする
+    if (!isAllowedRemoteImageUrl(url)) {
+      return { ok: false, reason: "not_allowed" };
+    }
+
+    const fetched = await fetchRemoteImage(url, {
+      timeoutMs: REMOTE_IMAGE_FETCH_TIMEOUT_MS,
+      maxBytes: MAX_EML_FILE_SIZE,
+    });
+    if (!fetched.ok) {
+      return { ok: false, reason: "fetch_failed" };
+    }
+
+    // P2-2: 非画像コンテンツのバイト数もバッチ合計に含めてから上限判定する
+    totalFetchedBytes += fetched.data.byteLength;
+    if (totalFetchedBytes > MAX_EML_TOTAL_SIZE) {
+      isTotalSizeExceeded = true;
+      return { ok: false, reason: "batch_size_exceeded" };
+    }
+
+    const contentType = fetched.contentType.split(";")[0].trim().toLowerCase();
+    if (!contentType.startsWith("image/")) {
+      return { ok: false, reason: "not_image" };
+    }
+
+    return {
+      ok: true,
+      image: {
+        data: fetched.data,
+        contentType,
+        filename: guessImageFilename(contentType, 0),
+      },
+    };
+  }
+
+  async function runWorker(): Promise<void> {
+    while (nextTaskIndex < tasks.length) {
+      const task = tasks[nextTaskIndex];
+      nextTaskIndex += 1;
+      if (isTotalSizeExceeded) {
+        results.set(task.key, { ok: false, reason: "batch_size_exceeded" });
+        continue;
+      }
+      results.set(task.key, await fetchOne(task.url));
+    }
+  }
+
+  const workers = Array.from(
+    { length: Math.min(REMOTE_IMAGE_FETCH_CONCURRENCY, tasks.length) },
+    () => runWorker(),
+  );
+  await Promise.all(workers);
+
+  return results;
 }

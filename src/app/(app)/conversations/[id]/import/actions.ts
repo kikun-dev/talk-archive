@@ -17,11 +17,13 @@ import {
 import {
   parseEmlFile,
   toTalkImportRecord,
+  fetchRemoteImagesForImport,
   EmlImportError,
   MAX_EML_FILE_SIZE,
   MAX_EML_FILE_COUNT,
   MAX_EML_TOTAL_SIZE,
   type ParsedEmlMessage,
+  type RemoteImageFetchTask,
 } from "@/usecases/emlImportUseCases";
 import { attachRecordMedia } from "@/usecases/recordUseCases";
 
@@ -347,8 +349,12 @@ export async function previewEmlImportAction(
         ...preview,
         rowErrors,
         senders: buildSenderSummaries(parsed),
-        imageCount: parsed.filter(({ message }) => message.image !== null)
-          .length,
+        // #129: 実メールは添付ファイルを持たず、画像は HTML 内のリモート参照
+        // （remoteImageUrl）のみを持つため、どちらか一方でもあれば画像付きとして数える
+        imageCount: parsed.filter(
+          ({ message }) =>
+            message.image !== null || message.remoteImageUrl !== null,
+        ).length,
         extraImageWarnings: buildExtraImageWarnings(parsed),
       },
     };
@@ -439,27 +445,81 @@ export async function executeEmlImportAction(
     let attachedCount = 0;
     let attachFailedCount = 0;
 
+    // 添付が無く remoteImageUrl のみを持つメッセージ（#129: 実メールは添付0件で画像は
+    // HTML 内のリモート参照）は、UseCase 側でまとめて取得する（許可リスト検証・サイズ上限・
+    // 同時実行数制限・合計サイズ上限は fetchRemoteImagesForImport の責務）。
+    // 取得は record 作成後の record id をキーに引けるようにしておく
+    const remoteImageTasks: RemoteImageFetchTask[] = [];
     for (const { record, id } of result.createdRecords) {
       const message = messageByRecord.get(record);
-      const image = message?.image;
-      if (!image) {
+      if (message && !message.image && message.remoteImageUrl) {
+        remoteImageTasks.push({ key: id, url: message.remoteImageUrl });
+      }
+    }
+    const fetchedRemoteImages =
+      await fetchRemoteImagesForImport(remoteImageTasks);
+
+    for (const { record, id } of result.createdRecords) {
+      const message = messageByRecord.get(record);
+      if (!message) {
         continue;
       }
 
-      try {
-        await attachRecordMedia(supabase, {
-          userId: user.id,
-          recordId: id,
-          // Uint8Array<ArrayBufferLike> は BlobPart（ArrayBufferView<ArrayBuffer>）と
-          // 型が合わないため、確実に ArrayBuffer 裏付けの Uint8Array にコピーし直す
-          file: new Blob([new Uint8Array(image.data)], { type: image.mimeType }),
-          filename: image.filename,
-          contentType: image.mimeType,
-        });
-        attachedCount += 1;
-      } catch (attachError) {
-        console.error("Failed to attach eml image:", attachError);
-        attachFailedCount += 1;
+      // 添付画像がある場合は従来どおり添付データをそのまま使う（#115）
+      if (message.image) {
+        const image = message.image;
+        try {
+          await attachRecordMedia(supabase, {
+            userId: user.id,
+            recordId: id,
+            // Uint8Array<ArrayBufferLike> は BlobPart（ArrayBufferView<ArrayBuffer>）と
+            // 型が合わないため、確実に ArrayBuffer 裏付けの Uint8Array にコピーし直す
+            file: new Blob([new Uint8Array(image.data)], {
+              type: image.mimeType,
+            }),
+            filename: image.filename,
+            contentType: image.mimeType,
+          });
+          attachedCount += 1;
+        } catch (attachError) {
+          console.error("Failed to attach eml image:", attachError);
+          attachFailedCount += 1;
+        }
+        continue;
+      }
+
+      // 添付が無く remoteImageUrl のみを持つ場合は、事前に一括取得した結果を使う。
+      // 取得失敗（許可外・サイズ超過・非画像・ネットワーク等）は添付失敗として集計し、
+      // メディア未添付レコードとして残す（#113 の導線で個別に復旧可能）。
+      // ログには reason（個人情報を含まない失敗理由コード）のみを出し、
+      // message.remoteImageUrl（image_name にメールを識別する情報を含む）は
+      // 出力しない（#132 レビュー対応 P1-3: ログへの PII 混入防止）
+      if (message.remoteImageUrl) {
+        const fetchResult = fetchedRemoteImages.get(id);
+        if (!fetchResult || !fetchResult.ok) {
+          console.error("Failed to attach eml remote image", {
+            recordId: id,
+            reason: fetchResult ? fetchResult.reason : "missing",
+          });
+          attachFailedCount += 1;
+          continue;
+        }
+        const fetched = fetchResult.image;
+        try {
+          await attachRecordMedia(supabase, {
+            userId: user.id,
+            recordId: id,
+            file: new Blob([new Uint8Array(fetched.data)], {
+              type: fetched.contentType,
+            }),
+            filename: fetched.filename,
+            contentType: fetched.contentType,
+          });
+          attachedCount += 1;
+        } catch (attachError) {
+          console.error("Failed to attach eml remote image:", attachError);
+          attachFailedCount += 1;
+        }
       }
     }
 
