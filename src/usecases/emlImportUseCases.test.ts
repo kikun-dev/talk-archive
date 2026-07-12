@@ -1672,6 +1672,60 @@ describe("fetchRemoteImagesForImport: batch deadline (#139 P1-1)", () => {
     expect(fetchRemoteImageRepositoryMock).not.toHaveBeenCalled();
   });
 
+  // #139 P2-1（2回目）: デッドライン確認と残り時間計算の間に期限を跨いでも、負の
+  // timeoutMs を repository へ渡さない（実 repository では AbortSignal.timeout(-1) が
+  // RangeError になり network: other へ化ける）
+  it("does not pass a negative timeout when the deadline passes between the check and the remaining-time calculation", async () => {
+    const { sleep } = createFakeSleep();
+    // ①startedAt=0（deadline=45000） ②runWorker の確認は期限直前（44999）
+    // ③fetchOne の残り時間計算では期限後（45001）
+    const nowValues = [0, 44_999, 45_001];
+    let callIndex = 0;
+    const now = () => nowValues[Math.min(callIndex++, nowValues.length - 1)];
+
+    const result = await fetchRemoteImagesForImport(
+      [{ key: "record-1", url: allowedImageUrl("1") }],
+      { sleep, now },
+    );
+
+    expect(result.get("record-1")).toEqual({
+      ok: false,
+      reason: "batch_deadline_exceeded",
+    });
+    expect(fetchRemoteImageRepositoryMock).not.toHaveBeenCalled();
+  });
+
+  // 同じ競合がリトライ前にも起きる。この場合は直前の失敗理由を保持したまま返す
+  it("keeps the last failure when the deadline passes between the retry check and the sleep calculation", async () => {
+    const { sleep, calls } = createFakeSleep();
+    // ①startedAt=0 ②runWorker の確認 ③1回目の残り時間計算（44000）
+    // ④リトライ前の残り時間計算では期限後（45001）
+    const nowValues = [0, 0, 44_000, 45_001];
+    let callIndex = 0;
+    const now = () => nowValues[Math.min(callIndex++, nowValues.length - 1)];
+    fetchRemoteImageRepositoryMock.mockResolvedValue({
+      ok: false,
+      reason: "http_error",
+      status: 503,
+      bytesRead: 0,
+    });
+
+    const result = await fetchRemoteImagesForImport(
+      [{ key: "record-1", url: allowedImageUrl("1") }],
+      { sleep, now },
+    );
+
+    expect(result.get("record-1")).toEqual({
+      ok: false,
+      reason: "http_error",
+      status: 503,
+      attempts: 1,
+    });
+    // 負の値で sleep せず、そもそもリトライしない
+    expect(calls).toHaveLength(0);
+    expect(fetchRemoteImageRepositoryMock).toHaveBeenCalledTimes(1);
+  });
+
   // #139 P2-1: 期限直前のバックオフ待機は残り時間へ切り詰める
   // （切り詰めないとバッチ全体が待機時間分だけ期限を超過する）
   it("caps the backoff sleep to the remaining time before the deadline", async () => {

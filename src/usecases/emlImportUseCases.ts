@@ -818,15 +818,28 @@ export async function fetchRemoteImagesForImport(
       return { ok: false, reason: "not_allowed" };
     }
 
+    // 直近の試行の失敗理由。デッドライン到達でリトライを打ち切る際、診断情報を保持した
+     // まま返すために保持する（batch_deadline_exceeded で上書きしない）
+    let lastFailure: RemoteImageImportFailure | null = null;
+
     for (
       let attempt = 1;
       attempt <= REMOTE_IMAGE_FETCH_MAX_ATTEMPTS;
       attempt += 1
     ) {
-      // #139 P1-1: 残り時間で1試行あたりのタイムアウトを切り詰める。デッドライン判定は
-      // すべて now() >= deadline で行うため（#139 P2-1）、ここに来る時点で残り時間は
-      // 正であることが保証されている
+      // #139 P2-1: 残り時間は1回だけ計算し、その場で使い切る。判定と計算で別々に now()
+      // を呼ぶと、その間に期限を跨いだ場合に負の残り時間が
+      // AbortSignal.timeout() へ渡り（RangeError → network: other）、本来の失敗理由が
+      // 失われる
       const remainingMs = deadline - now();
+      if (remainingMs <= 0) {
+        // 初回試行前ならバッチ期限切れ、リトライ前なら直前の失敗理由を返す
+        return lastFailure
+          ? { ok: false, ...lastFailure }
+          : { ok: false, reason: "batch_deadline_exceeded" };
+      }
+
+      // #139 P1-1: 残り時間で1試行あたりのタイムアウトを切り詰める
       const timeoutMs = Math.min(REMOTE_IMAGE_FETCH_TIMEOUT_MS, remainingMs);
       const fetched = await fetchRemoteImage(url, {
         timeoutMs,
@@ -886,32 +899,27 @@ export async function fetchRemoteImagesForImport(
           break;
       }
 
-      // #139 P1-1: リトライしようとする時点でバッチデッドラインを過ぎていたら、
-      // リトライせずこの時点の最後の失敗理由をそのまま返す（診断情報を保持するため、
-      // batch_deadline_exceeded で上書きしない）
+      lastFailure = failure;
+
       const isLastAttempt = attempt === REMOTE_IMAGE_FETCH_MAX_ATTEMPTS;
-      const isDeadlineExceeded = now() >= deadline;
-      if (
-        isLastAttempt ||
-        !isRetryableRemoteImageFailure(failure) ||
-        isDeadlineExceeded
-      ) {
+      if (isLastAttempt || !isRetryableRemoteImageFailure(failure)) {
         return { ok: false, ...failure };
       }
 
-      // #139 P2-1: バックオフ待機がデッドラインを超えないよう残り時間で切り詰める
-      // （切り詰めなければバッチ全体が最大 jitter 込みの待機時間分だけ期限を超過する）
+      // #139 P1-1/P2-1: リトライ前の残り時間も1回だけ計算してその場で使い切る。
+      // 期限に達していればリトライせずこの時点の失敗理由をそのまま返し（診断情報を
+      // 保持するため batch_deadline_exceeded で上書きしない）、残っていればバックオフ
+      // 待機を残り時間で切り詰める（切り詰めなければバッチ全体が待機時間分だけ期限を
+      // 超過する）。待機中に期限を跨いだ場合は、次のループ先頭の残り時間判定が
+      // lastFailure を返す
+      const remainingBeforeRetryMs = deadline - now();
+      if (remainingBeforeRetryMs <= 0) {
+        return { ok: false, ...failure };
+      }
+
       await sleep(
-        Math.min(computeRemoteImageRetryDelayMs(attempt), deadline - now()),
+        Math.min(computeRemoteImageRetryDelayMs(attempt), remainingBeforeRetryMs),
       );
-
-      // #139 P1-1: バックオフ待機でデッドラインに達した場合も、タイムアウト0秒の
-      // 無駄な試行を挟まずにこの時点の失敗理由を返す（待機前の判定だけでは、
-      // 待機によって残り時間が尽きるケースを取りこぼし、本来の失敗理由が
-      // タイムアウト由来の network で上書きされてしまう）
-      if (now() >= deadline) {
-        return { ok: false, ...failure };
-      }
     }
 
     // for ループは最終試行（isLastAttempt）で必ず return するため実行されない。
