@@ -381,6 +381,7 @@ export type Database = {
         Args: { p_conversation_id: string }
         Returns: {
           content_prefix: string
+          import_key: string
           participant_id: string
           posted_at: string
           record_type: Database["public"]["Enums"]["record_type"]

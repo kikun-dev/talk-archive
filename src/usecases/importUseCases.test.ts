@@ -52,6 +52,7 @@ function dedupCandidate(
     postedAt: "2026-07-07T06:19:00.000Z",
     recordType: "text",
     contentPrefix: "こんにちは",
+    importKey: null,
     ...overrides,
   };
 }
@@ -805,6 +806,50 @@ describe("importUseCases", () => {
           content: "こんにちは",
           hasAudio: false,
           importKey: null,
+        },
+      ];
+
+      const preview = await buildImportPreview(
+        client,
+        "conv-1",
+        parseResult(records),
+      );
+
+      expect(preview.duplicateCount).toBe(1);
+      expect(preview.importableCount).toBe(0);
+    });
+
+    // P1-1: プレビューと実行(RPC)の重複判定契約を一致させる。既存レコードが
+    // import_key を持つ場合（.eml インポート由来）、RPC（import_records_atomic）は
+    // import_key の一致のみで重複判定するため、participant/postedAt/type/content が
+    // 一致しなくても RPC はスキップする。プレビュー側（buildExistingDedupKeys）も同じ
+    // import_key を認識できなければ、プレビューの duplicateCount と RPC の
+    // skipped_record_count が食い違い、再インポート時に「重複なし」と表示されたのに
+    // 実際は全件スキップされる、という不整合が起きる
+    it("counts an existing record carrying an import_key as a duplicate for a re-imported eml record with the same import_key, even when participant/postedAt/type/content differ (matches the RPC's import_key-based skip, P1-1)", async () => {
+      mockGetConversationParticipants.mockResolvedValue([
+        participant({ id: "part-1", name: "瀬戸口 心月" }),
+      ]);
+      mockGetImportDedupCandidates.mockResolvedValue([
+        dedupCandidate({
+          participantId: "part-1",
+          postedAt: "2026-01-01T00:00:00.000Z",
+          recordType: "text",
+          contentPrefix: "元の本文",
+          importKey: "msgid:abc@example.com#0",
+        }),
+      ]);
+
+      const records: TalkImportRecord[] = [
+        {
+          speaker: "瀬戸口 心月",
+          // 既存レコードとは postedAt / type / content がすべて異なる
+          postedAt: "2026-07-07T06:19:00.000Z",
+          type: "image",
+          title: null,
+          content: null,
+          hasAudio: false,
+          importKey: "msgid:abc@example.com#0",
         },
       ];
 

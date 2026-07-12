@@ -6,6 +6,13 @@ export type ImportDedupCandidate = {
   postedAt: string;
   recordType: string;
   contentPrefix: string;
+  /**
+   * 既存レコードの import_key（.eml インポート由来なら非null、JSON インポート由来なら
+   * null、#133 / P1-1）。buildExistingDedupKeys がこれを buildRecordDedupKey の5番目の
+   * 引数として渡すことで、プレビューの重複判定を import_records_atomic RPC の
+   * import_key ベースの判定と一致させる
+   */
+  importKey: string | null;
 };
 
 export async function getImportDedupCandidates(
@@ -25,6 +32,7 @@ export async function getImportDedupCandidates(
     postedAt: row.posted_at,
     recordType: row.record_type,
     contentPrefix: row.content_prefix,
+    importKey: row.import_key,
   }));
 }
 

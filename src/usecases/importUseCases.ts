@@ -321,6 +321,13 @@ export function buildRecordDedupKey(
   return `${participantId}|${normalizedPostedAt}|${recordType}|${normalizedContent}`;
 }
 
+/**
+ * 既存レコードの重複判定キー集合を構築する
+ * record.importKey を buildRecordDedupKey の5番目の引数として渡すことで、import_key を
+ * 持つ既存レコード（.eml インポート由来）は `key:${importKey}` 形式のキーになる。これは
+ * import_records_atomic RPC が import_key の一致のみで重複判定するのと同じ契約であり、
+ * プレビューの重複件数と RPC の実際のスキップ件数を一致させる（#133 / P1-1）
+ */
 function buildExistingDedupKeys(
   existingRecords: ImportDedupCandidate[],
 ): Set<string> {
@@ -332,6 +339,7 @@ function buildExistingDedupKeys(
         record.postedAt,
         record.recordType,
         record.contentPrefix,
+        record.importKey,
       ),
     );
   }

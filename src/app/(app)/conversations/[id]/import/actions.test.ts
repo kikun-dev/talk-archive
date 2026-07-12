@@ -50,6 +50,7 @@ vi.mock("@/usecases/importUseCases", () => ({
   executeImport: executeImportMock,
   ImportError: ImportErrorMock,
   MAX_IMPORT_FILE_SIZE: 5 * 1024 * 1024,
+  MAX_IMPORT_RECORD_COUNT: 5000,
 }));
 
 vi.mock("@/usecases/emlImportUseCases", () => ({
@@ -443,6 +444,27 @@ function remoteImageUnit(url: string, overrides: RecordOverrides = {}) {
   ];
 }
 
+/**
+ * expandEmlMessageToRecordsMock の戻り値として、count 件の text unit を組み立てる
+ * （P1-3: 展開後レコード件数の上限（MAX_IMPORT_RECORD_COUNT）チェック用。実際に
+ * MAX_EML_FILE_COUNT を超えるファイル数を用意せずに、1ファイルからの展開結果として
+ * 大量の unit を返すモックで上限判定を検証する）
+ */
+function manyTextUnits(count: number) {
+  return Array.from({ length: count }, (_, index) => ({
+    record: {
+      speaker: "sender@example.com",
+      postedAt: "2020-10-12T06:16:14.000Z",
+      type: "text" as const,
+      title: "件名",
+      content: `本文${index}`,
+      hasAudio: false,
+      importKey: `mail.eml#${index}`,
+    },
+    media: null,
+  }));
+}
+
 describe("previewEmlImportAction", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -594,10 +616,12 @@ describe("previewEmlImportAction", () => {
     expect(result.preview.rowErrors).toEqual([
       "broken.eml: 差出人のメールアドレスを取得できませんでした",
     ]);
+    // P2-1: totalCount は展開後のレコード件数（units.length）を使う。broken.eml は
+    // 行エラーで除外され ok.eml の1レコードのみが展開されるため、ファイル数（2）ではなく 1
     expect(buildImportPreviewMock).toHaveBeenCalledWith(
       expect.anything(),
       "conv-1",
-      expect.objectContaining({ totalCount: 2 }),
+      expect.objectContaining({ totalCount: 1 }),
       { speakerAssignments: { "sender@example.com": VALID_PARTICIPANT_ID } },
     );
   });
@@ -693,6 +717,133 @@ describe("previewEmlImportAction", () => {
     );
     expect(result.preview.imageCount).toBe(2);
     expect(result.preview).not.toHaveProperty("extraImageWarnings");
+  });
+
+  // P2-1: totalCount は展開後のレコード件数（expandParsedFilesToUnits の units.length）を
+  // 使う。この3ファイルは a.eml が2画像・b.eml/c.eml がそれぞれ1テキストの計4 unit に
+  // 展開されるため、totalCount はファイル数（3）ではなく 4 になり、importableCount と
+  // 同じ「レコード基準」の件数として画面に表示される
+  it("passes units.length (expanded record count), not the file count, as parseResult.totalCount to buildImportPreview (P2-1)", async () => {
+    mockSupabaseClient({ id: "user-1" });
+    const formData = buildFormDataWithFiles([
+      { name: "a.eml" },
+      { name: "b.eml" },
+      { name: "c.eml" },
+    ]);
+    parseEmlFileMock.mockImplementation(async (_raw: unknown, filename: string) => {
+      if (filename === "a.eml") {
+        return parsedMessage({
+          images: [
+            { filename: "photo1.png", mimeType: "image/png", data: new Uint8Array() },
+            { filename: "photo2.png", mimeType: "image/png", data: new Uint8Array() },
+          ],
+        });
+      }
+      return parsedMessage();
+    });
+    expandEmlMessageToRecordsMock.mockImplementation(
+      (message: { images: unknown[] }) =>
+        message.images.length > 0
+          ? [
+              {
+                record: {
+                  speaker: "sender@example.com",
+                  postedAt: "2020-10-12T06:16:14.000Z",
+                  type: "image",
+                  title: "件名",
+                  content: "本文",
+                  hasAudio: false,
+                  importKey: "a.eml#0",
+                },
+                media: null,
+              },
+              {
+                record: {
+                  speaker: "sender@example.com",
+                  postedAt: "2020-10-12T06:16:14.000Z",
+                  type: "image",
+                  title: "件名",
+                  content: null,
+                  hasAudio: false,
+                  importKey: "a.eml#1",
+                },
+                media: null,
+              },
+            ]
+          : textUnit(),
+    );
+    buildImportPreviewMock.mockResolvedValue({
+      totalCount: 4,
+      importableCount: 4,
+      duplicateCount: 0,
+      period: null,
+      typeCounts: { text: 2, image: 2, video: 0, audio: 0 },
+      unknownSpeakers: [],
+    });
+
+    const { previewEmlImportAction } = await import("./actions");
+    const result = await previewEmlImportAction("conv-1", formData, VALID_PARTICIPANT_ID);
+
+    if ("error" in result) {
+      throw new Error("expected a preview result");
+    }
+    expect(buildImportPreviewMock).toHaveBeenCalledWith(
+      expect.anything(),
+      "conv-1",
+      expect.objectContaining({ totalCount: 4 }),
+      expect.anything(),
+    );
+    expect(result.preview.totalCount).toBe(4);
+  });
+
+  // P1-3: 展開後のレコード件数（units.length）が MAX_IMPORT_RECORD_COUNT を超える場合、
+  // RPC ペイロード肥大化・Server Action タイムアウトを防ぐため、buildImportPreview を
+  // 呼ばずにエラーを返す
+  describe("expanded record count limit (P1-3)", () => {
+    it("proceeds (calls buildImportPreview) when units.length is exactly MAX_IMPORT_RECORD_COUNT (5000)", async () => {
+      mockSupabaseClient({ id: "user-1" });
+      const formData = buildFormDataWithFiles([{ name: "a.eml" }]);
+      parseEmlFileMock.mockResolvedValue(parsedMessage());
+      expandEmlMessageToRecordsMock.mockReturnValue(manyTextUnits(5000));
+      buildImportPreviewMock.mockResolvedValue({
+        totalCount: 5000,
+        importableCount: 5000,
+        duplicateCount: 0,
+        period: null,
+        typeCounts: { text: 5000, image: 0, video: 0, audio: 0 },
+        unknownSpeakers: [],
+      });
+
+      const { previewEmlImportAction } = await import("./actions");
+      const result = await previewEmlImportAction(
+        "conv-1",
+        formData,
+        VALID_PARTICIPANT_ID,
+      );
+
+      expect(buildImportPreviewMock).toHaveBeenCalledTimes(1);
+      expect("error" in result).toBe(false);
+    });
+
+    it("returns an error and does not call buildImportPreview when units.length exceeds MAX_IMPORT_RECORD_COUNT (5001)", async () => {
+      mockSupabaseClient({ id: "user-1" });
+      const formData = buildFormDataWithFiles([{ name: "a.eml" }]);
+      parseEmlFileMock.mockResolvedValue(parsedMessage());
+      expandEmlMessageToRecordsMock.mockReturnValue(manyTextUnits(5001));
+
+      const { previewEmlImportAction } = await import("./actions");
+      const result = await previewEmlImportAction(
+        "conv-1",
+        formData,
+        VALID_PARTICIPANT_ID,
+      );
+
+      expect(result).toEqual({
+        error:
+          "一度に取り込めるのは5000件までです。メール数または画像数を減らしてください",
+      });
+      expect(buildImportPreviewMock).not.toHaveBeenCalled();
+    });
   });
 
   // #129: 実メールは添付ファイルを持たず、画像は HTML 内のリモート参照のみのため、
@@ -856,10 +1007,12 @@ describe("previewEmlImportAction", () => {
       "broken-body.eml: 本文の解析に失敗しました",
     ]);
     expect(result.preview.importableCount).toBe(1);
+    // P2-1: totalCount は展開後のレコード件数（units.length）を使う。broken-body.eml は
+    // 行エラーで除外され ok.eml の1レコードのみが展開されるため、ファイル数（2）ではなく 1
     expect(buildImportPreviewMock).toHaveBeenCalledWith(
       expect.anything(),
       "conv-1",
-      expect.objectContaining({ totalCount: 2 }),
+      expect.objectContaining({ totalCount: 1 }),
       { speakerAssignments: { "ok@example.com": VALID_PARTICIPANT_ID } },
     );
   });
@@ -1424,6 +1577,56 @@ describe("executeEmlImportAction", () => {
     });
   });
 
+  // P1-3: 展開後のレコード件数（units.length）が MAX_IMPORT_RECORD_COUNT を超える場合、
+  // RPC ペイロード肥大化・Server Action タイムアウトを防ぐため、executeImport も
+  // fetchRemoteImagesForImport も呼ばずにエラーを返す
+  describe("expanded record count limit (P1-3)", () => {
+    it("proceeds (calls executeImport) when units.length is exactly MAX_IMPORT_RECORD_COUNT (5000)", async () => {
+      mockSupabaseClient({ id: "user-1" });
+      const formData = buildFormDataWithFiles([{ name: "a.eml" }]);
+      parseEmlFileMock.mockResolvedValue(parsedMessage());
+      expandEmlMessageToRecordsMock.mockReturnValue(manyTextUnits(5000));
+      executeImportMock.mockResolvedValue({
+        createdCount: 5000,
+        skippedCount: 0,
+        createdParticipants: {},
+        createdRecords: [],
+      });
+      fetchRemoteImagesForImportMock.mockResolvedValue(new Map());
+
+      const { executeEmlImportAction } = await import("./actions");
+      const result = await executeEmlImportAction(
+        "conv-1",
+        formData,
+        VALID_PARTICIPANT_ID,
+      );
+
+      expect(executeImportMock).toHaveBeenCalledTimes(1);
+      expect("error" in result).toBe(false);
+    });
+
+    it("returns an error and calls neither executeImport nor fetchRemoteImagesForImport when units.length exceeds MAX_IMPORT_RECORD_COUNT (5001)", async () => {
+      mockSupabaseClient({ id: "user-1" });
+      const formData = buildFormDataWithFiles([{ name: "a.eml" }]);
+      parseEmlFileMock.mockResolvedValue(parsedMessage());
+      expandEmlMessageToRecordsMock.mockReturnValue(manyTextUnits(5001));
+
+      const { executeEmlImportAction } = await import("./actions");
+      const result = await executeEmlImportAction(
+        "conv-1",
+        formData,
+        VALID_PARTICIPANT_ID,
+      );
+
+      expect(result).toEqual({
+        error:
+          "一度に取り込めるのは5000件までです。メール数または画像数を減らしてください",
+      });
+      expect(executeImportMock).not.toHaveBeenCalled();
+      expect(fetchRemoteImagesForImportMock).not.toHaveBeenCalled();
+    });
+  });
+
   it("passes through the ImportError message", async () => {
     mockSupabaseClient({ id: "user-1" });
     const formData = buildFormDataWithFiles([{ name: "a.eml" }]);
@@ -1559,6 +1762,8 @@ describe("executeEmlImportAction", () => {
       VALID_PARTICIPANT_ID,
     );
 
+    // P1-2: buildRawEmlWithNulBody は Message-ID ヘッダを持たないため、importKey は
+    // 本文バイト列のハッシュベース（sha256:...#0）になる（ファイル名 "nul.eml" ベースではない）
     expect(executeImportMock).toHaveBeenCalledWith(expect.anything(), "conv-1", {
       records: [
         {
@@ -1568,7 +1773,7 @@ describe("executeEmlImportAction", () => {
           title: "Test",
           content: "前後",
           hasAudio: false,
-          importKey: "nul.eml#0",
+          importKey: expect.stringMatching(/^sha256:[0-9a-f]{64}#0$/),
         },
       ],
       speakerAssignments: { "sender@example.com": VALID_PARTICIPANT_ID },

@@ -31,6 +31,14 @@ export type ParsedEmlMessage = {
    * 複数画像インポートに伴い全件を保持する）
    */
   remoteImageUrls: string[];
+  /**
+   * このメールの安定した重複排除キーの元になる識別子（P1-2）。Message-ID があれば
+   * `msgid:<正規化したMessage-ID>`、無ければ生バイト列の SHA-256 ハッシュによる
+   * `sha256:<hex>`。expandEmlMessageToRecords が `${mailKey}#<連番>` として importKey を
+   * 組み立てる。ファイル名は使わない（同名だが別内容のメールの衝突・リネーム時の
+   * 重複判定崩れを防ぐため）
+   */
+  mailKey: string;
 };
 
 /**
@@ -295,6 +303,50 @@ function toArrayBuffer(raw: ArrayBuffer | string): ArrayBuffer {
   );
 }
 
+/**
+ * Message-ID ヘッダの値を正規化する（P1-2）
+ * 前後の空白を trim し、先頭の `<` と末尾の `>` を1つだけ取り除き、再度 trim してから
+ * 小文字化する。結果が空文字列になる場合は呼び出し側で「Message-ID なし」として扱う
+ */
+function normalizeMessageId(value: string): string {
+  let normalized = value.trim();
+  if (normalized.startsWith("<")) {
+    normalized = normalized.slice(1);
+  }
+  if (normalized.endsWith(">")) {
+    normalized = normalized.slice(0, -1);
+  }
+  return normalized.trim().toLowerCase();
+}
+
+function bytesToHex(bytes: Uint8Array): string {
+  return Array.from(bytes)
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+/**
+ * メールの識別情報から、安定した重複排除キーの元になる mailKey を導出する（P1-2）。
+ * 旧実装は `<元ファイル名>#<連番>` を import_key に使っていたが、ファイル名は
+ * メールの内容と無関係な情報のため、同名だが別内容の .eml（2件目が誤って重複扱いされ
+ * 取り込まれない）やファイルのリネーム（再インポート時に重複として検知できなくなる）に
+ * 弱い。Message-ID（正規化のうえ `msgid:` 名前空間）を優先し、無ければメール本文の
+ * 生バイト列の SHA-256 ハッシュ（`sha256:` 名前空間）にフォールバックする
+ */
+async function deriveMailKey(
+  messageId: string | undefined,
+  raw: ArrayBuffer,
+): Promise<string> {
+  if (typeof messageId === "string") {
+    const normalized = normalizeMessageId(messageId);
+    if (normalized.length > 0) {
+      return `msgid:${normalized}`;
+    }
+  }
+  const digest = await crypto.subtle.digest("SHA-256", raw);
+  return `sha256:${bytesToHex(new Uint8Array(digest))}`;
+}
+
 /** mimeType の subtype から `image-N.ext` 形式のファイル名を組み立てる（添付・リモート画像共用） */
 export function guessImageFilename(mimeType: string, index: number): string {
   const subtype = mimeType.split("/")[1]?.split("+")[0] || "bin";
@@ -401,9 +453,11 @@ export async function parseEmlFile(
   raw: ArrayBuffer | string,
   filename: string,
 ): Promise<ParsedEmlMessage> {
+  const rawArrayBuffer = toArrayBuffer(raw);
+
   let email: Email;
   try {
-    email = await PostalMime.parse(toArrayBuffer(raw));
+    email = await PostalMime.parse(rawArrayBuffer);
   } catch {
     throw new EmlImportError(`${filename}: メールの解析に失敗しました`);
   }
@@ -447,6 +501,8 @@ export async function parseEmlFile(
     throw new EmlImportError(`${filename}: 本文が空のため取り込めません`);
   }
 
+  const mailKey = await deriveMailKey(email.messageId, rawArrayBuffer);
+
   return {
     senderAddress,
     postedAt,
@@ -454,6 +510,7 @@ export async function parseEmlFile(
     content,
     images,
     remoteImageUrls,
+    mailKey,
   };
 }
 
@@ -479,16 +536,17 @@ export type EmlImportUnit = {
  *   各要素につき1件の image record を作る。1件目（index 0）だけが本文（content）を持ち、
  *   タイトルは全件で共通（Subject をそのまま使い回す）。2件目以降は独立した画像レコードとして
  *   content を null にする
- * - importKey は `${filename}#${index}`（index は展開後のこの配列内での連番、0始まり）。
- *   .eml インポートの重複排除はこの importKey で行う（本文プレフィックスベースの判定では、
- *   同一メールから作られる複数レコードが同一 participant/postedAt/type を持つため
- *   区別できないケースがあるため、#133）
+ * - importKey は `${message.mailKey}#${index}`（index は展開後のこの配列内での連番、
+ *   0始まり）。.eml インポートの重複排除はこの importKey で行う（本文プレフィックスベースの
+ *   判定では、同一メールから作られる複数レコードが同一 participant/postedAt/type を持つため
+ *   区別できないケースがあるため、#133）。mailKey はファイル名ではなくメールの識別情報
+ *   （Message-ID、無ければ本文ハッシュ）から導出されるため、同名だが別内容のメールが
+ *   衝突したり、リネームで再インポート時に重複と判定されなくなったりしない（P1-2）
  * - 画像の実データ・URL はここでは扱わない（record 作成後に呼び出し側が
  *   attachRecordMedia / fetchRemoteImagesForImport で添付する）
  */
 export function expandEmlMessageToRecords(
   message: ParsedEmlMessage,
-  filename: string,
 ): EmlImportUnit[] {
   const mediaSources: EmlMediaSource[] =
     message.images.length > 0
@@ -510,7 +568,7 @@ export function expandEmlMessageToRecords(
           title: message.title,
           content: message.content,
           hasAudio: false,
-          importKey: `${filename}#0`,
+          importKey: `${message.mailKey}#0`,
         },
         media: null,
       },
@@ -525,7 +583,7 @@ export function expandEmlMessageToRecords(
       title: message.title,
       content: index === 0 ? message.content : null,
       hasAudio: false,
-      importKey: `${filename}#${index}`,
+      importKey: `${message.mailKey}#${index}`,
     },
     media,
   }));

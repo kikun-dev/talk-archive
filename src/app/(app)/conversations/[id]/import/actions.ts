@@ -9,6 +9,7 @@ import {
   executeImport,
   ImportError,
   MAX_IMPORT_FILE_SIZE,
+  MAX_IMPORT_RECORD_COUNT,
   type ImportPreview,
   type ImportResult,
   type TalkImportParseResult,
@@ -272,10 +273,11 @@ function buildSenderSummaries(parsed: ParsedEmlFile[]): EmlSenderSummary[] {
  * （#133: 1メールから複数レコード（メイン+追加画像）を作るため）
  */
 function expandParsedFilesToUnits(parsed: ParsedEmlFile[]): EmlImportUnit[] {
-  return parsed.flatMap(({ filename, message }) =>
-    expandEmlMessageToRecords(message, filename),
-  );
+  return parsed.flatMap(({ message }) => expandEmlMessageToRecords(message));
 }
+
+const RECORD_COUNT_EXCEEDED_ERROR_MESSAGE =
+  "一度に取り込めるのは5000件までです。メール数または画像数を減らしてください";
 
 export type PreviewEmlImportResult =
   | {
@@ -326,14 +328,26 @@ export async function previewEmlImportAction(
   }
 
   try {
-    const { parsed, rowErrors, totalCount } = outcome;
+    const { parsed, rowErrors } = outcome;
     const units = expandParsedFilesToUnits(parsed);
+
+    // P1-3: 展開後のレコード件数が上限を超える場合、RPC ペイロード肥大化・Server
+    // Action タイムアウトを防ぐため、プレビュー生成（buildImportPreview の呼び出し）
+    // を行わずにエラーを返す
+    if (units.length > MAX_IMPORT_RECORD_COUNT) {
+      return { error: RECORD_COUNT_EXCEEDED_ERROR_MESSAGE };
+    }
+
     const records: TalkImportRecord[] = units.map((unit) => unit.record);
     const parseResult: TalkImportParseResult = {
       records,
       defaultYear: null,
       rowErrors,
-      totalCount,
+      // P2-1: totalCount は展開後のレコード件数（units.length）を使う。以前はファイル数
+      // （outcome.totalCount）を使っていたため、複数画像を持つメールがあると
+      // 「総件数」と「取り込み対象」の基準（ファイル基準 / レコード基準）が食い違い、
+      // 画面表示が不整合になっていた
+      totalCount: units.length,
     };
 
     const speakerAssignments: { [speakerName: string]: string } = {};
@@ -418,6 +432,14 @@ export async function executeEmlImportAction(
   try {
     const { parsed } = outcome;
     const units = expandParsedFilesToUnits(parsed);
+
+    // P1-3: 展開後のレコード件数が上限を超える場合、RPC ペイロード肥大化・Server
+    // Action タイムアウトを防ぐため、record 作成（executeImport）もリモート画像取得
+    // （fetchRemoteImagesForImport）も行わずにエラーを返す
+    if (units.length > MAX_IMPORT_RECORD_COUNT) {
+      return { error: RECORD_COUNT_EXCEEDED_ERROR_MESSAGE };
+    }
+
     const records: TalkImportRecord[] = units.map((unit) => unit.record);
     // expandEmlMessageToRecords は毎回新しい record オブジェクトを作るため、record
     // （オブジェクト参照そのもの）をキーに元のメディア添付元を引けるようにしておく。

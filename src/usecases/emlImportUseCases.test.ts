@@ -47,6 +47,8 @@ function buildAlternativeEml(options: {
   textBody?: string | null;
   htmlBody?: string | null;
   attachments?: AttachmentFixture[];
+  /** Message-ID ヘッダの生の値（山括弧込み、例: "<abc123@example.com>"）。未指定ならヘッダ自体を省略する（P1-2） */
+  messageId?: string;
 }): string {
   // 明示的に `from: undefined` を渡してヘッダ自体を省略するテストがあるため、
   // 分割代入のデフォルト値（undefined と「未指定」を区別できない）ではなく
@@ -61,6 +63,7 @@ function buildAlternativeEml(options: {
     textBody = "こんにちは、これはテスト本文です。",
     htmlBody = "<p>こんにちは、これは<b>テスト</b>本文です。</p>",
     attachments = [],
+    messageId,
   } = options;
 
   const altParts: string[] = [];
@@ -101,6 +104,7 @@ function buildAlternativeEml(options: {
   headers.push("To: recipient@example.com");
   if (subject !== undefined) headers.push(`Subject: ${subject}`);
   if (date !== undefined) headers.push(`Date: ${date}`);
+  if (messageId !== undefined) headers.push(`Message-ID: ${messageId}`);
   headers.push("MIME-Version: 1.0");
 
   if (attachments.length === 0) {
@@ -235,7 +239,7 @@ describe("parseEmlFile", () => {
     expect(result.content).toBeNull();
     expect(result.images).toHaveLength(1);
     expect(result.images[0].filename).toBe("photo.png");
-    const units = expandEmlMessageToRecords(result, "image-only.eml");
+    const units = expandEmlMessageToRecords(result);
     expect(units).toHaveLength(1);
     expect(units[0].record.type).toBe("image");
   });
@@ -541,6 +545,73 @@ describe("parseEmlFile", () => {
     await expect(parseEmlFile("irrelevant", "broken.eml")).rejects.toThrow(
       /broken\.eml/,
     );
+  });
+});
+
+// P1-1レビュー対応P1-2: import_key はファイル名ではなくメールの識別情報（Message-ID、
+// 無ければ本文バイト列のハッシュ）から導出する。ファイル名ベースだと同名だが別内容の
+// メールが衝突（2件目が silently skip されデータ損失）したり、リネームで再インポート時に
+// 重複扱いされなくなったりするため
+describe("parseEmlFile: mailKey derivation (P1-2: stable per-mail dedup key, not filename-based)", () => {
+  it("derives mailKey from a normalized Message-ID (trimmed, angle brackets stripped, lowercased) when present", async () => {
+    const raw = buildAlternativeEml({ messageId: "<ABC-123@Example.com>" });
+
+    const result = await parseEmlFile(raw, "test.eml");
+
+    expect(result.mailKey).toBe("msgid:abc-123@example.com");
+  });
+
+  it("falls back to a sha256 content hash when Message-ID is absent", async () => {
+    const raw = buildAlternativeEml({});
+
+    const result = await parseEmlFile(raw, "test.eml");
+
+    expect(result.mailKey).toMatch(/^sha256:[0-9a-f]{64}$/);
+  });
+
+  it("produces the identical mailKey for identical content parsed under two different filenames (would dedup)", async () => {
+    const raw = buildAlternativeEml({ textBody: "同じ内容の本文です" });
+
+    const a = await parseEmlFile(raw, "message.eml");
+    const b = await parseEmlFile(raw, "message.eml");
+
+    expect(a.mailKey).toBe(b.mailKey);
+  });
+
+  it("produces different mailKeys for different content parsed under the same filename (both import, no data loss)", async () => {
+    const rawA = buildAlternativeEml({ textBody: "内容A" });
+    const rawB = buildAlternativeEml({ textBody: "内容B" });
+
+    const a = await parseEmlFile(rawA, "message.eml");
+    const b = await parseEmlFile(rawB, "message.eml");
+
+    expect(a.mailKey).not.toBe(b.mailKey);
+  });
+
+  it("produces the same mailKey for two mails sharing the same Message-ID, even with different content (dedup by mail identity)", async () => {
+    const rawA = buildAlternativeEml({
+      messageId: "<dup@example.com>",
+      textBody: "内容A",
+    });
+    const rawB = buildAlternativeEml({
+      messageId: "<dup@example.com>",
+      textBody: "内容B",
+    });
+
+    const a = await parseEmlFile(rawA, "a.eml");
+    const b = await parseEmlFile(rawB, "b.eml");
+
+    expect(a.mailKey).toBe(b.mailKey);
+  });
+
+  it("produces different mailKeys for two mails with different Message-IDs", async () => {
+    const rawA = buildAlternativeEml({ messageId: "<one@example.com>" });
+    const rawB = buildAlternativeEml({ messageId: "<two@example.com>" });
+
+    const a = await parseEmlFile(rawA, "a.eml");
+    const b = await parseEmlFile(rawB, "b.eml");
+
+    expect(a.mailKey).not.toBe(b.mailKey);
   });
 });
 
@@ -937,7 +1008,7 @@ describe("parseEmlFile: remote image extraction from HTML <img> (#129, #133: 全
 
     expect(result.content).toBeNull();
     expect(result.remoteImageUrls).toEqual([allowedImageUrl("1")]);
-    const units = expandEmlMessageToRecords(result, "remote-image-only.eml");
+    const units = expandEmlMessageToRecords(result);
     expect(units).toHaveLength(1);
     expect(units[0].record.type).toBe("image");
   });
@@ -1194,14 +1265,15 @@ describe("expandEmlMessageToRecords (#133: 複数画像を全件登録する)", 
       content: "本文",
       images: [],
       remoteImageUrls: [],
+      mailKey: "msgid:mail-key@example.com",
       ...overrides,
     };
   }
 
-  it("maps a message without images to a single text record with importKey '<filename>#0'", () => {
+  it("maps a message without images to a single text record with importKey '<message.mailKey>#0' (P1-2: derived from mail identity, not filename)", () => {
     const message = baseMessage();
 
-    const units = expandEmlMessageToRecords(message, "mail.eml");
+    const units = expandEmlMessageToRecords(message);
 
     expect(units).toEqual([
       {
@@ -1212,7 +1284,7 @@ describe("expandEmlMessageToRecords (#133: 複数画像を全件登録する)", 
           title: "件名",
           content: "本文",
           hasAudio: false,
-          importKey: "mail.eml#0",
+          importKey: "msgid:mail-key@example.com#0",
         },
         media: null,
       },
@@ -1230,13 +1302,13 @@ describe("expandEmlMessageToRecords (#133: 複数画像を全件登録する)", 
       ],
     });
 
-    const units = expandEmlMessageToRecords(message, "mail.eml");
+    const units = expandEmlMessageToRecords(message);
 
     expect(units).toHaveLength(1);
     expect(units[0].record.type).toBe("image");
     expect(units[0].record.content).toBe("本文");
     expect(units[0].record.title).toBe("件名");
-    expect(units[0].record.importKey).toBe("mail.eml#0");
+    expect(units[0].record.importKey).toBe("msgid:mail-key@example.com#0");
     expect(units[0].media).toEqual({
       kind: "attachment",
       data: new Uint8Array([1, 2, 3]),
@@ -1254,7 +1326,7 @@ describe("expandEmlMessageToRecords (#133: 複数画像を全件登録する)", 
       ],
     });
 
-    const units = expandEmlMessageToRecords(message, "mail.eml");
+    const units = expandEmlMessageToRecords(message);
 
     expect(units).toHaveLength(3);
 
@@ -1265,7 +1337,7 @@ describe("expandEmlMessageToRecords (#133: 複数画像を全件登録する)", 
       title: "件名",
       content: "本文",
       hasAudio: false,
-      importKey: "mail.eml#0",
+      importKey: "msgid:mail-key@example.com#0",
     });
     expect(units[0].media).toEqual({
       kind: "attachment",
@@ -1281,7 +1353,7 @@ describe("expandEmlMessageToRecords (#133: 複数画像を全件登録する)", 
       title: "件名",
       content: null,
       hasAudio: false,
-      importKey: "mail.eml#1",
+      importKey: "msgid:mail-key@example.com#1",
     });
     expect(units[1].media).toEqual({
       kind: "attachment",
@@ -1297,7 +1369,7 @@ describe("expandEmlMessageToRecords (#133: 複数画像を全件登録する)", 
       title: "件名",
       content: null,
       hasAudio: false,
-      importKey: "mail.eml#2",
+      importKey: "msgid:mail-key@example.com#2",
     });
     expect(units[2].media).toEqual({
       kind: "attachment",
@@ -1315,19 +1387,19 @@ describe("expandEmlMessageToRecords (#133: 複数画像を全件登録する)", 
       ],
     });
 
-    const units = expandEmlMessageToRecords(message, "mail.eml");
+    const units = expandEmlMessageToRecords(message);
 
     expect(units).toHaveLength(2);
     expect(units[0].record.type).toBe("image");
     expect(units[0].record.content).toBe("本文");
-    expect(units[0].record.importKey).toBe("mail.eml#0");
+    expect(units[0].record.importKey).toBe("msgid:mail-key@example.com#0");
     expect(units[0].media).toEqual({
       kind: "remote",
       url: "https://example.com/1.jpg",
     });
     expect(units[1].record.type).toBe("image");
     expect(units[1].record.content).toBeNull();
-    expect(units[1].record.importKey).toBe("mail.eml#1");
+    expect(units[1].record.importKey).toBe("msgid:mail-key@example.com#1");
     expect(units[1].media).toEqual({
       kind: "remote",
       url: "https://example.com/2.jpg",
@@ -1342,7 +1414,7 @@ describe("expandEmlMessageToRecords (#133: 複数画像を全件登録する)", 
       remoteImageUrls: ["https://example.com/1.jpg"],
     });
 
-    const units = expandEmlMessageToRecords(message, "mail.eml");
+    const units = expandEmlMessageToRecords(message);
 
     expect(units).toHaveLength(1);
     expect(units[0].media).toEqual({

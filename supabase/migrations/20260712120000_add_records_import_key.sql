@@ -194,3 +194,42 @@ $$;
 -- 念のため既存 migration と同じ grant を明示しておく
 revoke execute on function import_records_atomic(uuid, jsonb, jsonb) from public;
 grant execute on function import_records_atomic(uuid, jsonb, jsonb) to authenticated;
+
+-- #133 第2ラウンドレビュー対応 P1-1: get_import_dedup_candidates（プレビュー用の重複判定
+-- 候補取得）が import_key を返さないままだと、プレビュー側（buildExistingDedupKeys）は
+-- 常に本文プレフィックスベースのキーしか組み立てられない。一方 import_records_atomic
+-- RPC は import_key が非nullの既存レコードを import_key の一致のみで重複判定するため、
+-- 同一 .eml 群を再インポートした際、プレビューでは「重複なし」と表示されるのに実行時は
+-- 全件スキップされる、という不整合が起きる。get_import_dedup_candidates に import_key を
+-- 追加で返すよう作り直し、プレビューと実行の重複判定契約を一致させる。
+-- returns table への列追加は戻り値の型を変えるため、create or replace ではなく
+-- 明示的に drop してから create し直す
+drop function if exists get_import_dedup_candidates(uuid);
+
+create function get_import_dedup_candidates(
+  p_conversation_id uuid
+)
+returns table (
+  participant_id uuid,
+  posted_at timestamptz,
+  record_type record_type,
+  content_prefix text,
+  import_key text
+)
+language sql
+stable
+security invoker
+set search_path = public
+as $$
+  select
+    r.speaker_participant_id,
+    r.posted_at,
+    r.record_type,
+    left(trim(coalesce(r.content, '')), 20),
+    r.import_key
+  from records r
+  where r.conversation_id = p_conversation_id;
+$$;
+
+revoke execute on function get_import_dedup_candidates(uuid) from public;
+grant execute on function get_import_dedup_candidates(uuid) to authenticated;
