@@ -41,3 +41,6 @@ yarn-error.log*
 # Local audit / Codex runtime
 .playwright-mcp/
 .codex/config.toml
+.impeccable/hook.cache.json
+.impeccable/hook.pending.json
+.impeccable/config.local.json
