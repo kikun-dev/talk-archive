@@ -44,3 +44,5 @@ yarn-error.log*
 .impeccable/hook.cache.json
 .impeccable/hook.pending.json
 .impeccable/config.local.json
+.impeccable/live/*
+!.impeccable/live/config.json
