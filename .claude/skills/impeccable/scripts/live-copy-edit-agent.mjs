@@ -184,21 +184,35 @@ export function runCopyEditPostApplyChecks({ cwd = process.cwd(), files = [] } =
 
 function checkFrameworkSourceSyntax(relativeFile, content) {
   if (!/\.(jsx|tsx|ts)$/.test(relativeFile)) return null;
-  let parser;
+  let typescript;
   try {
-    parser = require('@babel/parser');
+    typescript = require('typescript');
   } catch {
     return { warning: { file: relativeFile, reason: 'syntax_parser_unavailable' } };
   }
-  const plugins = ['jsx'];
-  if (/\.(ts|tsx)$/.test(relativeFile)) plugins.push('typescript');
   try {
-    parser.parse(content, {
-      sourceType: 'module',
-      plugins,
-      errorRecovery: false,
+    const result = typescript.transpileModule(content, {
+      fileName: relativeFile,
+      reportDiagnostics: true,
+      compilerOptions: {
+        allowJs: true,
+        jsx: typescript.JsxEmit.Preserve,
+        module: typescript.ModuleKind.ESNext,
+        target: typescript.ScriptTarget.ESNext,
+      },
     });
-    return null;
+    const errors = (result.diagnostics || [])
+      .filter((diagnostic) => diagnostic.category === typescript.DiagnosticCategory.Error);
+    if (errors.length === 0) return null;
+    return {
+      failure: {
+        file: relativeFile,
+        reason: 'invalid_source_syntax',
+        message: errors
+          .map((diagnostic) => typescript.flattenDiagnosticMessageText(diagnostic.messageText, '\n'))
+          .join('\n'),
+      },
+    };
   } catch (err) {
     return {
       failure: {
