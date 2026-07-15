@@ -37,3 +37,12 @@ yarn-error.log*
 
 # ローカル検証用の一時ファイル（個人メールサンプル等）
 .tmp/
+
+# Local audit / Codex runtime
+.playwright-mcp/
+.codex/config.toml
+.impeccable/hook.cache.json
+.impeccable/hook.pending.json
+.impeccable/config.local.json
+.impeccable/live/*
+!.impeccable/live/config.json
