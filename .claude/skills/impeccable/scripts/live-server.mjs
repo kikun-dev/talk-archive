@@ -85,6 +85,8 @@ async function findOpenPort(start = 8400) {
 
 const state = {
   token: null,
+  bootstrapToken: null,
+  allowedOrigin: null,
   port: null,
   sseClients: new Set(),   // SSE response objects (server→browser push)
   pendingEvents: [],        // browser events waiting for agent ack ({ event, leaseUntil })
@@ -391,16 +393,112 @@ function isPathWithinDirectory(rootPath, candidatePath) {
       && !path.isAbsolute(relativePath));
 }
 
+const BROWSER_ORIGIN_REQUIRED_PATHS = new Set([
+  '/annotation',
+  '/design-system.json',
+  '/design-system/raw',
+  '/source',
+  '/events',
+  '/manual-edit-stash',
+  '/manual-edit-commit',
+  '/manual-edit-repair-decision',
+  '/manual-edit-discard',
+  '/manual-edit',
+]);
+
+const TOKEN_PROTECTED_PATHS = new Set([
+  ...BROWSER_ORIGIN_REQUIRED_PATHS,
+  '/status',
+  '/stop',
+  '/poll',
+]);
+
+function normalizeWebOrigin(value) {
+  if (typeof value !== 'string' || !value) return null;
+  try {
+    const parsed = new URL(value);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null;
+    return parsed.origin === value ? parsed.origin : null;
+  } catch {
+    return null;
+  }
+}
+
+function setCorsHeaders(res, origin) {
+  res.setHeader('Access-Control-Allow-Origin', origin);
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Vary', 'Origin');
+}
+
+function rejectOrigin(res) {
+  res.writeHead(403, { 'Content-Type': 'text/plain' });
+  res.end('Forbidden origin');
+}
+
+function authorizeBrowserRequest(req, res, url) {
+  const pathname = url.pathname;
+  const rawOrigin = req.headers.origin;
+  const origin = normalizeWebOrigin(rawOrigin);
+
+  if (pathname === '/live.js') {
+    if (req.method !== 'GET' && req.method !== 'OPTIONS') {
+      res.writeHead(405, { Allow: 'GET, OPTIONS' });
+      res.end('Method not allowed');
+      return false;
+    }
+    if (!origin) {
+      rejectOrigin(res);
+      return false;
+    }
+    if (url.searchParams.get('bootstrap') !== state.bootstrapToken) {
+      res.writeHead(401, { 'Content-Type': 'text/plain' });
+      res.end('Unauthorized');
+      return false;
+    }
+    if (state.allowedOrigin && origin !== state.allowedOrigin) {
+      rejectOrigin(res);
+      return false;
+    }
+    if (!state.allowedOrigin) state.allowedOrigin = origin;
+    setCorsHeaders(res, origin);
+  } else if (rawOrigin !== undefined) {
+    if (!origin || !state.allowedOrigin || origin !== state.allowedOrigin) {
+      rejectOrigin(res);
+      return false;
+    }
+    setCorsHeaders(res, origin);
+  } else if (req.headers['sec-fetch-site'] !== undefined && TOKEN_PROTECTED_PATHS.has(pathname)) {
+    // Node/CLI clients do not send Fetch Metadata and remain token-authenticated.
+    // A browser subresource request cannot bypass Origin checks by using a mode
+    // that omits the Origin header (for example, an image or classic script).
+    rejectOrigin(res);
+    return false;
+  } else if (BROWSER_ORIGIN_REQUIRED_PATHS.has(pathname)) {
+    rejectOrigin(res);
+    return false;
+  }
+
+  if (req.method === 'OPTIONS') {
+    if (!origin) {
+      rejectOrigin(res);
+      return false;
+    }
+    res.writeHead(204);
+    res.end();
+    return false;
+  }
+
+  return true;
+}
+
 // HTTP request handler
 // ---------------------------------------------------------------------------
 
 function createRequestHandler({ detectScript, liveScriptParts }) {
   return (req, res) => {
     const url = new URL(req.url, `http://localhost:${state.port}`);
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-    if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
+    if (!authorizeBrowserRequest(req, res, url)) return;
 
     const p = url.pathname;
 
@@ -1113,6 +1211,7 @@ if (existingRecord?.info) {
 }
 
 state.token = randomUUID();
+state.bootstrapToken = randomUUID();
 state.sessionStore = createLiveSessionStore({ cwd: process.cwd() });
 manualApply.rollbackTransaction({
   reason: 'manual_edit_server_start_recovered_abandoned_transaction',
@@ -1133,7 +1232,12 @@ const { detectScript, liveScriptParts } = loadBrowserScripts();
 httpServer = http.createServer(createRequestHandler({ detectScript, liveScriptParts }));
 
 httpServer.listen(state.port, '127.0.0.1', () => {
-  writeLiveServerInfo(process.cwd(), { pid: process.pid, port: state.port, token: state.token });
+  writeLiveServerInfo(process.cwd(), {
+    pid: process.pid,
+    port: state.port,
+    token: state.token,
+    bootstrapToken: state.bootstrapToken,
+  });
   const url = `http://localhost:${state.port}`;
   console.log(`\nImpeccable live server running on ${url}`);
   console.log(`Token: ${state.token}\n`);

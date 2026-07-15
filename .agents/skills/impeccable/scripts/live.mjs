@@ -111,7 +111,10 @@ The agent should then:
   }
 
   // 3. Inject the script tag at the current port
-  const injectOut = runScript('live-inject.mjs', ['--port', String(serverInfo.port)], { cwd: activeCwd });
+  const injectOut = runScript('live-inject.mjs', [
+    '--port', String(serverInfo.port),
+    '--bootstrap-token', serverInfo.bootstrapToken,
+  ], { cwd: activeCwd });
   const injectResult = safeParse(injectOut);
   if (!injectResult || !injectResult.ok) {
     console.log(JSON.stringify({
@@ -268,7 +271,8 @@ function safeParse(out) {
 }
 
 /**
- * Return { pid, port, token } for the running live server, starting one if needed.
+ * Return { pid, port, token, bootstrapToken } for the running live server,
+ * starting one if needed.
  */
 function ensureServerRunning(cwd = process.cwd()) {
   // Try to reuse an existing server
@@ -277,7 +281,10 @@ function ensureServerRunning(cwd = process.cwd()) {
     if (existing && existing.pid) {
       try {
         process.kill(existing.pid, 0); // throws if dead
-        return existing;
+        if (existing.bootstrapToken) return existing;
+        // Servers from before bootstrap-origin binding cannot safely serve the
+        // newly injected script. Restart them once during the upgrade path.
+        runScript('live-server.mjs', ['stop', '--keep-inject'], { cwd });
       } catch { /* stale PID file — the server script will clean it up */ }
     }
   } catch { /* no PID file */ }
