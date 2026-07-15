@@ -37,3 +37,7 @@ yarn-error.log*
 
 # ローカル検証用の一時ファイル（個人メールサンプル等）
 .tmp/
+
+# Local audit / Codex runtime
+.playwright-mcp/
+.codex/config.toml
