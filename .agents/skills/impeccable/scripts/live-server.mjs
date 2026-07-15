@@ -383,6 +383,14 @@ function statOrNull(filePath) {
   try { return fs.statSync(filePath); } catch { return null; }
 }
 
+function isPathWithinDirectory(rootPath, candidatePath) {
+  const relativePath = path.relative(rootPath, candidatePath);
+  return relativePath === ''
+    || (relativePath !== '..'
+      && !relativePath.startsWith(`..${path.sep}`)
+      && !path.isAbsolute(relativePath));
+}
+
 // HTTP request handler
 // ---------------------------------------------------------------------------
 
@@ -603,9 +611,10 @@ function createRequestHandler({ detectScript, liveScriptParts }) {
       const token = url.searchParams.get('token');
       if (token !== state.token) { res.writeHead(401); res.end('Unauthorized'); return; }
       const filePath = url.searchParams.get('path');
-      if (!filePath || filePath.includes('..')) { res.writeHead(400); res.end('Bad path'); return; }
-      const absPath = path.resolve(process.cwd(), filePath);
-      if (!absPath.startsWith(process.cwd())) { res.writeHead(403); res.end('Forbidden'); return; }
+      if (!filePath) { res.writeHead(400); res.end('Bad path'); return; }
+      const projectRoot = path.resolve(process.cwd());
+      const absPath = path.resolve(projectRoot, filePath);
+      if (!isPathWithinDirectory(projectRoot, absPath)) { res.writeHead(403); res.end('Forbidden'); return; }
       let content;
       try { content = fs.readFileSync(absPath, 'utf-8'); }
       catch { res.writeHead(404); res.end('File not found'); return; }
